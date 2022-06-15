@@ -11,7 +11,7 @@ from pytraction.traction import (
     NoArgs, SharedResults,
     StepFailedError, Tractor, Secret,
     StepOnErrorCallable, StepOnUpdateCallable,
-    TractorDumpDict, StepResults)
+    TractorDumpDict, StepResults, NoDetails)
 
 
 class TResults(StepResults):
@@ -48,7 +48,7 @@ def test_step_initiation_no_generic(fixture_shared_results):
 
 
 def test_step_initiation_no_run_method(fixture_shared_results):
-    class TStep(Step[TResults, TArgs, TResources, NoInputs]):
+    class TStep(Step[TResults, TArgs, TResources, NoInputs, NoDetails]):
         pass
     
     with pytest.raises(TypeError) as exc:
@@ -57,7 +57,7 @@ def test_step_initiation_no_run_method(fixture_shared_results):
 
 
 def test_step_initiation_succesful_no_args_no_inputs(fixture_shared_results):
-    class TStep(Step[TResults, NoArgs, TResources, NoInputs]):
+    class TStep(Step[TResults, NoArgs, TResources, NoInputs, NoDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             pass
@@ -67,7 +67,7 @@ def test_step_initiation_succesful_no_args_no_inputs(fixture_shared_results):
 
 
 def test_step_initiation_succesful_no_args(fixture_shared_results):
-    class TStep(Step[TResults, NoArgs, TResources, TInputs]):
+    class TStep(Step[TResults, NoArgs, TResources, TInputs, NoDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             pass
@@ -77,7 +77,7 @@ def test_step_initiation_succesful_no_args(fixture_shared_results):
 
 
 def test_step_initiation_succesful_no_inputs(fixture_shared_results):
-    class TStep(Step[TResults, TArgs, TResources, NoInputs]):
+    class TStep(Step[TResults, TArgs, TResources, NoInputs, NoDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             pass
@@ -88,7 +88,7 @@ def test_step_initiation_succesful_no_inputs(fixture_shared_results):
 
 def test_step_initiation_wrong_arg_type(fixture_shared_results):
     """Step expects NoArgs but TArgs are given."""
-    class TStep(Step[TResults, NoArgs, TResources, NoInputs]):
+    class TStep(Step[TResults, NoArgs, TResources, NoInputs, NoDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             pass
@@ -100,7 +100,7 @@ def test_step_initiation_wrong_arg_type(fixture_shared_results):
 def test_step_initiation_wrong_inputs_type(fixture_shared_results):
     """Step expects NoInputs but TInputs are given."""
 
-    class TStep(Step[TResults, NoArgs, TResources, NoInputs]):
+    class TStep(Step[TResults, NoArgs, TResources, NoInputs, NoDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             pass
@@ -113,7 +113,7 @@ def test_step_initiation_wrong_inputs_type(fixture_shared_results):
 def test_step_initiation_wrong_external_resources(fixture_shared_results):
     """Step expects NoInputs but TInputs are given."""
 
-    class TStep(Step[TResults, NoArgs, NoResources, NoInputs]):
+    class TStep(Step[TResults, NoArgs, NoResources, NoInputs, NoDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             pass
@@ -125,7 +125,7 @@ def test_step_initiation_wrong_external_resources(fixture_shared_results):
 def test_step_initiation_missing_arguments(fixture_shared_results):
     """Step initiation is missing shared_reults."""
 
-    class TStep(Step[TResults, NoArgs, NoResources, NoInputs]):
+    class TStep(Step[TResults, NoArgs, NoResources, NoInputs, NoDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             pass
@@ -136,7 +136,18 @@ def test_step_initiation_missing_arguments(fixture_shared_results):
 
 def test_step_run_results(fixture_shared_results):
     """Step initiation is missing shared_reults."""
-    class TStep(Step[TResults, NoArgs, NoResources, NoInputs]):
+    class TStep(Step[TResults, NoArgs, NoResources, NoInputs, NoDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results.x = 10
+            
+    step = TStep("test-step-1", NoArgs(), fixture_shared_results, NoResources(), NoInputs())
+    step.run()
+    assert step.results.x == 10
+
+def test_step_run_details(fixture_shared_results):
+    """Step initiation is missing shared_reults."""
+    class TStep(Step[TResults, NoArgs, NoResources, NoInputs, NoDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results.x = 10

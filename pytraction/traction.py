@@ -101,7 +101,7 @@ ArgsType = TypeVar("ArgsType", bound=ArgsTypeCls)
 ExtResourcesType = TypeVar("ExtResourcesType", bound=ExtResourcesCls)
 
 
-class ResultsMeta(pydantic.main.ModelMetaclass):
+class DefaultsModelMeta(pydantic.main.ModelMetaclass):
     def __new__(cls, name, bases, attrs):
         annotations = attrs.get("__annotations__", {})
         for attrk, attrv in attrs.items():
@@ -121,13 +121,13 @@ class ResultsMeta(pydantic.main.ModelMetaclass):
 
         return super().__new__(cls, name, bases, attrs)
 
-class StepResultsModel(pydantic.BaseModel, metaclass=ResultsMeta):
+
+class RequiredDefaultsModel(pydantic.BaseModel, metaclass=DefaultsModelMeta):
     pass
 
-class StepResults(StepResultsModel):
-    """Class to store results of step."""
 
-    #__validators__: List[Validator] = []
+class StepResults(RequiredDefaultsModel):
+    """Class to store results of step."""
 
     def dump(self) -> Dict[str, Any]:
         pass
@@ -135,9 +135,10 @@ class StepResults(StepResultsModel):
     def load(self, results: Dict[str, Any]) -> None:
         pass
 
-    #@classmethod
-    #def __get_validators__(cls) -> Iterator[Validator]:
-    #    yield from cls.__validators__
+class StepDetails(RequiredDefaultsModel):
+    """Class to store step details to."""
+    pass
+
 
 class StepInputs(pydantic.BaseModel):
     @pydantic.validator('*', pre=True)
@@ -160,6 +161,7 @@ class SharedResults(pydantic.BaseModel):
 
 ResultsType = TypeVar("ResultsType", bound=StepResults)
 InputsType = TypeVar("InputsType", bound=StepInputs)
+DetailsType = TypeVar("DetailsType", bound=StepDetails)
 
 
 class StepErrors:
@@ -227,7 +229,7 @@ StepOnUpdateCallable = Optional[Callable[[], None]]
 StepOnErrorCallable = Optional[Callable[[], None]]
 
 
-class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResourcesType, InputsType], validate_all=True):
+class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResourcesType, InputsType, DetailsType], validate_all=True):
     """Base class for a Step.
 
     How to use this class: Few things are needed to implement custom step class.
@@ -273,7 +275,7 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
     results: ResultsType
     errors: StepErrors
     _details_initted: bool
-    _details: Dict[Any, Any]
+    _details: DetailsType
     stats: StepStats
     external_resources: Optional[ExtResourcesType]
     shared_results: SharedResults
@@ -305,45 +307,21 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
                 Mapping of inputs to results of steps identified by uid
         """
         type_args = get_args(self.__orig_bases__[0]) # type: ignore
-        #print(self.__orig_bases__[0])
-        #print(self.__parameters__)
-        #print("get args", get_args(self.__orig_bases__[0]))
         stack = [self]
         item = None
-        #print(self.__fields__['results'])
-        #print(type(self.__fields__['results']))
-        #print(dir(self.__fields__['results']))
-        #print(self.__fields__['results'].type_)
-        #print(dir(self.__fields__['results'].type_()))
-        #assert False
-        #print("...")
         while stack:
-            #print(stack)
             item = stack.pop(0)
-            #print("BASE", type(item), item, item.__class__, item.__class__.__name__)
-            #print("ITEM ARGS", get_args(item))
-            #if get_args(item):
-            #    results = type_args[0]()
-            #    print("ITEM RESULTS", results)
-            #print(dir(item))
             if item.__class__.__name__ == "Step":
                 break
 
-            #print(dir(item))
             if hasattr(item, "__orig_bases__"):
                 for base in item.__orig_bases__:
                     stack.insert(0, base)
             if hasattr(item, "__origin__"):
                 if item.__origin__ == Step:
-                    #print("break")
                     break
                 stack.insert(0, item.__origin__)
 
-        #print("ITEM", item)
-        #print(dir(get_args(item)[0]), get_args(item)[0].__class__)
-        #print("ARGS", get_args(item))
-        #print("TYPE ARGS", type_args)
-        #print("ARGS", get_args(self.__orig_bases__[0]), type_args[0]())
         type_args = get_args(item)
         if not type_args:
             raise TypeError("Missing generic annotations for Step class. Use Step[ResultsCls, ArgsCls, ExtResourcesCls, InputsCls]")
@@ -352,6 +330,7 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         args_type = type_args[1]
         resources_type = type_args[2]
         inputs_type = type_args[3]
+        details_type = type_args[4]
 
         if type(step_args) != args_type:
             raise TypeError("Step arguments are not type of %s but %s" % (args_type, type(step_args)))
@@ -363,6 +342,8 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
             raise TypeError("Step inputs are not type of %s but %s" % (inputs_type, type(inputs)))
 
         results = results_type()
+        details = details_type()
+
         masked_args = dict(
             [
                 (k.name, str(getattr(step_args, k))) if isinstance(getattr(step_args, k), Secret) else (k, getattr(step_args, k))
@@ -402,6 +383,7 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
                 external_resources=external_resources,
                 shared_results=shared_results,
                 details_inited=False,
+                _details=details,
                 skip=False,
                 skip_reason="",
                 state=StepState.READY,
@@ -620,13 +602,13 @@ class TractorValidateResult(TypedDict):
 class Tractor(pydantic.BaseModel):
     """Class which runs sequence of steps."""
 
-    steps: List[Step[Any, Any, Any, Any]]
+    steps: List[Step[Any, Any, Any, Any, Any]]
     shared_results: SharedResults
-    current_step: Optional[Step[Any, Any, Any, Any]]
-    step_map: Dict[str, Type[Step[Any, Any, Any, Any]]]
+    current_step: Optional[Step[Any, Any, Any, Any, Any]]
+    step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]]
 
 
-    def __init__(self, step_map: Dict[str, Type[Step[Any, Any, Any, Any]]]) -> None:
+    def __init__(self, step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]]) -> None:
         """Initialize the stepper.
 
         Args:
@@ -644,7 +626,7 @@ class Tractor(pydantic.BaseModel):
             steps=[]
         )
 
-    def add_step(self, step: Step[Any, Any, Any, Any]) -> None:
+    def add_step(self, step: Step[Any, Any, Any, Any, Any]) -> None:
         """Add step to step sequence."""
         self.steps.append(step)
         self.shared_results.results[step.fullname] = None
@@ -708,6 +690,9 @@ class NoArgs(ArgsTypeCls):
 
 
 class NoResources(ExtResourcesCls):
+    pass
+
+class NoDetails(StepDetails):
     pass
 
 @dataclass
