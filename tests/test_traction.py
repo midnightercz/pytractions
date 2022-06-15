@@ -25,6 +25,7 @@ class TArgs(ArgsTypeCls):
 class TResources(ExtResourcesCls):
     service1: int
 
+
 class TInputs(StepInputs):
     input1: TResults
 
@@ -32,6 +33,7 @@ class TInputs(StepInputs):
 @pytest.fixture
 def fixture_shared_results():
     yield SharedResults(results={})
+
 
 def test_step_initiation_no_generic(fixture_shared_results):
     class TStep(Step):
@@ -63,6 +65,7 @@ def test_step_initiation_succesful_no_args_no_inputs(fixture_shared_results):
     step = TStep("test-step-1", NoArgs(), fixture_shared_results)
     assert step.inputs == NoInputs()
 
+
 def test_step_initiation_succesful_no_args(fixture_shared_results):
     class TStep(Step[TResults, NoArgs, TResources, TInputs]):
         NAME: ClassVar[str] = "TestStep"
@@ -93,6 +96,7 @@ def test_step_initiation_wrong_arg_type(fixture_shared_results):
     with pytest.raises(TypeError):
         step = TStep("test-step-1", TArgs(arg1=10), fixture_shared_results)
 
+
 def test_step_initiation_wrong_inputs_type(fixture_shared_results):
     """Step expects NoInputs but TInputs are given."""
 
@@ -105,10 +109,9 @@ def test_step_initiation_wrong_inputs_type(fixture_shared_results):
         step = TStep("test-step-1", NoArgs(), fixture_shared_results, TResources(service1=1), TInputs(input1=TResults(x=1)))
     assert str(exc.value).startswith("Step inputs are not type of <class 'pytraction.traction.NoInputs'>")
 
+
 def test_step_initiation_wrong_external_resources(fixture_shared_results):
     """Step expects NoInputs but TInputs are given."""
-    class TInputs(StepInputs):
-        input1: TResults
 
     class TStep(Step[TResults, NoArgs, NoResources, NoInputs]):
         NAME: ClassVar[str] = "TestStep"
@@ -118,10 +121,9 @@ def test_step_initiation_wrong_external_resources(fixture_shared_results):
     with pytest.raises(TypeError):
         step = TStep("test-step-1", NoArgs(), fixture_shared_results, NoInputs())
 
+
 def test_step_initiation_missing_arguments(fixture_shared_results):
     """Step initiation is missing shared_reults."""
-    class TInputs(StepInputs):
-        input1: TResults
 
     class TStep(Step[TResults, NoArgs, NoResources, NoInputs]):
         NAME: ClassVar[str] = "TestStep"
@@ -130,6 +132,19 @@ def test_step_initiation_missing_arguments(fixture_shared_results):
     
     with pytest.raises(pydantic.ValidationError):
         step = TStep("test-step-1", NoArgs(), NoInputs())
+
+
+def test_step_run_results(fixture_shared_results):
+    """Step initiation is missing shared_reults."""
+    class TStep(Step[TResults, NoArgs, NoResources, NoInputs]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results.x = 10
+            
+    step = TStep("test-step-1", NoArgs(), fixture_shared_results, NoResources(), NoInputs())
+    step.run()
+    assert step.results.x == 10
+
 
 def test_inputs_invalid_field_type():
     class TInputs(StepInputs):

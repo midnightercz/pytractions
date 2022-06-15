@@ -84,9 +84,6 @@ class StepState(enum.Enum):
     ERROR=5
 
 
-#class StepResultsDict(TypedDict):
-#    results: Dict[Any, Any]
-
 
 class StepErrorsDict(TypedDict):
     errors: Dict[Any, Any]
@@ -709,8 +706,8 @@ class Tractor(pydantic.BaseModel):
 class NoArgs(ArgsTypeCls):
     pass
 
-@dataclass
-class NoResources:
+
+class NoResources(ExtResourcesCls):
     pass
 
 @dataclass
