@@ -1,0 +1,720 @@
+import abc
+import copy
+import datetime
+from dataclasses import make_dataclass, asdict
+from functools import partial
+import inspect
+
+from typing import (
+    Dict, List, Callable, Optional, TypedDict, Any, Type, Sequence,
+    Generic, TypeVar, Protocol, Mapping, ClassVar, cast, get_args,
+    Tuple, NamedTuple, Union, NewType, runtime_checkable, Callable, Iterator,
+    _GenericAlias)
+import typing_inspect
+
+
+import enum
+from dataclasses_json import dataclass_json
+import pydantic
+import pydantic.generics
+import pydantic.fields
+import pydantic.main
+from pydantic.dataclasses import dataclass
+
+Validator = Callable[Any, Any]
+
+class ArgFromResult:
+
+    @classmethod
+    def __get_validators__(cls):
+        yield []
+
+    def __init__(self, shared_results, result, accesor):
+        self.result = result
+        self.accesor = accesor
+        self.shared_results = shared_results
+
+    def __call__(self):
+        #print("RESULT", self.result)
+        #print("SHARED RESULTS", self.shared_results.results)
+        return self.accesor(self.shared_results.results[self.result])
+
+
+def empty_on_error_callback() -> None:
+    return None
+
+
+def isodate_now() -> str:
+    """Return current datetime in iso8601 format."""
+    return "%s%s" % (datetime.datetime.utcnow().isoformat(), "Z")
+
+
+class StepFailedError(Exception):
+    """Exception indidating failure of a step."""
+
+
+class Secret:
+    """Class for storing sensitive values used as argument for Step class."""
+
+    value: str
+
+    __validators__: List[Validator] = []
+
+    @classmethod
+    def __get_validators__(cls) -> Iterator[Validator]:
+        yield from cls.__validators__
+
+    def __init__(self, val: str):
+        """Init secret instance."""
+        self.value = val
+
+    def __str__(self) -> str:
+        """Return *CENSORED* constant string."""
+        return "*CENSORED*"
+
+
+class StepState(enum.Enum):
+    """Enum-like class to store step state."""
+    
+    READY=0
+    PREP=1
+    RUNNING=2
+    FINISHED=3
+    FAILED=4
+    ERROR=5
+
+
+#class StepResultsDict(TypedDict):
+#    results: Dict[Any, Any]
+
+
+class StepErrorsDict(TypedDict):
+    errors: Dict[Any, Any]
+
+
+class ArgsTypeCls(pydantic.generics.GenericModel):
+    pass
+
+
+class ExtResourcesCls(pydantic.generics.GenericModel):
+    pass
+
+
+ArgsType = TypeVar("ArgsType", bound=ArgsTypeCls)
+ExtResourcesType = TypeVar("ExtResourcesType", bound=ExtResourcesCls)
+
+
+class ResultsMeta(pydantic.main.ModelMetaclass):
+    def __new__(cls, name, bases, attrs):
+        annotations = attrs.get("__annotations__", {})
+        for attrk, attrv in attrs.items():
+            if attrk in ['dump', 'load']:
+                continue
+            if attrk.startswith("__"):
+                continue
+            if inspect.ismethod(attrv):
+                continue
+            if inspect.ismethoddescriptor(attrv):
+                continue
+            if attrk not in annotations:
+                raise TypeError("%s has to be annotated" % attrk)
+        for annotated in annotations:
+            if annotated not in attrs:
+                raise TypeError("Attribute %s is missing default value" % annotated)
+
+        return super().__new__(cls, name, bases, attrs)
+
+class StepResultsModel(pydantic.BaseModel, metaclass=ResultsMeta):
+    pass
+
+class StepResults(StepResultsModel):
+    """Class to store results of step."""
+
+    #__validators__: List[Validator] = []
+
+    def dump(self) -> Dict[str, Any]:
+        pass
+
+    def load(self, results: Dict[str, Any]) -> None:
+        pass
+
+    #@classmethod
+    #def __get_validators__(cls) -> Iterator[Validator]:
+    #    yield from cls.__validators__
+
+class StepInputs(pydantic.BaseModel):
+    @pydantic.validator('*', pre=True)
+    def valid_fields(cls, v):
+        if not isinstance(v, StepResults):
+            #print(type(v),v)
+            raise ValueError("field must be StepResults subclass, but is %s" % type(v))
+        return v
+
+
+class NoInputs(StepInputs):
+    pass
+
+
+class SharedResults(pydantic.BaseModel):
+    results: Dict[str, Any]
+    
+    class Config:
+        copy_on_model_validation=False
+
+ResultsType = TypeVar("ResultsType", bound=StepResults)
+InputsType = TypeVar("InputsType", bound=StepInputs)
+
+
+class StepErrors:
+    """Class to store results of step."""
+
+    errors: Dict[Any, Any]
+
+    __validators__: List[Validator] = []
+
+    @classmethod
+    def __get_validators__(cls) -> Iterator[Validator]:
+        yield from cls.__validators__
+
+    def __init__(self) -> None:
+        """Init step results."""
+        self.errors = {}
+
+    def dump(self) -> Dict[Any, Any]:
+        """Return step results in json-compatible dict object."""
+        return copy.deepcopy(self.errors)
+
+    def load(self, obj:  Dict[Any, Any]) -> None:
+        """Load step results from dict object."""
+        self.errors = obj
+
+
+class StepStats(TypedDict):
+    started: Optional[str]
+    finished: Optional[str]
+    skip: bool
+    skip_reason: Optional[str]
+    skipped: bool
+    state: StepState
+
+
+class StepDumpStats(TypedDict):
+    started: Optional[str]
+    finished: Optional[str]
+    skip: bool
+    skip_reason: Optional[str]
+    skipped: bool
+    state: str
+
+
+class StepDict(TypedDict):
+    name: str
+    step_kwargs: Dict[str, Any]
+    uid: str
+    details: Dict[Any, Any]
+    stats: StepStats
+    results: Dict[Any, Any]
+    errors: Dict[Any, Any]
+
+@dataclass
+class StepDumpDict(Generic[ResultsType]):
+    name: str
+    step_kwargs: Dict[str, Any]
+    uid: str
+    details: Dict[Any, Any]
+    stats: StepDumpStats
+    results: ResultsType
+    errors: Dict[Any, Any]
+
+StepOnUpdateCallable = Optional[Callable[[], None]]
+StepOnErrorCallable = Optional[Callable[[], None]]
+
+
+class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResourcesType, InputsType], validate_all=True):
+    """Base class for a Step.
+
+    How to use this class: Few things are needed to implement custom step class.
+    First, user needs to overwrite _run method which should do include all the code
+    which is meant to be do desired step operation.
+    In run method, user can access following instance attributes:
+    `step_args` - set when Step is initialized. These two variables
+        are meant to hold data for the step. User needs to design step to work only
+        with data which are json-compatible
+    `shared_results` - shared dict-like object where step can store data for
+        another steps or load data generated by previously ran steps.
+    `external_resources` - resources which are needed for step to run but are not data.
+        This can be for example logger, initialized client for external service and
+        similar
+    `results` - `StepResults` instance used to store data generated by the step.
+
+    To provide detailed info about step status, step can store these details in _details
+    attribute of the step instance. Details can contain anything json compatible. To
+    set details to initial state, user needs to overwrite _init_details.
+    Later, update_details method can be used to updating the details.
+    User can overwrite `_pre_run` method to do any kind of 'lazy' preparation of data or
+    set `skip` and `skip_reason` variables in the instance to prevent step from the
+    execution.
+    When there's data error or wrong data are provided, _run method can
+    raise StepFailedError to set step to 'failed' state. Failed state indicates
+    there's problem with data or configuration and step in this state cannot be
+    executed again. If any other exception occurs and is not caught in _run, step is set
+    to 'error' state and can be executed again. Only other two states indicating step is
+    able to be executed are 'ready' and 'prep'. Ready state is set after initialization
+    of the step instance. Step is switched to 'prep' state just before `_pre_run`
+    is called. If step is in 'prep' state  `_pre_run` is not called again. After step
+    finished the execution, and if there wasn't any error, `results` instance attribute
+    is stored to `shared_results`.
+    Last thing to do is to set NAME class attribute identify type of step
+    """
+
+    NAME: ClassVar[str]
+    #INPUT_DEPS: ClassVar[Dict[str, Union[Sequence[str], str]]] = {}
+    uid: str
+    state: StepState
+    skip: bool
+    skip_reason: Optional[str]
+    results: ResultsType
+    errors: StepErrors
+    _details_initted: bool
+    _details: Dict[Any, Any]
+    stats: StepStats
+    external_resources: Optional[ExtResourcesType]
+    shared_results: SharedResults
+    _step_args: Dict[str, Any]
+    masked_args: Dict[str, Any]
+    _inputs: Optional[InputsType]
+    inputs: Optional[InputsType]
+    args: object
+
+
+    @pydantic.validate_arguments(config=dict(arbitrary_types_allowed=False))
+    def __init__(self,
+                 uid: str,
+                 step_args: ArgsType,
+                 shared_results: SharedResults,
+                 external_resources: Optional[ExtResourcesType]=None,
+                 inputs: Optional[InputsType]=None):
+        """Initilize the step.
+
+        Args:
+            uid: (str)
+                An unique id for indentifying two steps of the same class
+            shared_results: (dict-like object)
+                Object to store shared data between steps
+            external_resources: any-object
+                Reference for external resources (in any form) which are constant and
+                shouldn't be part of the step state or step data
+            inputs: dict(str, str)
+                Mapping of inputs to results of steps identified by uid
+        """
+        type_args = get_args(self.__orig_bases__[0]) # type: ignore
+        #print(self.__orig_bases__[0])
+        #print(self.__parameters__)
+        #print("get args", get_args(self.__orig_bases__[0]))
+        stack = [self]
+        item = None
+        #print(self.__fields__['results'])
+        #print(type(self.__fields__['results']))
+        #print(dir(self.__fields__['results']))
+        #print(self.__fields__['results'].type_)
+        #print(dir(self.__fields__['results'].type_()))
+        #assert False
+        #print("...")
+        while stack:
+            #print(stack)
+            item = stack.pop(0)
+            #print("BASE", type(item), item, item.__class__, item.__class__.__name__)
+            #print("ITEM ARGS", get_args(item))
+            #if get_args(item):
+            #    results = type_args[0]()
+            #    print("ITEM RESULTS", results)
+            #print(dir(item))
+            if item.__class__.__name__ == "Step":
+                break
+
+            #print(dir(item))
+            if hasattr(item, "__orig_bases__"):
+                for base in item.__orig_bases__:
+                    stack.insert(0, base)
+            if hasattr(item, "__origin__"):
+                if item.__origin__ == Step:
+                    #print("break")
+                    break
+                stack.insert(0, item.__origin__)
+
+        #print("ITEM", item)
+        #print(dir(get_args(item)[0]), get_args(item)[0].__class__)
+        #print("ARGS", get_args(item))
+        #print("TYPE ARGS", type_args)
+        #print("ARGS", get_args(self.__orig_bases__[0]), type_args[0]())
+        type_args = get_args(item)
+        if not type_args:
+            raise TypeError("Missing generic annotations for Step class. Use Step[ResultsCls, ArgsCls, ExtResourcesCls, InputsCls]")
+
+        results_type = type_args[0]
+        args_type = type_args[1]
+        resources_type = type_args[2]
+        inputs_type = type_args[3]
+
+        if type(step_args) != args_type:
+            raise TypeError("Step arguments are not type of %s but %s" % (args_type, type(step_args)))
+        if type(shared_results) != SharedResults:
+            raise TypeError("Step shared_results are not type of %s but %s" % (SharedResults, type(step_args)))
+        if external_resources is not None and type(external_resources) != resources_type:
+            raise TypeError("Step external resources are not type of %s but %s" % (resources_type, type(external_resources)))
+        if inputs is not None and type(inputs) != inputs_type:
+            raise TypeError("Step inputs are not type of %s but %s" % (inputs_type, type(inputs)))
+
+        results = results_type()
+        masked_args = dict(
+            [
+                (k.name, str(getattr(step_args, k))) if isinstance(getattr(step_args, k), Secret) else (k, getattr(step_args, k))
+                for k,v in step_args.dict().items()
+            ]
+        )
+
+        _step_args = dict(
+            [
+                (k.name, getattr(step_args, k).value) if isinstance(getattr(step_args, k), Secret) else (k, getattr(step_args, k))
+                for k,v in step_args.dict().items()
+            ]
+        )
+        args_space = {}
+        for k, v in _step_args.items():
+            if isinstance(v, ArgFromResult):
+                print('arg from result', k, v,)
+                args_space[k] = property(partial(lambda v, x: v.__call__(), v))
+            else:
+                args_space[k] = property(partial(_step_args.get, k))
+
+
+        args = dataclass(make_dataclass(
+            "%sArgs" % self.NAME,
+            [],
+            namespace=args_space
+        ))()
+        stats = {
+            "started": None,
+            "finished": None,
+            "skip": False,
+            "skip_reason": "",
+            "skipped": False,
+            "state": StepState.READY,
+        }
+        super().__init__(uid=uid,
+                external_resources=external_resources,
+                shared_results=shared_results,
+                details_inited=False,
+                skip=False,
+                skip_reason="",
+                state=StepState.READY,
+                results=results,
+                masked_args=masked_args,
+                _step_args=_step_args,
+                _inputs=inputs or StepInputs(),
+                inputs=inputs or StepInputs(),
+                args=args,
+                errors=StepErrors(),
+                stats=stats
+                )
+        self.shared_results = shared_results
+        #print("SHARED RESULTS ID", id(self.shared_results))
+
+    #@property
+    #def results(self) -> ResultsType:
+    #    return self.field_results
+
+    @property
+    def fullname(self) -> str:
+        """Full name of class instance."""
+        return "%s:%s" % (self.NAME, self.uid)
+
+    def run(self, on_update: StepOnUpdateCallable=None) -> None:
+        """Run the step code.
+
+        Step is expected to run when step state is ready, prep or error. For other
+        state running the step code is omitted. If step is in ready state,
+        _pre_run method is executed first and state is switched to prep.
+        After prep phase finishes, and skip is not set to True, _run method containing
+        all the code for running the step is executed.
+        After _run finishes, step state is set to failed, error or finished. Statistics
+        of step are update and potential results of step are stored in shared data object
+        After every change of step state, on_update callback is called if set
+        """
+        _on_update: StepOnUpdateCallable = lambda: None
+        if on_update:
+            _on_update = on_update
+        self._reset_stats()
+        if self.state == StepState.READY:
+            self.stats["started"] = isodate_now()
+
+            self.state = StepState.PREP
+            self._pre_run()
+            _on_update() # type: ignore
+        try:
+            if self.state not in (StepState.PREP, StepState.ERROR):
+                return
+            if not self.skip:
+                self.state = StepState.RUNNING
+                _on_update() # type: ignore
+                self._run(on_update=_on_update)
+        except StepFailedError:
+            self.state = StepState.FAILED
+        except Exception:
+            self.state = StepState.ERROR
+            raise
+        else:
+            self.state = StepState.FINISHED
+        finally:
+            self._finish_stats()
+            self._store_results()
+            _on_update() # type: ignore
+
+    def _pre_run(self) -> None:
+        """Execute code needed before step run.
+
+        In this method, all neccesary preparation of data can be done.
+        It can be also used to determine if step should run or not by setting
+        self.skip to True and providing self.skip_reason string with explanation.
+        """
+        pass
+
+    def _reset_stats(self) -> None:
+        self.stats = {
+            "started": None,
+            "finished": None,
+            "skip": self.skip,
+            "skip_reason": self.skip_reason,
+            "skipped": False,
+            "state": self.state,
+        }
+
+    def _finish_stats(self) -> None:
+        self.stats["finished"] = isodate_now()
+        self.stats["skipped"] = self.skip
+        self.stats["skip"] = self.skip
+        self.stats["skip_reason"] = self.skip_reason
+        self.stats["state"] = self.state
+
+    def _store_results(self) -> None:
+        self.shared_results.results[self.fullname] = self.results
+        #print("STORE", type(self),  id(self.shared_results), self.shared_results)
+
+    @abc.abstractmethod
+    def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pragma: no cover
+        """Run code of the step.
+
+        Method expects raise StepFailedError if step code fails due data error
+        (incorrect configuration or missing/wrong data). That ends with step
+        state set to failed.
+        If error occurs due to uncaught exception in this method, step state
+        will be set to error
+        """
+        raise NotImplementedError
+
+    def _init_details(self) -> None:
+        """Initialize step details.
+
+        It's called internally before step details exported to json and before
+        calling update_details if hasn't been called before.
+        """
+        pass
+
+    def _update_details(self, details: Dict[str, Any]) -> None:  # pragma: no cover
+        """Update step details (needs to be overwritten)."""
+        pass
+
+    def update_details(self, details_args: Dict[str, Any]) -> None:
+        """Update step details, init them if needed.
+
+        Also init details if those haven't been initilized before
+        """
+        if not self._details_initted:
+            self._init_details()
+            self._details_initted = True
+        self._update_details(details_args)
+
+    def dump(self) -> dict[str, Any]:
+        """Dump step data into json compatible complex dictionary."""
+        if not self._details_initted:
+            self._init_details()
+            self._details_initted = True
+        if not self.stats:
+            self._reset_stats()
+
+        stats_dump: StepDumpStats = {
+            "started": self.stats['started'],
+            "finished": self.stats['finished'],
+            "skip": self.stats['skip'],
+            "skip_reason": self.stats['skip_reason'],
+            "skipped": self.stats['skipped'],
+            "state": str(self.stats['state'].name)
+        }
+
+        return {
+            "name": self.NAME,
+            "step_args": self.masked_args,
+            "uid": self.uid,
+            "details": copy.deepcopy(self._details),
+            "stats": stats_dump,
+            "results": self.results.dump(),
+            "errors": self.errors.dump(),
+        }
+
+    @classmethod
+    def load(cls: Type["Step[ResultsType, ArgsType, ExtResourcesType, InputsType]"],
+             obj: dict[str, Any],
+             shared_results: Dict[str, Any]) -> "Step[ResultsType, ArgsType, ExtResourcesType, InputsType]":
+        """Load step data from dictionary produced by dump method."""
+
+        stats: StepStats = {
+            "started": obj['stats']['started'],
+            "finished": obj['stats']['finished'],
+            "skip": obj['stats']['skip'],
+            "skip_reason": obj['stats']['skip_reason'],
+            "skipped": obj['stats']['skipped'],
+            "state": StepState[obj['stats']['state']]
+        }
+        ret: Step[ResultsType, ArgsType, ExtResourcesType, InputsType] = cls(obj["uid"], obj["step_args"], SharedResults(shared_results))
+        ret._details = obj["details"]
+        ret.stats = stats
+        ret.skip = obj["stats"]["skip"]
+        ret.results.load(obj["results"])
+        ret.errors.load(obj["errors"])
+        ret._details_initted = True
+        ret.skip_reason = obj["stats"]["skip_reason"]
+        ret.state = StepState[obj["stats"]["state"]]
+        return ret
+
+
+
+
+class InputsMeta(type):
+    def __new__(cls, name, bases, attrs):
+
+        for key, atype in attrs.get('__annotations__', {}).items():
+            print(atype, type(atype), typing_inspect.get_origin(atype))
+            if type(atype) == str:
+                if not issubclass(globals()[atype], Step):
+                    raise ValueError("Attribute '%s' has to be annotated as %s subclass" % (key, Step))
+            elif type(atype) == _GenericAlias:
+                if not issubclass(typing_inspect.get_origin(atype), Step):
+                    raise ValueError("Attribute '%s' has to be annotated as %s subclass" % (key, Step))
+            else:
+                if not issubclass(atype, Step):
+                    raise ValueError("Attribute '%s' has to be annotated as %s subclass" % (key, Step))
+
+        ret = super().__new__(cls, name, bases, attrs)
+        return dataclass(ret)
+
+
+
+
+class TractorDumpDict(TypedDict):
+    steps: List[Dict[str, Any]]
+    shared_results: Dict[str, Any]
+
+
+class TractorValidateResult(TypedDict):
+    missing_inputs: List[Tuple[str, str, str]]
+    valid: bool
+
+
+class Tractor(pydantic.BaseModel):
+    """Class which runs sequence of steps."""
+
+    steps: List[Step[Any, Any, Any, Any]]
+    shared_results: SharedResults
+    current_step: Optional[Step[Any, Any, Any, Any]]
+    step_map: Dict[str, Type[Step[Any, Any, Any, Any]]]
+
+
+    def __init__(self, step_map: Dict[str, Type[Step[Any, Any, Any, Any]]]) -> None:
+        """Initialize the stepper.
+
+        Args:
+            step_map: (mapping of "step-name": <step_class>)
+                Mapping of step names to step classes. Used when loading stepper from
+                json-compatible dict data
+        """
+        step_map = step_map
+        shared_results = SharedResults(results={})
+        current_step = None
+        super().__init__(
+            step_map=step_map,
+            shared_results=shared_results,
+            current_step=current_step,
+            steps=[]
+        )
+
+    def add_step(self, step: Step[Any, Any, Any, Any]) -> None:
+        """Add step to step sequence."""
+        self.steps.append(step)
+        self.shared_results.results[step.fullname] = None
+
+    def dump(self) -> TractorDumpDict:
+        """Dump stepper state and shared_results to json compatible dict."""
+        steps: List[Dict[str, Any]] = []
+        out: TractorDumpDict = {"steps": steps, "shared_results": self.shared_results}
+        for step in self.steps:
+            steps.append(step.dump())
+        return out
+
+    def load(self, stepper_obj: TractorDumpDict) -> None:
+        """Load and initialize stepper from data produced by dump method."""
+        self.steps = []
+        self.shared_results = stepper_obj["shared_results"]
+        for step_obj in stepper_obj["steps"]:
+            step = self.step_map[step_obj["name"]].load(step_obj, self.shared_results)
+            self.steps.append(step)
+
+    def run(self, 
+            start_from: int=0,
+            on_error: StepOnErrorCallable=None,
+            on_update: StepOnUpdateCallable=None) -> None:
+        """Run the stepper sequence."""
+        _on_error: StepOnErrorCallable = empty_on_error_callback
+        if on_error is not None:
+            _on_error = on_error
+        try:
+            for step in self.steps[start_from:]:
+                self.current_step = step
+                step.run(on_update=on_update)
+        except Exception:
+            _on_error() # type: ignore
+            raise
+
+    def validate(self) -> TractorValidateResult:
+        missing_inputs: List[Tuple[str,str,str]] = []
+        for i in range(0, len(self.steps)):
+            gathered_deps = []
+            for p in range(0, i):
+                gathered_deps.append(self.steps[p].fullname)
+            step = self.steps[i]
+            #for _input, mapped_to in step.inputs_mapping.items():
+            #    if isinstance(mapped_to, (tuple, list)):
+            #        full_mapped = ["%s:%s" % (step.INPUT_DEPS[_input], x) for x in mapped_to]
+            #        if set(full_mapped) & set(gathered_deps):
+            #            missing_inputs.append((step.fullname, _input, full_mapped))
+            #    else:
+            #        if "%s:%s" % (step.INPUT_DEPS[_input], mapped_to) not in gathered_deps:
+            #            missing_inputs.append((step.fullname, _input, "%s:%s" % (step.INPUT_DEPS[_input], mapped_to)))
+
+        valid = True
+        if missing_inputs:
+            valid = False
+        return TractorValidateResult(missing_inputs=missing_inputs, valid=valid)
+
+
+class NoArgs(ArgsTypeCls):
+    pass
+
+@dataclass
+class NoResources:
+    pass
+
+@dataclass
+class NoResult:
+    pass
+
+
