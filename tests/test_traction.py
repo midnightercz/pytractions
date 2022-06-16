@@ -7,11 +7,11 @@ import pytest
 
 from pytraction.traction import (
     Step, StepResults, ArgsTypeCls, NoInputs, StepInputs, NoResources,
-    ExtResourcesCls, StepOnUpdateCallable,
+    ExtResourcesCls, StepOnUpdateCallable, StepErrors, StepDetails,
     NoArgs, SharedResults,
     StepFailedError, Tractor, Secret,
     StepOnErrorCallable, StepOnUpdateCallable,
-    TractorDumpDict, StepResults, NoDetails)
+    TractorDumpDict, StepResults, NoDetails, StepState)
 
 
 class TResults(StepResults):
@@ -28,6 +28,10 @@ class TResources(ExtResourcesCls):
 
 class TInputs(StepInputs):
     input1: TResults
+
+
+class TDetails(StepDetails):
+    status: str
 
 
 @pytest.fixture
@@ -64,6 +68,18 @@ def test_step_initiation_succesful_no_args_no_inputs(fixture_shared_results):
     
     step = TStep("test-step-1", NoArgs(), fixture_shared_results)
     assert step.inputs == NoInputs()
+    assert step.state == StepState.READY
+    assert step.skip == False
+    assert step.skip_reason == ""
+    assert step.stats == {
+        "started": None,
+        "finished": None,
+        "skip": False,
+        "skip_reason": "",
+        "skipped": False,
+        "state": StepState.READY
+    }
+    assert step.errors == StepErrors()
 
 
 def test_step_initiation_succesful_no_args(fixture_shared_results):
@@ -145,16 +161,19 @@ def test_step_run_results(fixture_shared_results):
     step.run()
     assert step.results.x == 10
 
+
 def test_step_run_details(fixture_shared_results):
     """Step initiation is missing shared_reults."""
-    class TStep(Step[TResults, NoArgs, NoResources, NoInputs, NoDetails]):
+    class TStep(Step[TResults, NoArgs, NoResources, NoInputs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.details.status = "ok"
             self.results.x = 10
             
     step = TStep("test-step-1", NoArgs(), fixture_shared_results, NoResources(), NoInputs())
     step.run()
     assert step.results.x == 10
+    assert step.details.status == 'ok'
 
 
 def test_inputs_invalid_field_type():

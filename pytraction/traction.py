@@ -164,20 +164,10 @@ InputsType = TypeVar("InputsType", bound=StepInputs)
 DetailsType = TypeVar("DetailsType", bound=StepDetails)
 
 
-class StepErrors:
+class StepErrors(pydantic.BaseModel):
     """Class to store results of step."""
 
-    errors: Dict[Any, Any]
-
-    __validators__: List[Validator] = []
-
-    @classmethod
-    def __get_validators__(cls) -> Iterator[Validator]:
-        yield from cls.__validators__
-
-    def __init__(self) -> None:
-        """Init step results."""
-        self.errors = {}
+    errors: Dict[Any, Any] = {}
 
     def dump(self) -> Dict[Any, Any]:
         """Return step results in json-compatible dict object."""
@@ -274,8 +264,7 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
     skip_reason: Optional[str]
     results: ResultsType
     errors: StepErrors
-    _details_initted: bool
-    _details: DetailsType
+    details: DetailsType
     stats: StepStats
     external_resources: Optional[ExtResourcesType]
     shared_results: SharedResults
@@ -382,8 +371,7 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         super().__init__(uid=uid,
                 external_resources=external_resources,
                 shared_results=shared_results,
-                details_inited=False,
-                _details=details,
+                details=details,
                 skip=False,
                 skip_reason="",
                 state=StepState.READY,
@@ -491,28 +479,6 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         """
         raise NotImplementedError
 
-    def _init_details(self) -> None:
-        """Initialize step details.
-
-        It's called internally before step details exported to json and before
-        calling update_details if hasn't been called before.
-        """
-        pass
-
-    def _update_details(self, details: Dict[str, Any]) -> None:  # pragma: no cover
-        """Update step details (needs to be overwritten)."""
-        pass
-
-    def update_details(self, details_args: Dict[str, Any]) -> None:
-        """Update step details, init them if needed.
-
-        Also init details if those haven't been initilized before
-        """
-        if not self._details_initted:
-            self._init_details()
-            self._details_initted = True
-        self._update_details(details_args)
-
     def dump(self) -> dict[str, Any]:
         """Dump step data into json compatible complex dictionary."""
         if not self._details_initted:
@@ -566,8 +532,6 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         return ret
 
 
-
-
 class InputsMeta(type):
     def __new__(cls, name, bases, attrs):
 
@@ -585,8 +549,6 @@ class InputsMeta(type):
 
         ret = super().__new__(cls, name, bases, attrs)
         return dataclass(ret)
-
-
 
 
 class TractorDumpDict(TypedDict):
