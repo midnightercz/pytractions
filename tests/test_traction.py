@@ -22,6 +22,10 @@ class TArgs(ArgsTypeCls):
     arg1: int
 
 
+class TSecretArgs(ArgsTypeCls):
+    arg1: Secret
+
+
 class TResources(ExtResourcesCls):
     service1: int
 
@@ -31,7 +35,7 @@ class TInputs(StepInputs):
 
 
 class TDetails(StepDetails):
-    status: str
+    status: str = ""
 
 
 @pytest.fixture
@@ -176,6 +180,54 @@ def test_step_run_details(fixture_shared_results):
     assert step.details.status == 'ok'
 
 
+def test_step_run_status_update(fixture_shared_results):
+    """Step initiation is missing shared_reults."""
+
+    states_collected = []
+
+    def state_collect(step):
+        states_collected.append(step.state)
+
+    class TStep(Step[TResults, NoArgs, NoResources, NoInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.details.status = "ok"
+            on_update(self)
+            self.results.x = 10
+            
+    step = TStep("test-step-1", NoArgs(), fixture_shared_results, NoResources(), NoInputs())
+    step.run(on_update=state_collect)
+    assert step.results.x == 10
+    assert step.details.status == 'ok'
+    assert states_collected == [StepState.PREP, StepState.RUNNING, StepState.RUNNING, StepState.FINISHED]
+
+
+def test_step_run_secret_arg(fixture_shared_results):
+    """Step initiation is missing shared_reults."""
+
+    class TStep(Step[TResults, TSecretArgs, NoResources, NoInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results.x = self.args.arg1
+
+    step = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret")), fixture_shared_results, NoResources(), NoInputs())
+    step.run()
+            
+    assert step.args.arg1 == 'supersecret'
+
+
+def test_step_dict(fixture_shared_results):
+    """Step initiation is missing shared_reults."""
+
+    class TStep(Step[TResults, TSecretArgs, NoResources, NoInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results.x = self.args.arg1
+
+    step = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret")), fixture_shared_results, NoResources(), NoInputs())
+    assert step.dict()['args']['arg1'] == "*CENSORED*"
+
+
 def test_inputs_invalid_field_type():
     class TInputs(StepInputs):
         input1: int
@@ -189,9 +241,25 @@ def test_results_no_default():
             x: int
     assert str(exc.value) == "Attribute x is missing default value"
 
+
 def test_results_default():
     class TResults(StepResults):
         x: int = 10
 
     res = TResults()
     assert res.x == 10
+
+
+def test_results_no_default():
+    with pytest.raises(TypeError) as exc:
+        class TDetails(StepDetails):
+            x: int
+    assert str(exc.value) == "Attribute x is missing default value"
+
+
+def test_results_default():
+    class TDetails(StepDetails):
+        x: int = 10
+
+    dets = TDetails()
+    assert dets.x == 10

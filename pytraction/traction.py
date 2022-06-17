@@ -58,19 +58,28 @@ class Secret:
 
     value: str
 
-    __validators__: List[Validator] = []
-
     @classmethod
     def __get_validators__(cls) -> Iterator[Validator]:
-        yield from cls.__validators__
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, v):
+        if not isinstance(v, cls):
+            raise TypeError('Secret required')
+        return v
 
     def __init__(self, val: str):
         """Init secret instance."""
         self.value = val
 
     def __str__(self) -> str:
-        """Return *CENSORED* constant string."""
-        return "*CENSORED*"
+        return self.value
+
+    def __eq__(self, other):
+        if isinstance(other, Secret):
+            return self.value == other.value
+        else:
+            return self.value == other
 
 
 class StepState(enum.Enum):
@@ -90,7 +99,27 @@ class StepErrorsDict(TypedDict):
 
 
 class ArgsTypeCls(pydantic.generics.GenericModel):
-    pass
+
+    def dict(self, *,
+        include: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
+        exclude: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
+        by_alias: bool = False,
+        skip_defaults: bool = None,
+        exclude_unset: bool = False,
+        exclude_defaults: bool = False,
+        exclude_none: bool = False,
+    ) -> Dict[str, Any]:
+        model_mapping = {}
+        for k,v in self.__dict__.items():
+            if type(v) == Secret:
+                model_mapping[k] = (str, "*CENSORED*")
+            else:
+                model_mapping[k] = (type(v), v)
+        m = pydantic.create_model(
+            self.__class__.__name__+"Dump",
+            **model_mapping
+        )
+        return pydantic.BaseModel.dict(m())
 
 
 class ExtResourcesCls(pydantic.generics.GenericModel):
@@ -219,7 +248,8 @@ StepOnUpdateCallable = Optional[Callable[[], None]]
 StepOnErrorCallable = Optional[Callable[[], None]]
 
 
-class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResourcesType, InputsType, DetailsType], validate_all=True):
+class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResourcesType, InputsType, DetailsType],
+           validate_all=True, allow_population_by_field_name=False, extra=pydantic.Extra.forbid, underscore_attrs_are_private=False):
     """Base class for a Step.
 
     How to use this class: Few things are needed to implement custom step class.
@@ -268,12 +298,8 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
     stats: StepStats
     external_resources: Optional[ExtResourcesType]
     shared_results: SharedResults
-    _step_args: Dict[str, Any]
-    masked_args: Dict[str, Any]
-    _inputs: Optional[InputsType]
     inputs: Optional[InputsType]
-    args: object
-
+    args: ArgsType
 
     @pydantic.validate_arguments(config=dict(arbitrary_types_allowed=False))
     def __init__(self,
@@ -333,33 +359,26 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         results = results_type()
         details = details_type()
 
-        masked_args = dict(
-            [
-                (k.name, str(getattr(step_args, k))) if isinstance(getattr(step_args, k), Secret) else (k, getattr(step_args, k))
-                for k,v in step_args.dict().items()
-            ]
-        )
-
         _step_args = dict(
             [
-                (k.name, getattr(step_args, k).value) if isinstance(getattr(step_args, k), Secret) else (k, getattr(step_args, k))
+                (k, getattr(step_args, k).value) if isinstance(getattr(step_args, k), Secret) else (k, getattr(step_args, k))
                 for k,v in step_args.dict().items()
             ]
         )
-        args_space = {}
-        for k, v in _step_args.items():
-            if isinstance(v, ArgFromResult):
-                print('arg from result', k, v,)
-                args_space[k] = property(partial(lambda v, x: v.__call__(), v))
-            else:
-                args_space[k] = property(partial(_step_args.get, k))
+        #args_space = {}
+        #for k, v in _step_args.items():
+        #    if isinstance(v, ArgFromResult):
+        #        print('arg from result', k, v,)
+        #        args_space[k] = property(partial(lambda v, x: v.__call__(), v))
+        #    else:
+        #        args_space[k] = property(partial(_step_args.get, k))
 
 
-        args = dataclass(make_dataclass(
-            "%sArgs" % self.NAME,
-            [],
-            namespace=args_space
-        ))()
+        #args = dataclass(make_dataclass(
+        #    "%sArgs" % self.NAME,
+        #    [],
+        #    namespace=args_space
+        #))()
         stats = {
             "started": None,
             "finished": None,
@@ -376,11 +395,8 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
                 skip_reason="",
                 state=StepState.READY,
                 results=results,
-                masked_args=masked_args,
-                _step_args=_step_args,
-                _inputs=inputs or StepInputs(),
                 inputs=inputs or StepInputs(),
-                args=args,
+                args=step_args,
                 errors=StepErrors(),
                 stats=stats
                 )
@@ -408,7 +424,7 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         of step are update and potential results of step are stored in shared data object
         After every change of step state, on_update callback is called if set
         """
-        _on_update: StepOnUpdateCallable = lambda: None
+        _on_update: StepOnUpdateCallable = lambda step: None
         if on_update:
             _on_update = on_update
         self._reset_stats()
@@ -417,13 +433,13 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
 
             self.state = StepState.PREP
             self._pre_run()
-            _on_update() # type: ignore
+            _on_update(self) # type: ignore
         try:
             if self.state not in (StepState.PREP, StepState.ERROR):
                 return
             if not self.skip:
                 self.state = StepState.RUNNING
-                _on_update() # type: ignore
+                _on_update(self) # type: ignore
                 self._run(on_update=_on_update)
         except StepFailedError:
             self.state = StepState.FAILED
@@ -435,7 +451,7 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         finally:
             self._finish_stats()
             self._store_results()
-            _on_update() # type: ignore
+            _on_update(self) # type: ignore
 
     def _pre_run(self) -> None:
         """Execute code needed before step run.

@@ -29,7 +29,7 @@ setup(
     long_description="TBD",
     long_description_content_type="text/x-rst",
     author="Jindrich Luza",
-    author_email="jluza@rehdat.com",
+    author_email="jluza@redhat.com",
     url="https://github.com/midnightercz/pytraction",
     classifiers=classifiers,
     packages=find_packages(exclude="tests"),
