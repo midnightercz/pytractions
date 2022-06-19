@@ -23,21 +23,21 @@ from pydantic.dataclasses import dataclass
 
 Validator = Callable[Any, Any]
 
-class ArgFromResult:
-
-    @classmethod
-    def __get_validators__(cls):
-        yield []
-
-    def __init__(self, shared_results, result, accesor):
-        self.result = result
-        self.accesor = accesor
-        self.shared_results = shared_results
-
-    def __call__(self):
-        #print("RESULT", self.result)
-        #print("SHARED RESULTS", self.shared_results.results)
-        return self.accesor(self.shared_results.results[self.result])
+#class ArgFromResult:
+#
+#    @classmethod
+#    def __get_validators__(cls):
+#        yield []
+#
+#    def __init__(self, shared_results, result, accesor):
+#        self.result = result
+#        self.accesor = accesor
+#        self.shared_results = shared_results
+#
+#    def __call__(self):
+#        #print("RESULT", self.result)
+#        #print("SHARED RESULTS", self.shared_results.results)
+#        return self.accesor(self.shared_results.results[self.result])
 
 
 def empty_on_error_callback() -> None:
@@ -94,11 +94,8 @@ class StepState(enum.Enum):
 
 
 
-class StepErrorsDict(TypedDict):
-    errors: Dict[Any, Any]
 
-
-class ArgsTypeCls(pydantic.generics.GenericModel):
+class ArgsTypeCls(pydantic.generics.GenericModel, validate_assignment=True):
 
     def dict(self, *,
         include: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
@@ -122,7 +119,7 @@ class ArgsTypeCls(pydantic.generics.GenericModel):
         return pydantic.BaseModel.dict(m())
 
 
-class ExtResourcesCls(pydantic.generics.GenericModel):
+class ExtResourcesCls(pydantic.generics.GenericModel,validate_assignment=True):
     pass
 
 
@@ -134,7 +131,7 @@ class DefaultsModelMeta(pydantic.main.ModelMetaclass):
     def __new__(cls, name, bases, attrs):
         annotations = attrs.get("__annotations__", {})
         for attrk, attrv in attrs.items():
-            if attrk in ['dump', 'load']:
+            if attrk in ['dump', 'load', 'Config']:
                 continue
             if attrk.startswith("__"):
                 continue
@@ -152,28 +149,25 @@ class DefaultsModelMeta(pydantic.main.ModelMetaclass):
 
 
 class RequiredDefaultsModel(pydantic.BaseModel, metaclass=DefaultsModelMeta):
+    class Config:
+        validate_assignment = True
     pass
 
 
 class StepResults(RequiredDefaultsModel):
     """Class to store results of step."""
+    pass
 
-    def dump(self) -> Dict[str, Any]:
-        pass
-
-    def load(self, results: Dict[str, Any]) -> None:
-        pass
 
 class StepDetails(RequiredDefaultsModel):
     """Class to store step details to."""
     pass
 
 
-class StepInputs(pydantic.BaseModel):
+class StepInputs(pydantic.BaseModel, validate_assignment=True):
     @pydantic.validator('*', pre=True)
     def valid_fields(cls, v):
         if not isinstance(v, StepResults):
-            #print(type(v),v)
             raise ValueError("field must be StepResults subclass, but is %s" % type(v))
         return v
 
@@ -198,14 +192,6 @@ class StepErrors(pydantic.BaseModel):
 
     errors: Dict[Any, Any] = {}
 
-    def dump(self) -> Dict[Any, Any]:
-        """Return step results in json-compatible dict object."""
-        return copy.deepcopy(self.errors)
-
-    def load(self, obj:  Dict[Any, Any]) -> None:
-        """Load step results from dict object."""
-        self.errors = obj
-
 
 class StepStats(TypedDict):
     started: Optional[str]
@@ -223,6 +209,7 @@ class StepDumpStats(TypedDict):
     skip_reason: Optional[str]
     skipped: bool
     state: str
+
 
 
 class StepDict(TypedDict):
@@ -287,7 +274,6 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
     """
 
     NAME: ClassVar[str]
-    #INPUT_DEPS: ClassVar[Dict[str, Union[Sequence[str], str]]] = {}
     uid: str
     state: StepState
     skip: bool
@@ -300,6 +286,20 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
     shared_results: SharedResults
     inputs: Optional[InputsType]
     args: ArgsType
+
+    def __setattr__(self, key, value):
+        """Override setattr to make sure assigning to step.results doesn't break
+        existing references for step.results"""
+    
+        if key == 'results':
+            for k in value.__fields__:
+                v = getattr(value, k)
+                setattr(self.results, k, v)
+    
+            super().__setattr__(key, self.results)
+        else:
+            super().__setattr__(key, value)
+
 
     @pydantic.validate_arguments(config=dict(arbitrary_types_allowed=False))
     def __init__(self,
@@ -359,12 +359,6 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         results = results_type()
         details = details_type()
 
-        _step_args = dict(
-            [
-                (k, getattr(step_args, k).value) if isinstance(getattr(step_args, k), Secret) else (k, getattr(step_args, k))
-                for k,v in step_args.dict().items()
-            ]
-        )
         #args_space = {}
         #for k, v in _step_args.items():
         #    if isinstance(v, ArgFromResult):
@@ -497,74 +491,38 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
 
     def dump(self) -> dict[str, Any]:
         """Dump step data into json compatible complex dictionary."""
-        if not self._details_initted:
-            self._init_details()
-            self._details_initted = True
-        if not self.stats:
-            self._reset_stats()
+        return self.dict(exclude={'external_resources', 'shared_results', 'inputs'})
 
-        stats_dump: StepDumpStats = {
-            "started": self.stats['started'],
-            "finished": self.stats['finished'],
-            "skip": self.stats['skip'],
-            "skip_reason": self.stats['skip_reason'],
-            "skipped": self.stats['skipped'],
-            "state": str(self.stats['state'].name)
-        }
-
-        return {
-            "name": self.NAME,
-            "step_args": self.masked_args,
-            "uid": self.uid,
-            "details": copy.deepcopy(self._details),
-            "stats": stats_dump,
-            "results": self.results.dump(),
-            "errors": self.errors.dump(),
-        }
-
-    @classmethod
-    def load(cls: Type["Step[ResultsType, ArgsType, ExtResourcesType, InputsType]"],
-             obj: dict[str, Any],
-             shared_results: Dict[str, Any]) -> "Step[ResultsType, ArgsType, ExtResourcesType, InputsType]":
+    def load(self, step_dump):
         """Load step data from dictionary produced by dump method."""
 
-        stats: StepStats = {
-            "started": obj['stats']['started'],
-            "finished": obj['stats']['finished'],
-            "skip": obj['stats']['skip'],
-            "skip_reason": obj['stats']['skip_reason'],
-            "skipped": obj['stats']['skipped'],
-            "state": StepState[obj['stats']['state']]
-        }
-        ret: Step[ResultsType, ArgsType, ExtResourcesType, InputsType] = cls(obj["uid"], obj["step_args"], SharedResults(shared_results))
-        ret._details = obj["details"]
-        ret.stats = stats
-        ret.skip = obj["stats"]["skip"]
-        ret.results.load(obj["results"])
-        ret.errors.load(obj["errors"])
-        ret._details_initted = True
-        ret.skip_reason = obj["stats"]["skip_reason"]
-        ret.state = StepState[obj["stats"]["state"]]
-        return ret
+        self.details = step_dump['details']
+        self.skip = step_dump['skip']
+        self.skip_reason = step_dump['skip_reason']
+        self.state = step_dump['state']
+        self.results = self.results.parse_obj(step_dump['results'])
+        self.args = step_dump['args']
+        self.errors = step_dump['errors']
+        self.stats = step_dump['stats']
 
 
-class InputsMeta(type):
-    def __new__(cls, name, bases, attrs):
-
-        for key, atype in attrs.get('__annotations__', {}).items():
-            print(atype, type(atype), typing_inspect.get_origin(atype))
-            if type(atype) == str:
-                if not issubclass(globals()[atype], Step):
-                    raise ValueError("Attribute '%s' has to be annotated as %s subclass" % (key, Step))
-            elif type(atype) == _GenericAlias:
-                if not issubclass(typing_inspect.get_origin(atype), Step):
-                    raise ValueError("Attribute '%s' has to be annotated as %s subclass" % (key, Step))
-            else:
-                if not issubclass(atype, Step):
-                    raise ValueError("Attribute '%s' has to be annotated as %s subclass" % (key, Step))
-
-        ret = super().__new__(cls, name, bases, attrs)
-        return dataclass(ret)
+#class InputsMeta(type):
+#    def __new__(cls, name, bases, attrs):
+#
+#        for key, atype in attrs.get('__annotations__', {}).items():
+#            print(atype, type(atype), typing_inspect.get_origin(atype))
+#            if type(atype) == str:
+#                if not issubclass(globals()[atype], Step):
+#                    raise ValueError("Attribute '%s' has to be annotated as %s subclass" % (key, Step))
+#            elif type(atype) == _GenericAlias:
+#                if not issubclass(typing_inspect.get_origin(atype), Step):
+#                    raise ValueError("Attribute '%s' has to be annotated as %s subclass" % (key, Step))
+#            else:
+#                if not issubclass(atype, Step):
+#                    raise ValueError("Attribute '%s' has to be annotated as %s subclass" % (key, Step))
+#
+#        ret = super().__new__(cls, name, bases, attrs)
+#        return dataclass(ret)
 
 
 class TractorDumpDict(TypedDict):

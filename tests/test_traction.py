@@ -4,6 +4,7 @@ from unittest import mock
 import pydantic
 import pytest
 
+import pytraction
 
 from pytraction.traction import (
     Step, StepResults, ArgsTypeCls, NoInputs, StepInputs, NoResources,
@@ -41,6 +42,25 @@ class TDetails(StepDetails):
 @pytest.fixture
 def fixture_shared_results():
     yield SharedResults(results={})
+
+
+@pytest.fixture
+def fixture_isodate_now():
+    with mock.patch("pytraction.traction.isodate_now") as mocked:
+        mocked.side_effect = (
+            '1990-01-01T00:00:00.00000Z',
+            '1990-01-01T00:00:01.00000Z',
+            '1990-01-01T00:00:02.00000Z',
+            '1990-01-01T00:00:03.00000Z',
+            '1990-01-01T00:00:04.00000Z',
+            '1990-01-01T00:00:05.00000Z',
+            '1990-01-01T00:00:06.00000Z',
+            '1990-01-01T00:00:07.00000Z',
+            '1990-01-01T00:00:08.00000Z',
+            '1990-01-01T00:00:09.00000Z',
+        )
+        yield mocked
+
 
 
 def test_step_initiation_no_generic(fixture_shared_results):
@@ -155,7 +175,7 @@ def test_step_initiation_missing_arguments(fixture_shared_results):
 
 
 def test_step_run_results(fixture_shared_results):
-    """Step initiation is missing shared_reults."""
+    """Step run results test."""
     class TStep(Step[TResults, NoArgs, NoResources, NoInputs, NoDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
@@ -167,7 +187,7 @@ def test_step_run_results(fixture_shared_results):
 
 
 def test_step_run_details(fixture_shared_results):
-    """Step initiation is missing shared_reults."""
+    """Step run with details."""
     class TStep(Step[TResults, NoArgs, NoResources, NoInputs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
@@ -181,7 +201,7 @@ def test_step_run_details(fixture_shared_results):
 
 
 def test_step_run_status_update(fixture_shared_results):
-    """Step initiation is missing shared_reults."""
+    """Step run update status test."""
 
     states_collected = []
 
@@ -203,17 +223,101 @@ def test_step_run_status_update(fixture_shared_results):
 
 
 def test_step_run_secret_arg(fixture_shared_results):
-    """Step initiation is missing shared_reults."""
+    """Step run with secret args."""
+    
+    class TTResults(StepResults):
+        x: str = 10
 
-    class TStep(Step[TResults, TSecretArgs, NoResources, NoInputs, TDetails]):
+
+    class TStep(Step[TTResults, TSecretArgs, NoResources, NoInputs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            self.results.x = self.args.arg1
+            self.results.x = str(self.args.arg1)
 
     step = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret")), fixture_shared_results, NoResources(), NoInputs())
     step.run()
             
     assert step.args.arg1 == 'supersecret'
+
+
+def test_step_run_invalid_state(fixture_shared_results):
+    """Step run in invalid state."""
+
+    class TStep(Step[TResults, TArgs, NoResources, NoInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results.x = self.args.arg1
+
+    step = TStep("test-step-1", TArgs(arg1=1), fixture_shared_results, NoResources(), NoInputs())
+    step.state = StepState.RUNNING
+    step.run()
+    assert step.results.x == 10 # step hasn't run, so result should be default value
+
+
+def test_step_run_failed(fixture_shared_results):
+    """Step initiation is missing shared_reults."""
+
+    class TStep(Step[TResults, TArgs, NoResources, NoInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            raise StepFailedError("step run failed")
+
+    step = TStep("test-step-1", TArgs(arg1=1), fixture_shared_results, NoResources(), NoInputs())
+    step.run()
+    assert step.state == StepState.FAILED
+
+
+def test_step_run_error(fixture_shared_results):
+    """Step initiation is missing shared_reults."""
+
+    class TStep(Step[TResults, TArgs, NoResources, NoInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            raise ValueError("unexpected error")
+
+    step = TStep("test-step-1", TArgs(arg1=1), fixture_shared_results, NoResources(), NoInputs())
+    with pytest.raises(ValueError):
+        step.run()
+    assert step.state == StepState.ERROR
+
+
+def test_step_dump_load(fixture_shared_results, fixture_isodate_now):
+    """Step run with secret args."""
+
+    class TStep(Step[TResults, TSecretArgs, NoResources, NoInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results.x = 1
+            self.details.status = 'done'
+            print("step run")
+
+    step = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret")), fixture_shared_results, NoResources(), NoInputs())
+    step.run()
+
+    assert step.state == StepState.FINISHED
+            
+    dumped = step.dump()
+    assert dumped == {
+        'args': {'arg1': '*CENSORED*'},
+        "details": {'status':'done'},
+        'errors': {'errors': {}},
+        'results': {'x': 1},
+        'skip': False,
+        'skip_reason': '',
+        'state': StepState.FINISHED,
+        'stats': {
+            'skip': False,
+            'skipped': False,
+            'skip_reason': '',
+            'state': StepState.FINISHED,
+            'started': '1990-01-01T00:00:00.00000Z',
+            'finished': '1990-01-01T00:00:01.00000Z'
+        },
+        'uid': 'test-step-1'
+    }
+    step2 = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret")), fixture_shared_results, NoResources(), NoInputs())
+    step2.load(dumped)
+
 
 
 def test_step_dict(fixture_shared_results):
@@ -250,16 +354,41 @@ def test_results_default():
     assert res.x == 10
 
 
-def test_results_no_default():
-    with pytest.raises(TypeError) as exc:
-        class TDetails(StepDetails):
-            x: int
-    assert str(exc.value) == "Attribute x is missing default value"
-
-
-def test_results_default():
-    class TDetails(StepDetails):
+def test_results_invalid_type():
+    class TResults(StepResults):
         x: int = 10
+    with pytest.raises(pydantic.ValidationError):
+        res = TResults(x="a")
 
-    dets = TDetails()
-    assert dets.x == 10
+
+def test_invalid_secret_arguments():
+    with pytest.raises(pydantic.ValidationError):
+        assert TSecretArgs(arg1="1")
+
+
+def test_invalid_secret_arguments_compare():
+    sec2 = TSecretArgs(arg1=Secret("a"))
+    sec = TSecretArgs(arg1=Secret("a"))
+    assert sec.arg1 == "a"
+    assert sec.arg1 == sec2.arg1
+
+
+def test_secret_str():
+    sec = TSecretArgs(arg1=Secret("a"))
+    assert str(sec.arg1) == "a"
+
+
+def test_results_assignment(fixture_shared_results):
+    class TStep(Step[TResults, TArgs, NoResources, NoInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results = TResults(x=200)
+
+    step = TStep("test-step-1", TArgs(arg1=1), fixture_shared_results, NoResources(), NoInputs())
+    results = step.results
+    step.run()
+    assert results.x == 200
+    
+
+
+
