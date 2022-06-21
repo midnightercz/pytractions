@@ -1,4 +1,4 @@
-from typing import Generator, Dict, Any, Callable, TypeVar, Generic, TypedDict, ClassVar, Type
+from typing import Generator, Dict, Any, Callable, TypeVar, Generic, TypedDict, ClassVar, Type, Optional
 from unittest import mock
 
 import pydantic
@@ -25,6 +25,7 @@ class TArgs(ArgsTypeCls):
 
 class TSecretArgs(ArgsTypeCls):
     arg1: Secret
+    arg2: str
 
 
 class TResources(ExtResourcesCls):
@@ -200,6 +201,8 @@ def test_step_run_details(fixture_shared_results):
     assert step.details.status == 'ok'
 
 
+
+
 def test_step_run_status_update(fixture_shared_results):
     """Step run update status test."""
 
@@ -234,7 +237,7 @@ def test_step_run_secret_arg(fixture_shared_results):
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results.x = str(self.args.arg1)
 
-    step = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret")), fixture_shared_results, NoResources(), NoInputs())
+    step = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'), fixture_shared_results, NoResources(), NoInputs())
     step.run()
             
     assert step.args.arg1 == 'supersecret'
@@ -291,14 +294,14 @@ def test_step_dump_load(fixture_shared_results, fixture_isodate_now):
             self.details.status = 'done'
             print("step run")
 
-    step = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret")), fixture_shared_results, NoResources(), NoInputs())
+    step = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'), fixture_shared_results, NoResources(), NoInputs())
     step.run()
 
     assert step.state == StepState.FINISHED
             
     dumped = step.dump()
     assert dumped == {
-        'args': {'arg1': '*CENSORED*'},
+        'args': {'arg1': '*CENSORED*', 'arg2': 'test-arg'},
         "details": {'status':'done'},
         'errors': {'errors': {}},
         'results': {'x': 1},
@@ -315,9 +318,8 @@ def test_step_dump_load(fixture_shared_results, fixture_isodate_now):
         },
         'uid': 'test-step-1'
     }
-    step2 = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret")), fixture_shared_results, NoResources(), NoInputs())
+    step2 = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'), fixture_shared_results, NoResources(), NoInputs())
     step2.load(dumped)
-
 
 
 def test_step_dict(fixture_shared_results):
@@ -328,8 +330,27 @@ def test_step_dict(fixture_shared_results):
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results.x = self.args.arg1
 
-    step = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret")), fixture_shared_results, NoResources(), NoInputs())
+    step = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'), fixture_shared_results, NoResources(), NoInputs())
     assert step.dict()['args']['arg1'] == "*CENSORED*"
+    assert step.dict()['args']['arg2'] == "test-arg"
+
+
+def test_step_generic(fixture_shared_results):
+    """Step initiation is missing shared_reults."""
+
+    LoaderModel = TypeVar("LoaderModel")
+
+    class GTResults(StepResults, Generic[LoaderModel]):
+        results: Optional[LoaderModel] = None
+
+    class TGenericLoader(Step[GTResults[LoaderModel], TSecretArgs, NoResources, NoInputs, TDetails], Generic[LoaderModel]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results.x = self.args.arg1
+
+    step = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'), fixture_shared_results, NoResources(), NoInputs())
+    assert step.dict()['args']['arg1'] == "*CENSORED*"
+    assert step.dict()['args']['arg2'] == "test-arg"
 
 
 def test_inputs_invalid_field_type():
@@ -363,19 +384,20 @@ def test_results_invalid_type():
 
 def test_invalid_secret_arguments():
     with pytest.raises(pydantic.ValidationError):
-        assert TSecretArgs(arg1="1")
+        assert TSecretArgs(arg1="1", arg2='a2')
 
 
 def test_invalid_secret_arguments_compare():
-    sec2 = TSecretArgs(arg1=Secret("a"))
-    sec = TSecretArgs(arg1=Secret("a"))
+    sec2 = TSecretArgs(arg1=Secret("a"), arg2='a2')
+    sec = TSecretArgs(arg1=Secret("a"), arg2='a2')
     assert sec.arg1 == "a"
     assert sec.arg1 == sec2.arg1
 
 
 def test_secret_str():
-    sec = TSecretArgs(arg1=Secret("a"))
+    sec = TSecretArgs(arg1=Secret("a"), arg2='a2')
     assert str(sec.arg1) == "a"
+    assert sec.arg2 == "a2"
 
 
 def test_results_assignment(fixture_shared_results):
