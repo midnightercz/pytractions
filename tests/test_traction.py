@@ -1,4 +1,4 @@
-from typing import Generator, Dict, Any, Callable, TypeVar, Generic, TypedDict, ClassVar, Type, Optional
+from typing import List, TypeVar, Generic, TypedDict, ClassVar, Type, Optional
 from unittest import mock
 
 import pydantic
@@ -340,15 +340,25 @@ def test_step_generic(fixture_shared_results):
 
     LoaderModel = TypeVar("LoaderModel")
 
+    class Model1(pydantic.BaseModel):
+        attribute1: str
+
     class GTResults(StepResults, Generic[LoaderModel]):
-        results: Optional[LoaderModel] = None
+        models: List[LoaderModel] = []
 
     class TGenericLoader(Step[GTResults[LoaderModel], TSecretArgs, NoResources, NoInputs, TDetails], Generic[LoaderModel]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            self.results.x = self.args.arg1
+            print(dir(LoaderModel))
+            print(LoaderModel.__bound__)
+            self.results.models.append(LoaderModel(attribute1="a"))
 
-    step = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'), fixture_shared_results, NoResources(), NoInputs())
+    class Model1Loader(TGenericLoader[Model1]):
+        pass
+
+
+    step = Model1Loader("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'), fixture_shared_results, NoResources(), NoInputs())
+    step.run()
     assert step.dict()['args']['arg1'] == "*CENSORED*"
     assert step.dict()['args']['arg2'] == "test-arg"
 

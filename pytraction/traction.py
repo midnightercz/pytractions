@@ -148,7 +148,7 @@ class DefaultsModelMeta(pydantic.main.ModelMetaclass):
         return super().__new__(cls, name, bases, attrs)
 
 
-class RequiredDefaultsModel(pydantic.BaseModel, metaclass=DefaultsModelMeta):
+class RequiredDefaultsModel(pydantic.generics.GenericModel, metaclass=DefaultsModelMeta):
     class Config:
         validate_assignment = True
     pass
@@ -236,7 +236,8 @@ StepOnErrorCallable = Optional[Callable[[], None]]
 
 
 class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResourcesType, InputsType, DetailsType],
-           validate_all=True, allow_population_by_field_name=False, extra=pydantic.Extra.forbid, underscore_attrs_are_private=False):
+           validate_all=True, allow_population_by_field_name=False, extra=pydantic.Extra.forbid, underscore_attrs_are_private=False,
+           validate_assignment=True):
     """Base class for a Step.
 
     How to use this class: Few things are needed to implement custom step class.
@@ -326,8 +327,6 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         item = None
         while stack:
             item = stack.pop(0)
-            if item.__class__.__name__ == "Step":
-                break
 
             if hasattr(item, "__orig_bases__"):
                 for base in item.__orig_bases__:
