@@ -1,4 +1,4 @@
-from typing import List, TypeVar, Generic, TypedDict, ClassVar, Type, Optional
+from typing import List, TypeVar, Generic, TypedDict, ClassVar, Type, Optional, get_args
 from unittest import mock
 
 import pydantic
@@ -318,8 +318,25 @@ def test_step_dump_load(fixture_shared_results, fixture_isodate_now):
         },
         'uid': 'test-step-1'
     }
-    step2 = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'), fixture_shared_results, NoResources(), NoInputs())
+    step2 = TStep("test-step-2", TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'), fixture_shared_results, NoResources(), NoInputs())
+    print("Args", step2.args)
     step2.load(dumped)
+    print("Args", step2.args)
+    assert step2.args.arg1 == "supersecret"
+    assert step2.args.arg2 == 'test-arg'
+    assert step2.results.x == 1
+    assert step2.skip == False
+    assert step2.skip_reason == ''
+    assert step2.state == StepState.FINISHED
+    assert step2.stats == {
+            'skip': False,
+            'skipped': False,
+            'skip_reason': '',
+            'state': StepState.FINISHED,
+            'started': '1990-01-01T00:00:00.00000Z',
+            'finished': '1990-01-01T00:00:01.00000Z'
+    } 
+    assert step2.uid == 'test-step-2'
 
 
 def test_step_dict(fixture_shared_results):
@@ -341,7 +358,7 @@ def test_step_generic(fixture_shared_results):
     LoaderModel = TypeVar("LoaderModel")
 
     class Model1(pydantic.BaseModel):
-        attribute1: str
+        attribute1: str = 'attr1'
 
     class GTResults(StepResults, Generic[LoaderModel]):
         models: List[LoaderModel] = []
@@ -349,9 +366,9 @@ def test_step_generic(fixture_shared_results):
     class TGenericLoader(Step[GTResults[LoaderModel], TSecretArgs, NoResources, NoInputs, TDetails], Generic[LoaderModel]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            print(dir(LoaderModel))
-            print(LoaderModel.__bound__)
-            self.results.models.append(LoaderModel(attribute1="a"))
+            generic_args = get_args(self.__orig_bases__[0])
+            modelcls = generic_args[0]
+            self.results.models.append(modelcls())
 
     class Model1Loader(TGenericLoader[Model1]):
         pass

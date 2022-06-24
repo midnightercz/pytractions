@@ -23,22 +23,6 @@ from pydantic.dataclasses import dataclass
 
 Validator = Callable[Any, Any]
 
-#class ArgFromResult:
-#
-#    @classmethod
-#    def __get_validators__(cls):
-#        yield []
-#
-#    def __init__(self, shared_results, result, accesor):
-#        self.result = result
-#        self.accesor = accesor
-#        self.shared_results = shared_results
-#
-#    def __call__(self):
-#        #print("RESULT", self.result)
-#        #print("SHARED RESULTS", self.shared_results.results)
-#        return self.accesor(self.shared_results.results[self.result])
-
 
 def empty_on_error_callback() -> None:
     return None
@@ -358,20 +342,6 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         results = results_type()
         details = details_type()
 
-        #args_space = {}
-        #for k, v in _step_args.items():
-        #    if isinstance(v, ArgFromResult):
-        #        print('arg from result', k, v,)
-        #        args_space[k] = property(partial(lambda v, x: v.__call__(), v))
-        #    else:
-        #        args_space[k] = property(partial(_step_args.get, k))
-
-
-        #args = dataclass(make_dataclass(
-        #    "%sArgs" % self.NAME,
-        #    [],
-        #    namespace=args_space
-        #))()
         stats = {
             "started": None,
             "finished": None,
@@ -395,10 +365,6 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
                 )
         self.shared_results = shared_results
         #print("SHARED RESULTS ID", id(self.shared_results))
-
-    #@property
-    #def results(self) -> ResultsType:
-    #    return self.field_results
 
     @property
     def fullname(self) -> str:
@@ -500,28 +466,17 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         self.skip_reason = step_dump['skip_reason']
         self.state = step_dump['state']
         self.results = self.results.parse_obj(step_dump['results'])
-        self.args = step_dump['args']
+        loaded_args = {}
+        for f in self.args.__fields__:
+            if isinstance(getattr(self.args, f), Secret):
+                loaded_args[f] = getattr(self.args, f)
+            else:
+                loaded_args[f] = step_dump['args'][f]
+
+        self.args = self.args.parse_obj(loaded_args)
         self.errors = step_dump['errors']
         self.stats = step_dump['stats']
 
-
-#class InputsMeta(type):
-#    def __new__(cls, name, bases, attrs):
-#
-#        for key, atype in attrs.get('__annotations__', {}).items():
-#            print(atype, type(atype), typing_inspect.get_origin(atype))
-#            if type(atype) == str:
-#                if not issubclass(globals()[atype], Step):
-#                    raise ValueError("Attribute '%s' has to be annotated as %s subclass" % (key, Step))
-#            elif type(atype) == _GenericAlias:
-#                if not issubclass(typing_inspect.get_origin(atype), Step):
-#                    raise ValueError("Attribute '%s' has to be annotated as %s subclass" % (key, Step))
-#            else:
-#                if not issubclass(atype, Step):
-#                    raise ValueError("Attribute '%s' has to be annotated as %s subclass" % (key, Step))
-#
-#        ret = super().__new__(cls, name, bases, attrs)
-#        return dataclass(ret)
 
 
 class TractorDumpDict(TypedDict):
@@ -534,10 +489,12 @@ class TractorValidateResult(TypedDict):
     valid: bool
 
 
-class Tractor(pydantic.BaseModel):
+class Tractor(pydantic.BaseModel,
+              validate_all=True, allow_population_by_field_name=False, extra=pydantic.Extra.forbid, underscore_attrs_are_private=False,
+              validate_assignment=True):
     """Class which runs sequence of steps."""
 
-    steps: List[Step[Any, Any, Any, Any, Any]]
+    steps: List[Step[Any, Any, Any, Any, Any]] = []
     shared_results: SharedResults
     current_step: Optional[Step[Any, Any, Any, Any, Any]]
     step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]]
@@ -558,13 +515,12 @@ class Tractor(pydantic.BaseModel):
             step_map=step_map,
             shared_results=shared_results,
             current_step=current_step,
-            steps=[]
         )
 
     def add_step(self, step: Step[Any, Any, Any, Any, Any]) -> None:
         """Add step to step sequence."""
         self.steps.append(step)
-        self.shared_results.results[step.fullname] = None
+        self.shared_results.results[step.fullname] = step.results
 
     def dump(self) -> TractorDumpDict:
         """Dump stepper state and shared_results to json compatible dict."""
@@ -598,26 +554,6 @@ class Tractor(pydantic.BaseModel):
             _on_error() # type: ignore
             raise
 
-    def validate(self) -> TractorValidateResult:
-        missing_inputs: List[Tuple[str,str,str]] = []
-        for i in range(0, len(self.steps)):
-            gathered_deps = []
-            for p in range(0, i):
-                gathered_deps.append(self.steps[p].fullname)
-            step = self.steps[i]
-            #for _input, mapped_to in step.inputs_mapping.items():
-            #    if isinstance(mapped_to, (tuple, list)):
-            #        full_mapped = ["%s:%s" % (step.INPUT_DEPS[_input], x) for x in mapped_to]
-            #        if set(full_mapped) & set(gathered_deps):
-            #            missing_inputs.append((step.fullname, _input, full_mapped))
-            #    else:
-            #        if "%s:%s" % (step.INPUT_DEPS[_input], mapped_to) not in gathered_deps:
-            #            missing_inputs.append((step.fullname, _input, "%s:%s" % (step.INPUT_DEPS[_input], mapped_to)))
-
-        valid = True
-        if missing_inputs:
-            valid = False
-        return TractorValidateResult(missing_inputs=missing_inputs, valid=valid)
 
 
 class NoArgs(ArgsTypeCls):
