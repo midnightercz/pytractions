@@ -366,7 +366,7 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
                 )
         self.shared_results = shared_results
 
-        results.step = self
+        self.results.step = self
 
     @property
     def fullname(self) -> str:
@@ -458,12 +458,14 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
 
     def dump(self) -> dict[str, Any]:
         """Dump step data into json compatible complex dictionary."""
-        ret = self.dict(exclude={'external_resources', 'shared_results', 'inputs'})
+        ret = self.dict(exclude={'external_resources', 'shared_results', 'inputs', 'results'})
         ret['type'] = self.NAME
         ret['inputs'] = {}
         ret['inputs_standalone'] = {}
+        ret['results'] = self.results.dict(exclude={'step'})
         for f,ftype in self.inputs.__fields__.items():
             field = getattr(self.inputs, f)
+            print("step found", field.step)
             if field.step:
                 ret['inputs'][f] = getattr(self.inputs, f).step.fullname
             else:
@@ -476,7 +478,7 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         if step_dump['type'] != self.NAME:
             raise ValueError('Cannot load %s dump to step %s' % (step_dump['type'], self.name))
 
-        self.details.parse_obj(step_dump['details'])
+        self.details = self.details.parse_obj(step_dump['details'])
         self.skip = step_dump['skip']
         self.skip_reason = step_dump['skip_reason']
         self.state = step_dump['state']
@@ -491,6 +493,7 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         self.args = self.args.parse_obj(loaded_args)
         self.errors = step_dump['errors']
         self.stats = step_dump['stats']
+        self.results.step = self
 
     @classmethod
     def load_cls(
@@ -524,20 +527,24 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
             loaded_inputs[iname] = inputs_map[itype].results
         for iname in step_dump['inputs_standalone']:
             itype = inputs_type.__fields__[iname]
-            loaded_inputs[iname] = step_dump['inputs_standalone'][iname]
+            loaded_result = itype.type_()
+            for rfield in  itype.type_.__fields__:
+                if rfield == 'step':
+                    continue
+                setattr(loaded_result, rfield, step_dump['inputs_standalone'][iname][rfield])
+            loaded_inputs[iname] = loaded_result
         
-        print(loaded_inputs)
-
         inputs = inputs_type.parse_obj(loaded_inputs)
 
         ret = cls(step_dump['uid'], args, shared_results, external_resources, inputs)
-        ret.details.parse_obj(step_dump['details'])
+        ret.details = ret.details.parse_obj(step_dump['details'])
         ret.skip = step_dump['skip']
         ret.skip_reason = step_dump['skip_reason']
         ret.state = step_dump['state']
         ret.results = ret.results.parse_obj(step_dump['results'])
         ret.errors = step_dump['errors']
         ret.stats = step_dump['stats']
+        ret.results.step = ret
 
         return ret
 

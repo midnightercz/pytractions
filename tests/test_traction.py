@@ -326,7 +326,7 @@ def test_step_dump_load(fixture_shared_results, fixture_isodate_now):
         },
         'uid': 'test-step-1',
         'type': step.NAME,
-        'results': {'step': None, 'x':1}
+        'results': {'x':1}
     }
     step2 = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'), fixture_shared_results, NoResources(), TInputs(input1=standalone_input))
     step2.load(dumped)
@@ -358,6 +358,109 @@ def test_step_dump_load(fixture_shared_results, fixture_isodate_now):
     assert step2.inputs == step3.inputs
     assert step2.args == step3.args
 
+
+def test_step_dump_load_multiple(fixture_shared_results, fixture_isodate_now):
+    """Step run with secret args."""
+
+    class TStep(Step[TResults, TSecretArgs, NoResources, TInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results.x = 1
+            self.details.status = 'done'
+            print("step run")
+
+
+    standalone_input = TResults(x=55)
+
+    step = TStep("test-step-1",
+                 TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'),
+                 fixture_shared_results,
+                 NoResources(),
+                 TInputs(input1=standalone_input))
+    step2 = TStep("test-step-2",
+                 TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'),
+                 fixture_shared_results,
+                 NoResources(),
+                 TInputs(input1=step.results))
+    step.run()
+    step2.run()
+
+    assert step.state == StepState.FINISHED
+    assert step2.state == StepState.FINISHED
+            
+    dumped = step.dump()
+    assert dumped == {
+        'args': {'arg1': '*CENSORED*', 'arg2': 'test-arg'},
+        "details": {'status':'done'},
+        'errors': {'errors': {}},
+        'inputs': {},
+        'inputs_standalone': {"input1":{"x":55}},
+        'skip': False,
+        'skip_reason': '',
+        'state': StepState.FINISHED,
+        'stats': {
+            'skip': False,
+            'skipped': False,
+            'skip_reason': '',
+            'state': StepState.FINISHED,
+            'started': '1990-01-01T00:00:00.00000Z',
+            'finished': '1990-01-01T00:00:01.00000Z'
+        },
+        'uid': 'test-step-1',
+        'type': step.NAME,
+        'results': {'x':1}
+    }
+    dumped2 = step2.dump()
+    assert dumped2 == {
+        'args': {'arg1': '*CENSORED*', 'arg2': 'test-arg'},
+        "details": {'status':'done'},
+        'errors': {'errors': {}},
+        'inputs': {'input1': 'TestStep:test-step-1'},
+        'inputs_standalone': {},
+        'skip': False,
+        'skip_reason': '',
+        'state': StepState.FINISHED,
+        'stats': {
+            'skip': False,
+            'skipped': False,
+            'skip_reason': '',
+            'state': StepState.FINISHED,
+            'started': '1990-01-01T00:00:02.00000Z',
+            'finished': '1990-01-01T00:00:03.00000Z'
+        },
+        'uid': 'test-step-2',
+        'type': step.NAME,
+        'results': {'x':1}
+    }
+
+    step3 = TStep.load_cls(dumped, {'arg1': Secret('supersecret')},  {}, fixture_shared_results, NoResources())
+    step4 = TStep.load_cls(dumped2, {'arg1': Secret('supersecret')},  {step3.fullname: step3}, fixture_shared_results, NoResources())
+
+    assert step3.uid == step.uid
+    assert step3.state == step.state
+    assert step3.skip == step.skip
+    assert step3.skip_reason == step.skip_reason
+    print("---")
+    print(step3.results)
+    print(step.results)
+    print("---")
+    assert step3.results == step.results
+    assert step3.errors == step.errors
+    assert step3.details == step.details
+    assert step3.stats == step.stats
+    assert step3.inputs == step.inputs
+    assert step3.args == step.args
+
+    assert step4.uid == step2.uid
+    assert step4.state == step2.state
+    assert step4.skip == step2.skip
+    assert step4.skip_reason == step2.skip_reason
+    assert step4.results == step2.results
+    assert step4.errors == step2.errors
+    assert step4.details == step2.details
+    assert step4.stats == step2.stats
+    assert step4.inputs == step2.inputs
+    assert step4.args == step2.args
 
 
 def test_step_dict(fixture_shared_results):
