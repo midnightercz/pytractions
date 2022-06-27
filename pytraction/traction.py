@@ -140,6 +140,7 @@ class RequiredDefaultsModel(pydantic.generics.GenericModel, metaclass=DefaultsMo
 
 class StepResults(RequiredDefaultsModel):
     """Class to store results of step."""
+    step: Optional["Step"] = None
     pass
 
 
@@ -215,7 +216,7 @@ class StepDumpDict(Generic[ResultsType]):
     results: ResultsType
     errors: Dict[Any, Any]
 
-StepOnUpdateCallable = Optional[Callable[[], None]]
+StepOnUpdateCallable = Optional[Callable[["Step"], None]]
 StepOnErrorCallable = Optional[Callable[[], None]]
 
 
@@ -364,7 +365,8 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
                 stats=stats
                 )
         self.shared_results = shared_results
-        #print("SHARED RESULTS ID", id(self.shared_results))
+
+        results.step = self
 
     @property
     def fullname(self) -> str:
@@ -456,12 +458,25 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
 
     def dump(self) -> dict[str, Any]:
         """Dump step data into json compatible complex dictionary."""
-        return self.dict(exclude={'external_resources', 'shared_results', 'inputs'})
+        ret = self.dict(exclude={'external_resources', 'shared_results', 'inputs'})
+        ret['type'] = self.NAME
+        ret['inputs'] = {}
+        ret['inputs_standalone'] = {}
+        for f,ftype in self.inputs.__fields__.items():
+            field = getattr(self.inputs, f)
+            if field.step:
+                ret['inputs'][f] = getattr(self.inputs, f).step.fullname
+            else:
+                ret['inputs_standalone'][f] = getattr(self.inputs, f).dict(exclude={"step"})
+        return ret
 
     def load(self, step_dump):
         """Load step data from dictionary produced by dump method."""
 
-        self.details = step_dump['details']
+        if step_dump['type'] != self.NAME:
+            raise ValueError('Cannot load %s dump to step %s' % (step_dump['type'], self.name))
+
+        self.details.parse_obj(step_dump['details'])
         self.skip = step_dump['skip']
         self.skip_reason = step_dump['skip_reason']
         self.state = step_dump['state']
@@ -476,6 +491,55 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         self.args = self.args.parse_obj(loaded_args)
         self.errors = step_dump['errors']
         self.stats = step_dump['stats']
+
+    @classmethod
+    def load_cls(
+            cls,
+            step_dump,
+            secret_args: Dict[str, Secret],
+            inputs_map: Dict[str, "Step[Any, Any, Any, Any]"],
+            shared_results: SharedResults,
+            external_resources: ExtResourcesType):
+        """Load step data from dictionary produced by dump method."""
+
+        if step_dump['type'] != cls.NAME:
+            raise ValueError('Cannot load %s dump to step %s' % (step_dump['type'], cls.NAME))
+
+        type_args = get_args(cls.__orig_bases__[0]) # type: ignore
+        args_type = type_args[1]
+        inputs_type = type_args[3]
+
+
+        loaded_args = {}
+        for f, ftype in args_type.__fields__.items():
+            if ftype.type_ == Secret:
+                loaded_args[f] = secret_args[f]
+            else:
+                loaded_args[f] = step_dump['args'][f]
+
+        args = args_type.parse_obj(loaded_args)
+        
+        loaded_inputs = {}
+        for iname, itype in step_dump['inputs'].items():
+            loaded_inputs[iname] = inputs_map[itype].results
+        for iname in step_dump['inputs_standalone']:
+            itype = inputs_type.__fields__[iname]
+            loaded_inputs[iname] = step_dump['inputs_standalone'][iname]
+        
+        print(loaded_inputs)
+
+        inputs = inputs_type.parse_obj(loaded_inputs)
+
+        ret = cls(step_dump['uid'], args, shared_results, external_resources, inputs)
+        ret.details.parse_obj(step_dump['details'])
+        ret.skip = step_dump['skip']
+        ret.skip_reason = step_dump['skip_reason']
+        ret.state = step_dump['state']
+        ret.results = ret.results.parse_obj(step_dump['results'])
+        ret.errors = step_dump['errors']
+        ret.stats = step_dump['stats']
+
+        return ret
 
 
 
@@ -525,17 +589,16 @@ class Tractor(pydantic.BaseModel,
     def dump(self) -> TractorDumpDict:
         """Dump stepper state and shared_results to json compatible dict."""
         steps: List[Dict[str, Any]] = []
-        out: TractorDumpDict = {"steps": steps, "shared_results": self.shared_results}
+        out: TractorDumpDict = {"steps": steps}
         for step in self.steps:
             steps.append(step.dump())
         return out
 
-    def load(self, stepper_obj: TractorDumpDict) -> None:
+    def load(self, dump_obj: TractorDumpDict) -> None:
         """Load and initialize stepper from data produced by dump method."""
         self.steps = []
-        self.shared_results = stepper_obj["shared_results"]
-        for step_obj in stepper_obj["steps"]:
-            step = self.step_map[step_obj["name"]].load(step_obj, self.shared_results)
+        for step_obj in dump_obj["steps"]:
+            step = self.step_map[step_obj["type"]].load(step_obj, self.shared_results)
             self.steps.append(step)
 
     def run(self, 

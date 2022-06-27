@@ -287,14 +287,21 @@ def test_step_run_error(fixture_shared_results):
 def test_step_dump_load(fixture_shared_results, fixture_isodate_now):
     """Step run with secret args."""
 
-    class TStep(Step[TResults, TSecretArgs, NoResources, NoInputs, TDetails]):
+    class TStep(Step[TResults, TSecretArgs, NoResources, TInputs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results.x = 1
             self.details.status = 'done'
             print("step run")
 
-    step = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'), fixture_shared_results, NoResources(), NoInputs())
+
+    standalone_input = TResults(x=55)
+
+    step = TStep("test-step-1",
+                 TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'),
+                 fixture_shared_results,
+                 NoResources(),
+                 TInputs(input1=standalone_input))
     step.run()
 
     assert step.state == StepState.FINISHED
@@ -304,7 +311,8 @@ def test_step_dump_load(fixture_shared_results, fixture_isodate_now):
         'args': {'arg1': '*CENSORED*', 'arg2': 'test-arg'},
         "details": {'status':'done'},
         'errors': {'errors': {}},
-        'results': {'x': 1},
+        'inputs': {},
+        'inputs_standalone': {"input1":{"x":55}},
         'skip': False,
         'skip_reason': '',
         'state': StepState.FINISHED,
@@ -316,12 +324,12 @@ def test_step_dump_load(fixture_shared_results, fixture_isodate_now):
             'started': '1990-01-01T00:00:00.00000Z',
             'finished': '1990-01-01T00:00:01.00000Z'
         },
-        'uid': 'test-step-1'
+        'uid': 'test-step-1',
+        'type': step.NAME,
+        'results': {'step': None, 'x':1}
     }
-    step2 = TStep("test-step-2", TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'), fixture_shared_results, NoResources(), NoInputs())
-    print("Args", step2.args)
+    step2 = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'), fixture_shared_results, NoResources(), TInputs(input1=standalone_input))
     step2.load(dumped)
-    print("Args", step2.args)
     assert step2.args.arg1 == "supersecret"
     assert step2.args.arg2 == 'test-arg'
     assert step2.results.x == 1
@@ -336,7 +344,20 @@ def test_step_dump_load(fixture_shared_results, fixture_isodate_now):
             'started': '1990-01-01T00:00:00.00000Z',
             'finished': '1990-01-01T00:00:01.00000Z'
     } 
-    assert step2.uid == 'test-step-2'
+    assert step2.uid == 'test-step-1'
+
+    step3 = TStep.load_cls(dumped, {'arg1': Secret('supersecret')},  {}, fixture_shared_results, NoResources())
+    assert step2.uid == step3.uid
+    assert step2.state == step3.state
+    assert step2.skip == step3.skip
+    assert step2.skip_reason == step3.skip_reason
+    assert step2.results == step3.results
+    assert step2.errors == step3.errors
+    assert step2.details == step3.details
+    assert step2.stats == step3.stats
+    assert step2.inputs == step3.inputs
+    assert step2.args == step3.args
+
 
 
 def test_step_dict(fixture_shared_results):
@@ -439,5 +460,16 @@ def test_results_assignment(fixture_shared_results):
     assert results.x == 200
     
 
+def test_tractor_add_steps(fixture_shared_results):
+    class TStep(Step[TResults, TArgs, NoResources, NoInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results = TResults(x=200)
+
+    step = TStep("test-step-1", TArgs(arg1=1), fixture_shared_results, NoResources(), NoInputs())
+    results = step.results
+    step.run()
+    assert results.x == 200
+    
 
 
