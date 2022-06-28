@@ -141,7 +141,19 @@ class RequiredDefaultsModel(pydantic.generics.GenericModel, metaclass=DefaultsMo
 class StepResults(RequiredDefaultsModel):
     """Class to store results of step."""
     step: Optional["Step"] = None
-    pass
+
+    def __setattr__(self, key, value):
+        """Override setattr to make sure assigning to step.results doesn't break
+        existing references for step.results"""
+    
+        if key == 'step' and self.step and value:
+            for k in value.__fields__:
+                v = getattr(value, k)
+                setattr(self.step, k, v)
+    
+            super().__setattr__(key, self.results)
+        else:
+            super().__setattr__(key, value)
 
 
 class StepDetails(RequiredDefaultsModel):
@@ -166,6 +178,7 @@ class SharedResults(pydantic.BaseModel):
     
     class Config:
         copy_on_model_validation=False
+
 
 ResultsType = TypeVar("ResultsType", bound=StepResults)
 InputsType = TypeVar("InputsType", bound=StepInputs)

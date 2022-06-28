@@ -442,6 +442,7 @@ def test_step_dump_load_multiple(fixture_shared_results, fixture_isodate_now):
     assert step3.skip_reason == step.skip_reason
     print("---")
     print(step3.results)
+    print("-")
     print(step.results)
     print("---")
     assert step3.results == step.results
