@@ -171,7 +171,7 @@ def test_step_initiation_missing_arguments(fixture_shared_results):
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             pass
     
-    with pytest.raises(pydantic.ValidationError):
+    with pytest.raises(TypeError):
         step = TStep("test-step-1", NoArgs(), NoInputs())
 
 
@@ -377,13 +377,19 @@ def test_step_dump_load_multiple(fixture_shared_results, fixture_isodate_now):
                  fixture_shared_results,
                  NoResources(),
                  TInputs(input1=standalone_input))
+    print("STEP RESULTS", id(step.results))
     step2 = TStep("test-step-2",
                  TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'),
                  fixture_shared_results,
                  NoResources(),
                  TInputs(input1=step.results))
+    print("STEP2 INPUTS BEFORE RUN ", step2.inputs, id(step2.inputs))
+    print("STEP2 INPUT1 BEFORE RUN ", step2.inputs, id(step2.inputs.input1))
     step.run()
     step2.run()
+    print("STEP1", step.results, id(step.results))
+    print("STEP2 INPUTS", step2.inputs, id(step2.inputs))
+    print("STEP2 INPUT1", step2.inputs, id(step2.inputs.input1))
 
     assert step.state == StepState.FINISHED
     assert step2.state == StepState.FINISHED
@@ -565,15 +571,20 @@ def test_results_assignment(fixture_shared_results):
     
 
 def test_tractor_add_steps(fixture_shared_results):
-    class TStep(Step[TResults, TArgs, NoResources, NoInputs, TDetails]):
+    class TStep(Step[TResults, TArgs, NoResources, TInputs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            self.results = TResults(x=200)
+            self.results = TResults(x=self.inputs.input1 + self.args.arg1)
 
-    step = TStep("test-step-1", TArgs(arg1=1), fixture_shared_results, NoResources(), NoInputs())
-    results = step.results
-    step.run()
-    assert results.x == 200
+    tractor = Tractor(step_map={"TestStep": TStep})
+
+    step1 = TStep("test-step-1", TArgs(arg1=1), tractor.shared_results, NoResources(), TInputs(input1=TResults(x=1)))
+    step2 = TStep("test-step-2", TArgs(arg1=2), tractor.shared_results, NoResources(), TInputs(input1=step1.results))
+    step3 = TStep("test-step-3", TArgs(arg1=3), tractor.shared_results, NoResources(), TInputs(input1=step2.results))
     
+    tractor.add_step(step1)
+    tractor.add_step(step2)
+    tractor.add_step(step3)
 
+    assert tractor.current_step == None
 

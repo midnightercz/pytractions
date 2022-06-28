@@ -115,7 +115,7 @@ class DefaultsModelMeta(pydantic.main.ModelMetaclass):
     def __new__(cls, name, bases, attrs):
         annotations = attrs.get("__annotations__", {})
         for attrk, attrv in attrs.items():
-            if attrk in ['dump', 'load', 'Config']:
+            if attrk in ['dump', 'load', 'Config', 'dict']:
                 continue
             if attrk.startswith("__"):
                 continue
@@ -140,20 +140,29 @@ class RequiredDefaultsModel(pydantic.generics.GenericModel, metaclass=DefaultsMo
 
 class StepResults(RequiredDefaultsModel):
     """Class to store results of step."""
-    step: Optional["Step"] = None
+    step: Optional["Step"] = pydantic.Field(default=None, repr=False)
 
     def __setattr__(self, key, value):
         """Override setattr to make sure assigning to step.results doesn't break
         existing references for step.results"""
     
-        if key == 'step' and self.step and value:
-            for k in value.__fields__:
-                v = getattr(value, k)
-                setattr(self.step, k, v)
-    
-            super().__setattr__(key, self.results)
+        if key == 'step' and value:
+            dict_without_original_value = {k: v for k, v in self.__dict__.items() if k != key}
+            self.__fields__['step'].validate(value, dict_without_original_value, loc=key)
+            object.__setattr__(self, key, value)
         else:
             super().__setattr__(key, value)
+
+    def dict(self,
+             *,
+             include: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
+             exclude: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
+             by_alias: bool = False,
+             skip_defaults: bool = None,
+             exclude_unset: bool = False,
+             exclude_defaults: bool = False,
+             exclude_none: bool = False):
+        return super().dict(exclude={'step'})
 
 
 class StepDetails(RequiredDefaultsModel):
@@ -167,6 +176,21 @@ class StepInputs(pydantic.BaseModel, validate_assignment=True):
         if not isinstance(v, StepResults):
             raise ValueError("field must be StepResults subclass, but is %s" % type(v))
         return v
+
+    def __setattr__(self, key, value):
+        """Override setattr to make sure assigning to step.results doesn't break
+        existing references for step.results"""
+    
+        print("step inputs set", key, value, id(value))
+        dict_without_original_value = {k: v for k, v in self.__dict__.items() if k != key}
+        self.__fields__[key].validate(value, dict_without_original_value, loc=key)
+        object.__setattr__(self, key, value)
+
+    def __init__(self, **data: Any) -> None:
+        super().__init__(**data)
+        for k,v in data.items():
+            setattr(self, k, v)
+            print("INIT", k, v, id(v))
 
 
 class NoInputs(StepInputs):
@@ -296,11 +320,15 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
                 setattr(self.results, k, v)
     
             super().__setattr__(key, self.results)
+        elif key == 'inputs':
+            dict_without_original_value = {k: v for k, v in self.__dict__.items() if k != key}
+            self.__fields__[key].validate(value, dict_without_original_value, loc=key)
+            object.__setattr__(self, key, value)
         else:
             super().__setattr__(key, value)
 
 
-    @pydantic.validate_arguments(config=dict(arbitrary_types_allowed=False))
+    #@pydantic.validate_arguments(config=dict(arbitrary_types_allowed=False))
     def __init__(self,
                  uid: str,
                  step_args: ArgsType,
@@ -320,6 +348,8 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
             inputs: dict(str, str)
                 Mapping of inputs to results of steps identified by uid
         """
+        
+
         type_args = get_args(self.__orig_bases__[0]) # type: ignore
         stack = [self]
         item = None
@@ -378,6 +408,9 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
                 stats=stats
                 )
         self.shared_results = shared_results
+
+        # override init value copy and set original object via __setattr__
+        self.inputs = inputs or StepInputs()
 
         self.results.step = self
 
@@ -581,7 +614,7 @@ class Tractor(pydantic.BaseModel,
     steps: List[Step[Any, Any, Any, Any, Any]] = []
     shared_results: SharedResults
     current_step: Optional[Step[Any, Any, Any, Any, Any]]
-    step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]]
+    step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]] = {}
 
 
     def __init__(self, step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]]) -> None:
@@ -621,7 +654,7 @@ class Tractor(pydantic.BaseModel,
             step = self.step_map[step_obj["type"]].load(step_obj, self.shared_results)
             self.steps.append(step)
 
-    def run(self, 
+    def run(self,
             start_from: int=0,
             on_error: StepOnErrorCallable=None,
             on_update: StepOnUpdateCallable=None) -> None:
