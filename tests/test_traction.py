@@ -14,6 +14,7 @@ from pytraction.traction import (
     StepOnErrorCallable, StepOnUpdateCallable,
     TractorDumpDict, StepResults, NoDetails, StepState)
 
+from pytraction.exc import (LoadWrongStepError,)
 
 class TResults(StepResults):
     x: int = 10
@@ -468,6 +469,92 @@ def test_step_dump_load_multiple(fixture_shared_results, fixture_isodate_now):
     assert step4.stats == step2.stats
     assert step4.inputs == step2.inputs
     assert step4.args == step2.args
+
+
+def test_step_dump_load_cls_wrong(fixture_shared_results, fixture_isodate_now):
+    """Step run with secret args."""
+
+    class TStep(Step[TResults, TSecretArgs, NoResources, TInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results.x = 1
+            self.details.status = 'done'
+            print("step run")
+
+
+    standalone_input = TResults(x=55)
+
+    step = TStep("test-step-1",
+                 TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'),
+                 fixture_shared_results,
+                 NoResources(),
+                 TInputs(input1=standalone_input))
+    dumped = {
+        'args': {'arg1': '*CENSORED*', 'arg2': 'test-arg'},
+        "details": {'status':'done'},
+        'errors': {'errors': {}},
+        'inputs': {},
+        'inputs_standalone': {"input1":{"x":55}},
+        'skip': False,
+        'skip_reason': '',
+        'state': StepState.FINISHED,
+        'stats': {
+            'skip': False,
+            'skipped': False,
+            'skip_reason': '',
+            'state': StepState.FINISHED,
+            'started': '1990-01-01T00:00:00.00000Z',
+            'finished': '1990-01-01T00:00:01.00000Z'
+        },
+        'uid': 'test-step-1',
+        'type': "WrongStep",
+        'results': {'x':1}
+    }
+    with pytest.raises(LoadWrongStepError):
+        step2 = TStep.load_cls(dumped, {'arg1': Secret('supersecret')},  {step.fullname: step}, fixture_shared_results, NoResources())
+
+
+def test_step_dump_load_wrong(fixture_shared_results, fixture_isodate_now):
+    """Step run with secret args."""
+
+    class TStep(Step[TResults, TSecretArgs, NoResources, TInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results.x = 1
+            self.details.status = 'done'
+            print("step run")
+
+
+    standalone_input = TResults(x=55)
+
+    step = TStep("test-step-1",
+                 TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'),
+                 fixture_shared_results,
+                 NoResources(),
+                 TInputs(input1=standalone_input))
+    dumped = {
+        'args': {'arg1': '*CENSORED*', 'arg2': 'test-arg'},
+        "details": {'status':'done'},
+        'errors': {'errors': {}},
+        'inputs': {},
+        'inputs_standalone': {"input1":{"x":55}},
+        'skip': False,
+        'skip_reason': '',
+        'state': StepState.FINISHED,
+        'stats': {
+            'skip': False,
+            'skipped': False,
+            'skip_reason': '',
+            'state': StepState.FINISHED,
+            'started': '1990-01-01T00:00:00.00000Z',
+            'finished': '1990-01-01T00:00:01.00000Z'
+        },
+        'uid': 'test-step-1',
+        'type': "WrongStep",
+        'results': {'x':1}
+    }
+    with pytest.raises(LoadWrongStepError):
+        step.load(dumped)
 
 
 def test_step_dict(fixture_shared_results):

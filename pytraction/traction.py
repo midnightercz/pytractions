@@ -21,6 +21,8 @@ import pydantic.fields
 import pydantic.main
 from pydantic.dataclasses import dataclass
 
+from .exc import LoadWrongStepError 
+
 Validator = Callable[Any, Any]
 
 
@@ -522,7 +524,7 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         """Load step data from dictionary produced by dump method."""
 
         if step_dump['type'] != self.NAME:
-            raise ValueError('Cannot load %s dump to step %s' % (step_dump['type'], self.name))
+            raise LoadWrongStepError('Cannot load %s dump to step %s' % (step_dump['type'], self.NAME))
 
         self.details = self.details.parse_obj(step_dump['details'])
         self.skip = step_dump['skip']
@@ -552,7 +554,7 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         """Load step data from dictionary produced by dump method."""
 
         if step_dump['type'] != cls.NAME:
-            raise ValueError('Cannot load %s dump to step %s' % (step_dump['type'], cls.NAME))
+            raise LoadWrongStepError('Cannot load %s dump to step %s' % (step_dump['type'], cls.NAME))
 
         type_args = get_args(cls.__orig_bases__[0]) # type: ignore
         args_type = type_args[1]
