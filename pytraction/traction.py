@@ -21,7 +21,9 @@ import pydantic.fields
 import pydantic.main
 from pydantic.dataclasses import dataclass
 
-from .exc import LoadWrongStepError 
+from .exc import LoadWrongStepError, LoadWrongExtResourceError
+
+print(pydantic.__file__)
 
 Validator = Callable[Any, Any]
 
@@ -105,8 +107,52 @@ class ArgsTypeCls(pydantic.generics.GenericModel, validate_assignment=True):
         return pydantic.BaseModel.dict(m())
 
 
-class ExtResourcesCls(pydantic.generics.GenericModel,validate_assignment=True):
+class ExtResource(pydantic.generics.GenericModel):
     pass
+
+
+class ResourcesModelMeta(pydantic.main.ModelMetaclass):
+    def __new__(cls, name, bases, attrs):
+        ret = super().__new__(cls, name, bases, attrs)
+        for k, v in ret.__fields__.items():
+            if k == 'uid':
+                continue
+            if not issubclass(v.type_, ExtResource):
+                raise ValueError("%s has to be type ExtResource" % k)
+        return ret
+
+
+class ExtResourcesCls(pydantic.generics.BaseModel, metaclass=ResourcesModelMeta):
+    NAME: ClassVar[str]
+    uid: str
+
+    def __init__(self, **kwargs):
+        for key, val in kwargs.items():
+            print(key, val)
+            if key == 'uid':
+                continue
+            if not issubclass(type(val), ExtResource):
+                raise ValueError("%s has to be type ExtResource" % key)
+
+        super().__init__(**kwargs)
+
+    def dump(self):
+        ret = self.dict()
+        ret['type'] = self.NAME
+        return ret
+
+    def load(self, dump):
+        if dump['type'] != self.NAME:
+            raise LoadWrongExtResourceError("Cannot load %s into %s" %  (dump['NAME'], self.NAME))
+        dump.pop('type')
+        self.parse_obj(dump)
+
+    @classmethod
+    def load_cls(cls, dump):
+        if dump['type'] != cls.NAME:
+            raise LoadWrongExtResourceError("Cannot load %s into %s" %  (dump['NAME'], cls.NAME))
+        dump.pop('type')
+        return cls(**dump)
 
 
 ArgsType = TypeVar("ArgsType", bound=ArgsTypeCls)
@@ -183,7 +229,6 @@ class StepInputs(pydantic.BaseModel, validate_assignment=True):
         """Override setattr to make sure assigning to step.results doesn't break
         existing references for step.results"""
     
-        print("step inputs set", key, value, id(value))
         dict_without_original_value = {k: v for k, v in self.__dict__.items() if k != key}
         self.__fields__[key].validate(value, dict_without_original_value, loc=key)
         object.__setattr__(self, key, value)
@@ -192,7 +237,6 @@ class StepInputs(pydantic.BaseModel, validate_assignment=True):
         super().__init__(**data)
         for k,v in data.items():
             setattr(self, k, v)
-            print("INIT", k, v, id(v))
 
 
 class NoInputs(StepInputs):
@@ -506,11 +550,12 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
 
     def dump(self) -> dict[str, Any]:
         """Dump step data into json compatible complex dictionary."""
-        ret = self.dict(exclude={'external_resources', 'shared_results', 'inputs', 'results'})
+        ret = self.dict(exclude={'shared_results', 'inputs', 'results'})
         ret['type'] = self.NAME
         ret['inputs'] = {}
         ret['inputs_standalone'] = {}
         ret['results'] = self.results.dict(exclude={'step'})
+        ret['external_resources'] = self.external_resources.dump()
         for f,ftype in self.inputs.__fields__.items():
             field = getattr(self.inputs, f)
             print("step found", field.step)
@@ -559,7 +604,7 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         type_args = get_args(cls.__orig_bases__[0]) # type: ignore
         args_type = type_args[1]
         inputs_type = type_args[3]
-
+        external_resources_type = type_args[2]
 
         loaded_args = {}
         for f, ftype in args_type.__fields__.items():
@@ -583,6 +628,8 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
             loaded_inputs[iname] = loaded_result
         
         inputs = inputs_type.parse_obj(loaded_inputs)
+        external_resources = external_resources_type.load_cls(step_dump['external_resources'])
+
 
         ret = cls(step_dump['uid'], args, shared_results, external_resources, inputs)
         ret.details = ret.details.parse_obj(step_dump['details'])
@@ -679,6 +726,8 @@ class NoArgs(ArgsTypeCls):
 
 
 class NoResources(ExtResourcesCls):
+    NAME: ClassVar[str] = "NoResources"
+    uid: str = "NoResources"
     pass
 
 class NoDetails(StepDetails):
