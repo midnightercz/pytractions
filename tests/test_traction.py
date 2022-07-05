@@ -14,7 +14,7 @@ from pytraction.traction import (
     StepOnErrorCallable, StepOnUpdateCallable,
     TractorDumpDict, StepResults, NoDetails, StepState)
 
-from pytraction.exc import (LoadWrongStepError,)
+from pytraction.exc import (LoadWrongStepError,LoadWrongExtResourceError)
 
 class TResults(StepResults):
     x: int = 10
@@ -29,7 +29,7 @@ class TSecretArgs(ArgsTypeCls):
     arg2: str
 
 class TResource(ExtResource):
-    pass
+    env: str
 
 
 class TResources(ExtResourcesCls):
@@ -118,7 +118,7 @@ def test_step_initiation_succesful_no_args(fixture_shared_results):
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             pass
  
-    step = TStep("test-step-1", NoArgs(), fixture_shared_results,  TResources(service1=TResource(), uid='resources1'), TInputs(input1=TResults()))
+    step = TStep("test-step-1", NoArgs(), fixture_shared_results,  TResources(service1=TResource(env='test'), uid='resources1'), TInputs(input1=TResults()))
     assert step.inputs.input1.x == 10
 
 
@@ -152,7 +152,7 @@ def test_step_initiation_wrong_inputs_type(fixture_shared_results):
             pass
     
     with pytest.raises(TypeError) as exc:
-        step = TStep("test-step-1", NoArgs(), fixture_shared_results, TResources(service1=TResource(), uid='resources1'), TInputs(input1=TResults(x=1)))
+        step = TStep("test-step-1", NoArgs(), fixture_shared_results, TResources(service1=TResource(env='test'), uid='resources1'), TInputs(input1=TResults(x=1)))
     assert str(exc.value).startswith("Step inputs are not type of <class 'pytraction.traction.NoInputs'>")
 
 
@@ -304,7 +304,7 @@ def test_step_dump_load(fixture_shared_results, fixture_isodate_now):
     step = TStep("test-step-1",
                  TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'),
                  fixture_shared_results,
-                 TResources(service1=TResource(), uid='resources1'),
+                 TResources(service1=TResource(env='test'), uid='resources1'),
                  TInputs(input1=standalone_input))
     step.run()
 
@@ -319,7 +319,7 @@ def test_step_dump_load(fixture_shared_results, fixture_isodate_now):
         'inputs_standalone': {"input1":{"x":55}},
         'external_resources': {'type': 'TResources',
                                'uid': 'resources1',
-                               'service1': {}},
+                               'service1': {'env':'test'}},
         'skip': False,
         'skip_reason': '',
         'state': StepState.FINISHED,
@@ -338,7 +338,7 @@ def test_step_dump_load(fixture_shared_results, fixture_isodate_now):
     step2 = TStep("test-step-1",
                   TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'),
                   fixture_shared_results,
-                  TResources(service1=TResource(), uid='resources1'),
+                  TResources(service1=TResource(env='test'), uid='resources1'),
                   TInputs(input1=standalone_input))
     step2.load(dumped)
     assert step2.args.arg1 == "supersecret"
@@ -357,7 +357,7 @@ def test_step_dump_load(fixture_shared_results, fixture_isodate_now):
     } 
     assert step2.uid == 'test-step-1'
 
-    step3 = TStep.load_cls(dumped, {'arg1': Secret('supersecret')},  {}, fixture_shared_results, TResources(service1=TResource(), uid='resources1'))
+    step3 = TStep.load_cls(dumped, {'arg1': Secret('supersecret')},  {}, fixture_shared_results, TResources(service1=TResource(env='test'), uid='resources1'))
     assert step2.uid == step3.uid
     assert step2.state == step3.state
     assert step2.skip == step3.skip
@@ -669,8 +669,27 @@ def test_ext_resources_wrong_type():
 def test_ext_resources_wrong_type_init():
     with pytest.raises(ValueError) as exc:
         res = TResources(uid="test-step-1", service1=1)
-    assert str(exc.value) == "service1 has to be type ExtResource"
+    assert str(exc.value) == "service1 has to be type ExtResource not <class 'int'>"
+
+def test_ext_resources_load():
+    dump = {'type': 'TResources',
+            'uid': 'resources1',
+            'service1': {'env':'test2'}}
+    res = TResources.load_cls(dump)
+    res = TResources(uid='resource1', service1=TResource(env='test')).load(dump)
+    assert res.service1.env == 'test2'
     
+def test_ext_resources_load_wrong_type():
+    dump = {'type': 'TResources2',
+            'uid': 'resources1',
+            'service1': {}}
+    with pytest.raises(LoadWrongExtResourceError) as exc:
+        res = TResources.load_cls(dump)
+    assert str(exc.value) == "Cannot load TResources2 into TResources"
+
+    with pytest.raises(LoadWrongExtResourceError) as exc:
+        res = TResources(uid='resource1', service1=TResource(env='test')).load(dump)
+    assert str(exc.value) == "Cannot load TResources2 into TResources"
 
 def test_results_assignment(fixture_shared_results):
     class TStep(Step[TResults, TArgs, NoResources, NoInputs, TDetails]):

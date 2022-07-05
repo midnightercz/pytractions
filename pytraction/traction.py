@@ -23,7 +23,6 @@ from pydantic.dataclasses import dataclass
 
 from .exc import LoadWrongStepError, LoadWrongExtResourceError
 
-print(pydantic.__file__)
 
 Validator = Callable[Any, Any]
 
@@ -128,11 +127,10 @@ class ExtResourcesCls(pydantic.generics.BaseModel, metaclass=ResourcesModelMeta)
 
     def __init__(self, **kwargs):
         for key, val in kwargs.items():
-            print(key, val)
             if key == 'uid':
                 continue
             if not issubclass(type(val), ExtResource):
-                raise ValueError("%s has to be type ExtResource" % key)
+                raise ValueError("%s has to be type ExtResource not %s" % (key, type(val)))
 
         super().__init__(**kwargs)
 
@@ -142,17 +140,32 @@ class ExtResourcesCls(pydantic.generics.BaseModel, metaclass=ResourcesModelMeta)
         return ret
 
     def load(self, dump):
-        if dump['type'] != self.NAME:
-            raise LoadWrongExtResourceError("Cannot load %s into %s" %  (dump['NAME'], self.NAME))
-        dump.pop('type')
-        self.parse_obj(dump)
+        dump_copy = dump.copy()
+        if dump_copy['type'] != self.NAME:
+            raise LoadWrongExtResourceError("Cannot load %s into %s" %  (dump_copy['type'], self.NAME))
+        dump_copy.pop('type')
+        ret = {}
+        for key, val  in dump_copy.items():
+            if key == 'uid':
+                self.uid = val
+            else:
+                setattr(self,key,self.__fields__[key].type_(**val))
+        return self
+
 
     @classmethod
     def load_cls(cls, dump):
+        dump_copy = dump.copy()
         if dump['type'] != cls.NAME:
-            raise LoadWrongExtResourceError("Cannot load %s into %s" %  (dump['NAME'], cls.NAME))
-        dump.pop('type')
-        return cls(**dump)
+            raise LoadWrongExtResourceError("Cannot load %s into %s" %  (dump_copy['type'], cls.NAME))
+        dump_copy.pop('type')
+        ret = {}
+        for key, val  in dump_copy.items():
+            if key == 'uid':
+                ret['uid'] = val
+            else:
+                ret[key] = cls.__fields__[key].type_(**val)
+        return cls(**ret)
 
 
 ArgsType = TypeVar("ArgsType", bound=ArgsTypeCls)
@@ -534,7 +547,6 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
 
     def _store_results(self) -> None:
         self.shared_results.results[self.fullname] = self.results
-        #print("STORE", type(self),  id(self.shared_results), self.shared_results)
 
     @abc.abstractmethod
     def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pragma: no cover
@@ -558,7 +570,6 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         ret['external_resources'] = self.external_resources.dump()
         for f,ftype in self.inputs.__fields__.items():
             field = getattr(self.inputs, f)
-            print("step found", field.step)
             if field.step:
                 ret['inputs'][f] = getattr(self.inputs, f).step.fullname
             else:
