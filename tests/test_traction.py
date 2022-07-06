@@ -14,7 +14,7 @@ from pytraction.traction import (
     StepOnErrorCallable, StepOnUpdateCallable,
     TractorDumpDict, StepResults, NoDetails, StepState)
 
-from pytraction.exc import (LoadWrongStepError,LoadWrongExtResourceError)
+from pytraction.exc import (LoadWrongStepError, LoadWrongExtResourceError, MissingSecret)
 
 class TResults(StepResults):
     x: int = 10
@@ -26,15 +26,28 @@ class TArgs(ArgsTypeCls):
 
 class TSecretArgs(ArgsTypeCls):
     arg1: Secret
-    arg2: str
+    arg2: int
 
 class TResource(ExtResource):
+    NAME: ClassVar[str] = 'Resource1'
     env: str
+
+
+class TResourceWithSecrets(ExtResource):
+    NAME: ClassVar[str] = 'TResourceWithSecrets'
+    SECRETS: ClassVar[List[str]] = ['secret']
+    env: str
+    secret: str
 
 
 class TResources(ExtResourcesCls):
     NAME: ClassVar[str] = "TResources"
     service1: TResource
+
+
+class TResources2(ExtResourcesCls):
+    NAME: ClassVar[str] = "TResources2"
+    service1: TResourceWithSecrets
 
 
 class TInputs(StepInputs):
@@ -118,7 +131,7 @@ def test_step_initiation_succesful_no_args(fixture_shared_results):
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             pass
  
-    step = TStep("test-step-1", NoArgs(), fixture_shared_results,  TResources(service1=TResource(env='test'), uid='resources1'), TInputs(input1=TResults()))
+    step = TStep("test-step-1", NoArgs(), fixture_shared_results,  TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=TResults()))
     assert step.inputs.input1.x == 10
 
 
@@ -152,7 +165,7 @@ def test_step_initiation_wrong_inputs_type(fixture_shared_results):
             pass
     
     with pytest.raises(TypeError) as exc:
-        step = TStep("test-step-1", NoArgs(), fixture_shared_results, TResources(service1=TResource(env='test'), uid='resources1'), TInputs(input1=TResults(x=1)))
+        step = TStep("test-step-1", NoArgs(), fixture_shared_results, TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=TResults(x=1)))
     assert str(exc.value).startswith("Step inputs are not type of <class 'pytraction.traction.NoInputs'>")
 
 
@@ -242,7 +255,7 @@ def test_step_run_secret_arg(fixture_shared_results):
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results.x = str(self.args.arg1)
 
-    step = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'), fixture_shared_results, NoResources(), NoInputs())
+    step = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2=100), fixture_shared_results, NoResources(), NoInputs())
     step.run()
             
     assert step.args.arg1 == 'supersecret'
@@ -302,9 +315,9 @@ def test_step_dump_load(fixture_shared_results, fixture_isodate_now):
     standalone_input = TResults(x=55)
 
     step = TStep("test-step-1",
-                 TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'),
+                 TSecretArgs(arg1=Secret("supersecret"), arg2=200),
                  fixture_shared_results,
-                 TResources(service1=TResource(env='test'), uid='resources1'),
+                 TResources(service1=TResource(env='test', uid='res1')),
                  TInputs(input1=standalone_input))
     step.run()
 
@@ -312,14 +325,15 @@ def test_step_dump_load(fixture_shared_results, fixture_isodate_now):
             
     dumped = step.dump()
     assert dumped == {
-        'args': {'arg1': '*CENSORED*', 'arg2': 'test-arg'},
+        'args': {'arg1': '*CENSORED*', 'arg2': 200},
         "details": {'status':'done'},
         'errors': {'errors': {}},
         'inputs': {},
-        'inputs_standalone': {"input1":{"x":55}},
+        'inputs_standalone': {"input1": {"x": 55}},
         'external_resources': {'type': 'TResources',
-                               'uid': 'resources1',
-                               'service1': {'env':'test'}},
+                               'service1': {'env': 'test',
+                                            'uid': 'res1',
+                                            'type': 'Resource1'}},
         'skip': False,
         'skip_reason': '',
         'state': StepState.FINISHED,
@@ -336,15 +350,15 @@ def test_step_dump_load(fixture_shared_results, fixture_isodate_now):
         'results': {'x':1}
     }
     step2 = TStep("test-step-1",
-                  TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'),
+                  TSecretArgs(arg1=Secret("supersecret"), arg2=200),
                   fixture_shared_results,
-                  TResources(service1=TResource(env='test'), uid='resources1'),
+                  TResources(service1=TResource(env='test', uid='res1')),
                   TInputs(input1=standalone_input))
     step2.load(dumped)
     assert step2.args.arg1 == "supersecret"
-    assert step2.args.arg2 == 'test-arg'
+    assert step2.args.arg2 == 200
     assert step2.results.x == 1
-    assert step2.skip == False
+    assert step2.skip is False
     assert step2.skip_reason == ''
     assert step2.state == StepState.FINISHED
     assert step2.stats == {
@@ -354,10 +368,10 @@ def test_step_dump_load(fixture_shared_results, fixture_isodate_now):
             'state': StepState.FINISHED,
             'started': '1990-01-01T00:00:00.00000Z',
             'finished': '1990-01-01T00:00:01.00000Z'
-    } 
+    }
     assert step2.uid == 'test-step-1'
 
-    step3 = TStep.load_cls(dumped, {'arg1': Secret('supersecret')},  {}, fixture_shared_results, TResources(service1=TResource(env='test'), uid='resources1'))
+    step3 = TStep.load_cls(dumped, {'arg1': Secret('supersecret')},  {}, fixture_shared_results)
     assert step2.uid == step3.uid
     assert step2.state == step3.state
     assert step2.skip == step3.skip
@@ -380,42 +394,34 @@ def test_step_dump_load_multiple(fixture_shared_results, fixture_isodate_now):
             self.details.status = 'done'
             print("step run")
 
-
     standalone_input = TResults(x=55)
 
     step = TStep("test-step-1",
-                 TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'),
+                 TSecretArgs(arg1=Secret("supersecret"), arg2=200),
                  fixture_shared_results,
                  NoResources(),
                  TInputs(input1=standalone_input))
-    print("STEP RESULTS", id(step.results))
     step2 = TStep("test-step-2",
-                 TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'),
-                 fixture_shared_results,
-                 NoResources(),
-                 TInputs(input1=step.results))
-    print("STEP2 INPUTS BEFORE RUN ", step2.inputs, id(step2.inputs))
-    print("STEP2 INPUT1 BEFORE RUN ", step2.inputs, id(step2.inputs.input1))
+                  TSecretArgs(arg1=Secret("supersecret"), arg2=200),
+                  fixture_shared_results,
+                  NoResources(),
+                  TInputs(input1=step.results))
     step.run()
     step2.run()
-    print("STEP1", step.results, id(step.results))
-    print("STEP2 INPUTS", step2.inputs, id(step2.inputs))
-    print("STEP2 INPUT1", step2.inputs, id(step2.inputs.input1))
 
     assert step.state == StepState.FINISHED
     assert step2.state == StepState.FINISHED
-            
+ 
     dumped = step.dump()
     assert dumped == {
-        'args': {'arg1': '*CENSORED*', 'arg2': 'test-arg'},
-        "details": {'status':'done'},
+        'args': {'arg1': '*CENSORED*', 'arg2': 200},
+        "details": {'status': 'done'},
         'errors': {'errors': {}},
         'inputs': {},
-        'inputs_standalone': {"input1":{"x":55}},
+        'inputs_standalone': {"input1": {"x": 55}},
         'skip': False,
         'skip_reason': '',
-        'external_resources': {'type': 'NoResources',
-                               'uid': 'NoResources'},
+        'external_resources': {'type': 'NoResources'},
         'state': StepState.FINISHED,
         'stats': {
             'skip': False,
@@ -427,20 +433,19 @@ def test_step_dump_load_multiple(fixture_shared_results, fixture_isodate_now):
         },
         'uid': 'test-step-1',
         'type': step.NAME,
-        'results': {'x':1}
+        'results': {'x': 1}
     }
     dumped2 = step2.dump()
     assert dumped2 == {
-        'args': {'arg1': '*CENSORED*', 'arg2': 'test-arg'},
-        "details": {'status':'done'},
+        'args': {'arg1': '*CENSORED*', 'arg2': 200},
+        "details": {'status': 'done'},
         'errors': {'errors': {}},
         'inputs': {'input1': 'TestStep:test-step-1'},
         'inputs_standalone': {},
         'skip': False,
         'skip_reason': '',
         'state': StepState.FINISHED,
-        'external_resources': {'type': 'NoResources',
-                               'uid': 'NoResources'},
+        'external_resources': {'type': 'NoResources'},
         'stats': {
             'skip': False,
             'skipped': False,
@@ -451,21 +456,16 @@ def test_step_dump_load_multiple(fixture_shared_results, fixture_isodate_now):
         },
         'uid': 'test-step-2',
         'type': step.NAME,
-        'results': {'x':1}
+        'results': {'x': 1}
     }
 
-    step3 = TStep.load_cls(dumped, {'arg1': Secret('supersecret')},  {}, fixture_shared_results, NoResources())
-    step4 = TStep.load_cls(dumped2, {'arg1': Secret('supersecret')},  {step3.fullname: step3}, fixture_shared_results, NoResources())
+    step3 = TStep.load_cls(dumped, {'arg1': Secret('supersecret')},  {}, fixture_shared_results)
+    step4 = TStep.load_cls(dumped2, {'arg1': Secret('supersecret')},  {step3.fullname: step3}, fixture_shared_results)
 
     assert step3.uid == step.uid
     assert step3.state == step.state
     assert step3.skip == step.skip
     assert step3.skip_reason == step.skip_reason
-    print("---")
-    print(step3.results)
-    print("-")
-    print(step.results)
-    print("---")
     assert step3.results == step.results
     assert step3.errors == step.errors
     assert step3.details == step.details
@@ -499,16 +499,16 @@ def test_step_dump_load_cls_wrong(fixture_shared_results, fixture_isodate_now):
     standalone_input = TResults(x=55)
 
     step = TStep("test-step-1",
-                 TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'),
+                 TSecretArgs(arg1=Secret("supersecret"), arg2=200),
                  fixture_shared_results,
                  NoResources(),
                  TInputs(input1=standalone_input))
     dumped = {
-        'args': {'arg1': '*CENSORED*', 'arg2': 'test-arg'},
-        "details": {'status':'done'},
+        'args': {'arg1': '*CENSORED*', 'arg2': 200},
+        "details": {'status': 'done'},
         'errors': {'errors': {}},
         'inputs': {},
-        'inputs_standalone': {"input1":{"x":55}},
+        'inputs_standalone': {"input1": {"x": 55}},
         'skip': False,
         'skip_reason': '',
         'state': StepState.FINISHED,
@@ -522,10 +522,10 @@ def test_step_dump_load_cls_wrong(fixture_shared_results, fixture_isodate_now):
         },
         'uid': 'test-step-1',
         'type': "WrongStep",
-        'results': {'x':1}
+        'results': {'x': 1}
     }
     with pytest.raises(LoadWrongStepError):
-        step2 = TStep.load_cls(dumped, {'arg1': Secret('supersecret')},  {step.fullname: step}, fixture_shared_results, NoResources())
+        step2 = TStep.load_cls(dumped, {'arg1': Secret('supersecret')},  {step.fullname: step}, fixture_shared_results)
 
 
 def test_step_dump_load_wrong(fixture_shared_results, fixture_isodate_now):
@@ -542,12 +542,12 @@ def test_step_dump_load_wrong(fixture_shared_results, fixture_isodate_now):
     standalone_input = TResults(x=55)
 
     step = TStep("test-step-1",
-                 TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'),
+                 TSecretArgs(arg1=Secret("supersecret"), arg2=200),
                  fixture_shared_results,
                  NoResources(),
                  TInputs(input1=standalone_input))
     dumped = {
-        'args': {'arg1': '*CENSORED*', 'arg2': 'test-arg'},
+        'args': {'arg1': '*CENSORED*', 'arg2': 200},
         "details": {'status':'done'},
         'errors': {'errors': {}},
         'inputs': {},
@@ -579,9 +579,9 @@ def test_step_dict(fixture_shared_results):
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results.x = self.args.arg1
 
-    step = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'), fixture_shared_results, NoResources(), NoInputs())
+    step = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2=200), fixture_shared_results, NoResources(), NoInputs())
     assert step.dict()['args']['arg1'] == "*CENSORED*"
-    assert step.dict()['args']['arg2'] == "test-arg"
+    assert step.dict()['args']['arg2'] == 200
 
 
 def test_step_generic(fixture_shared_results):
@@ -606,10 +606,10 @@ def test_step_generic(fixture_shared_results):
         pass
 
 
-    step = Model1Loader("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2='test-arg'), fixture_shared_results, NoResources(), NoInputs())
+    step = Model1Loader("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2=200), fixture_shared_results, NoResources(), NoInputs())
     step.run()
     assert step.dict()['args']['arg1'] == "*CENSORED*"
-    assert step.dict()['args']['arg2'] == "test-arg"
+    assert step.dict()['args']['arg2'] == 200
 
 
 def test_inputs_invalid_field_type():
@@ -643,20 +643,20 @@ def test_results_invalid_type():
 
 def test_invalid_secret_arguments():
     with pytest.raises(pydantic.ValidationError):
-        assert TSecretArgs(arg1="1", arg2='a2')
+        assert TSecretArgs(arg1="1", arg2=200)
 
 
 def test_invalid_secret_arguments_compare():
-    sec2 = TSecretArgs(arg1=Secret("a"), arg2='a2')
-    sec = TSecretArgs(arg1=Secret("a"), arg2='a2')
+    sec2 = TSecretArgs(arg1=Secret("a"), arg2=200)
+    sec = TSecretArgs(arg1=Secret("a"), arg2=200)
     assert sec.arg1 == "a"
     assert sec.arg1 == sec2.arg1
 
 
 def test_secret_str():
-    sec = TSecretArgs(arg1=Secret("a"), arg2='a2')
+    sec = TSecretArgs(arg1=Secret("a"), arg2=200)
     assert str(sec.arg1) == "a"
-    assert sec.arg2 == "a2"
+    assert sec.arg2 == 200
 
 
 def test_ext_resources_wrong_type():
@@ -668,27 +668,35 @@ def test_ext_resources_wrong_type():
 
 def test_ext_resources_wrong_type_init():
     with pytest.raises(ValueError) as exc:
-        res = TResources(uid="test-step-1", service1=1)
+        res = TResources(service1=1, uid='res1')
     assert str(exc.value) == "service1 has to be type ExtResource not <class 'int'>"
 
 def test_ext_resources_load():
     dump = {'type': 'TResources',
-            'uid': 'resources1',
-            'service1': {'env':'test2'}}
+            'service1': {'env':'test2', 'uid':'res1', "type": "Resource1"}}
     res = TResources.load_cls(dump)
-    res = TResources(uid='resource1', service1=TResource(env='test')).load(dump)
+    res = TResources(uid='resource1', service1=TResource(env='test', uid='res1')).load(dump)
     assert res.service1.env == 'test2'
+
+def test_ext_resource_load_wrong_type():
+    dump = {'type': 'TResources',
+            'service1': {'env':'test2', 'uid':'res1', "type": "Resource2"}}
+    with pytest.raises(LoadWrongExtResourceError) as exc:
+        res = TResources.load_cls(dump)
+    assert str(exc.value) == "Cannot load Resource2 into Resource1"
+    with pytest.raises(LoadWrongExtResourceError) as exc:
+        res = TResources(uid='resource1', service1=TResource(env='test', uid='res1')).load(dump)
+    assert str(exc.value) == "Cannot load Resource2 into Resource1"
     
 def test_ext_resources_load_wrong_type():
     dump = {'type': 'TResources2',
-            'uid': 'resources1',
             'service1': {}}
     with pytest.raises(LoadWrongExtResourceError) as exc:
         res = TResources.load_cls(dump)
     assert str(exc.value) == "Cannot load TResources2 into TResources"
 
     with pytest.raises(LoadWrongExtResourceError) as exc:
-        res = TResources(uid='resource1', service1=TResource(env='test')).load(dump)
+        res = TResources(service1=TResource(env='test', uid='res1')).load(dump)
     assert str(exc.value) == "Cannot load TResources2 into TResources"
 
 def test_results_assignment(fixture_shared_results):
@@ -709,7 +717,7 @@ def test_tractor_add_steps(fixture_shared_results):
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results = TResults(x=self.inputs.input1 + self.args.arg1)
 
-    tractor = Tractor(step_map={"TestStep": TStep})
+    tractor = Tractor(step_map={"TestStep": TStep}, resources_map={'Resource1': TResource})
 
     step1 = TStep("test-step-1", TArgs(arg1=1), tractor.shared_results, NoResources(), TInputs(input1=TResults(x=1)))
     step2 = TStep("test-step-2", TArgs(arg1=2), tractor.shared_results, NoResources(), TInputs(input1=step1.results))
@@ -720,4 +728,197 @@ def test_tractor_add_steps(fixture_shared_results):
     tractor.add_step(step3)
 
     assert tractor.current_step == None
+    assert tractor.steps == [step1, step2, step3]
 
+
+def test_tractor_dump_load(fixture_shared_results):
+    class TStep(Step[TResults, TSecretArgs, TResources2, TInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results = TResults(x=self.inputs.input1 + self.args.arg1)
+
+    tractor = Tractor(step_map={"TestStep": TStep}, resources_map={'Resource1': TResource})
+
+    step1 = TStep("test-step-1",
+                  TSecretArgs(arg1=Secret('1'), arg2=1),
+                  tractor.shared_results,
+                  TResources2(service1=TResourceWithSecrets(env='test', secret='1', uid='res1')),
+                  TInputs(input1=TResults(x=1)))
+    step2 = TStep("test-step-2", 
+                   TSecretArgs(arg1=Secret('2'), arg2=2),
+                   tractor.shared_results,
+                   TResources2(service1=TResourceWithSecrets(env='test', secret='1', uid='res1')),
+                   TInputs(input1=step1.results))
+    step3 = TStep("test-step-3",
+                  TSecretArgs(arg1=Secret('3'), arg2=3),
+                  tractor.shared_results,
+                  TResources2(service1=TResourceWithSecrets(env='test', secret='1', uid='res1')),
+                  TInputs(input1=step2.results))
+    
+    tractor.add_step(step1)
+    tractor.add_step(step2)
+    tractor.add_step(step3)
+
+    dumped = tractor.dump()
+    assert dumped == {
+        'resources': {'TResourceWithSecrets:res1': {
+                        'secret': "*CENSORED*",
+                        'env': 'test',
+                        'uid': 'res1',
+                        'type': 'TResourceWithSecrets'},
+                     },
+        'steps': [{'args': {'arg1': '*CENSORED*', 'arg2': 1},
+                   'details': {'status': ''},
+                   'errors': {'errors': {}},
+                   'external_resources': {'service1': 'TResourceWithSecrets:res1',
+                                          'type': 'TResources2'},
+                   'inputs': {},
+                   'inputs_standalone': {'input1': {'x': 1}},
+                   'results': {'x': 10},
+                   'skip': False,
+                   'skip_reason': '',
+                   'state': StepState.READY,
+                   'stats': {'finished': None,
+                             'skip': False,
+                             'skip_reason': '',
+                             'skipped': False,
+                             'started': None,
+                             'state': StepState.READY},
+                   'type': 'TestStep',
+                   'uid': 'test-step-1'},
+                  {'args': {'arg1': '*CENSORED*', 'arg2': 2},
+                   'details': {'status': ''},
+                   'errors': {'errors': {}},
+                   'external_resources': {'service1': 'TResourceWithSecrets:res1',
+                                          'type': 'TResources2'},
+                   'inputs': {'input1': 'TestStep:test-step-1'},
+                   'inputs_standalone': {},
+                   'results': {'x': 10},
+                   'skip': False,
+                   'skip_reason': '',
+                   'state': StepState.READY,
+                   'stats': {'finished': None,
+                             'skip': False,
+                             'skip_reason': '',
+                             'skipped': False,
+                             'started': None,
+                             'state': StepState.READY},
+                   'type': 'TestStep',
+                   'uid': 'test-step-2'},
+                  {'args': {'arg1': '*CENSORED*', 'arg2': 3},
+                   'details': {'status': ''},
+                   'errors': {'errors': {}},
+                   'external_resources': {'service1': 'TResourceWithSecrets:res1',
+                                          'type': 'TResources2',
+                                         },
+                   'inputs': {'input1': 'TestStep:test-step-2'},
+                   'inputs_standalone': {},
+                   'results': {'x': 10},
+                   'skip': False,
+                   'skip_reason': '',
+                   'state': StepState.READY,
+                   'stats': {'finished': None,
+                             'skip': False,
+                             'skip_reason': '',
+                             'skipped': False,
+                             'started': None,
+                             'state': StepState.READY},
+                   'type': 'TestStep',
+                   'uid': 'test-step-3'}]
+        }
+
+
+    tractor2 = Tractor(step_map={"TestStep": TStep}, resources_map={'Resource1': TResource, 'TResourceWithSecrets': TResourceWithSecrets})
+    with pytest.raises(MissingSecret):
+        tractor2.load(dumped, {})
+
+    tractor2.load(dumped, {"TestStep:test-step-1": {'arg1': Secret('1')},
+                           "TestStep:test-step-2": {'arg1': Secret('2')},
+                           "TestStep:test-step-3": {'arg1': Secret('3')},
+                           'TResourceWithSecrets:res1': {'secret': 'secret value'}})
+    assert tractor2.steps[0].args.arg1 == '1'
+    assert tractor2.steps[0].details.status == ''
+    assert tractor2.steps[0].errors.errors == {}
+    assert tractor2.steps[0].external_resources.service1 == TResourceWithSecrets(env='test', uid='res1', secret='secret value')
+    assert tractor2.steps[0].inputs.input1 == TResults(x=1)
+    assert tractor2.steps[0].skip == False
+    assert tractor2.steps[0].skip_reason == ''
+    assert tractor2.steps[0].state == StepState.READY
+
+    assert tractor2.steps[1].args.arg1 == '2'
+    assert tractor2.steps[1].details.status == ''
+    assert tractor2.steps[1].errors.errors == {}
+    assert tractor2.steps[1].external_resources.service1 == TResourceWithSecrets(env='test', uid='res1', secret='secret value')
+    assert tractor2.steps[1].inputs.input1 is tractor2.steps[0].results
+    assert tractor2.steps[1].skip == False
+    assert tractor2.steps[1].skip_reason == ''
+    assert tractor2.steps[1].state == StepState.READY
+
+    assert tractor2.steps[2].args.arg1 == '3'
+    assert tractor2.steps[2].details.status == ''
+    assert tractor2.steps[2].errors.errors == {}
+    assert tractor2.steps[2].external_resources.service1 == TResourceWithSecrets(env='test', uid='res1', secret='secret value')
+    assert tractor2.steps[2].inputs.input1 is tractor2.steps[1].results
+    assert tractor2.steps[2].skip == False
+    assert tractor2.steps[2].skip_reason == ''
+    assert tractor2.steps[2].state == StepState.READY
+
+
+def test_tractor_run(fixture_shared_results):
+    class TStep(Step[TResults, TSecretArgs, TResources, TInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results = TResults(x=self.inputs.input1.x + self.args.arg2)
+
+    tractor = Tractor(step_map={"TestStep": TStep}, resources_map={'Resource1': TResource})
+
+    step1 = TStep("test-step-1", TSecretArgs(arg1=Secret('1'), arg2=1), tractor.shared_results, TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=TResults(x=1)))
+    step2 = TStep("test-step-2", TSecretArgs(arg1=Secret('2'), arg2=2), tractor.shared_results, TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=step1.results))
+    step3 = TStep("test-step-3", TSecretArgs(arg1=Secret('3'), arg2=3), tractor.shared_results, TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=step2.results))
+    
+    tractor.add_step(step1)
+    tractor.add_step(step2)
+    tractor.add_step(step3)
+
+    tractor.run()
+
+    assert step1.state == StepState.FINISHED
+    assert step2.state == StepState.FINISHED
+    assert step3.state == StepState.FINISHED
+
+    assert step3.results.x == 7
+
+
+def test_tractor_run_error(fixture_shared_results):
+    class TStep(Step[TResults, TSecretArgs, TResources, TInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results = TResults(x=self.inputs.input1.x + self.args.arg2)
+            if self.results.x > 4:
+                raise ValueError("Value too high")
+
+    on_error_called = {"count": 0}
+
+    def on_error(step: Step):
+        print("on error")
+        on_error_called['count'] = 1
+
+    tractor = Tractor(step_map={"TestStep": TStep}, resources_map={'Resource1': TResource})
+
+    step1 = TStep("test-step-1", TSecretArgs(arg1=Secret('1'), arg2=1), tractor.shared_results, TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=TResults(x=1)))
+    step2 = TStep("test-step-2", TSecretArgs(arg1=Secret('2'), arg2=2), tractor.shared_results, TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=step1.results))
+    step3 = TStep("test-step-3", TSecretArgs(arg1=Secret('3'), arg2=3), tractor.shared_results, TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=step2.results))
+    
+    tractor.add_step(step1)
+    tractor.add_step(step2)
+    tractor.add_step(step3)
+
+    with pytest.raises(ValueError):
+        tractor.run(on_error=on_error)
+
+    assert step1.state == StepState.FINISHED
+    assert step2.state == StepState.FINISHED
+    assert step3.state == StepState.ERROR
+
+    assert step3.results.x == 7
+    assert on_error_called == {"count": 1}
