@@ -455,8 +455,8 @@ def test_step_dump_load_multiple(fixture_isodate_now):
         'results': {'x': 1}
     }
 
-    step3 = TStep.load_cls(dumped, {'%s:%s' % (step.NAME, step.uid): {'arg1': 'supersecret'}},  {})
-    step4 = TStep.load_cls(dumped2, {'%s:%s' % (step.NAME, step.uid): {'arg1':'supersecret'}},  {step3.fullname: step3})
+    step3 = TStep.load_cls(dumped, {}, secrets={'%s:%s' % (step.NAME, step.uid): {'arg1': 'supersecret'}})
+    step4 = TStep.load_cls(dumped2, {step3.fullname: step3}, secrets={'%s:%s' % (step.NAME, step.uid): {'arg1':'supersecret'}})
 
     assert step3.uid == step.uid
     assert step3.state == step.state
@@ -823,9 +823,9 @@ def test_tractor_dump_load():
     with pytest.raises(MissingSecretError):
         tractor2.load(dumped, {})
 
-    tractor2.load(dumped, {"TestStep:test-step-1": {'arg1': Secret('1')},
-                           "TestStep:test-step-2": {'arg1': Secret('2')},
-                           "TestStep:test-step-3": {'arg1': Secret('3')},
+    tractor2.load(dumped, {"TestStep:test-step-1": {'arg1': '1'},
+                           "TestStep:test-step-2": {'arg1': '2'},
+                           "TestStep:test-step-3": {'arg1': '3'},
                            'TResourceWithSecrets:res1': {'secret': 'secret value'}})
     assert tractor2.steps[0].args.arg1 == '1'
     assert tractor2.steps[0].details.status == ''

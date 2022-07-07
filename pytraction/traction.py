@@ -669,6 +669,8 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         for f, ftype in args_type.__fields__.items():
             if ftype.type_ == Secret:
                 try:
+                    print(secrets)
+                    print("x %s:%s" % (cls.NAME, step_dump['uid']))
                     loaded_args[f] = Secret(secrets["%s:%s" % (cls.NAME, step_dump['uid'])][f])
                 except KeyError as e:
                     raise MissingSecretError(f) from e
@@ -785,9 +787,9 @@ class Tractor(pydantic.BaseModel,
             external_resources = external_resources_type(**step_resources)
             step = self.step_map[step_obj["type"]].load_cls(
                 step_obj,
-                secrets.get("%s:%s" % (step_obj['type'], step_obj['uid']), {}),
                 loaded_steps,
-                external_resources=external_resources)
+                external_resources=external_resources,
+                secrets=secrets) #.get("%s:%s" % (step_obj['type'], step_obj['uid']), {}))
 
             loaded_steps[step.fullname] = step
             self.steps.append(step)
