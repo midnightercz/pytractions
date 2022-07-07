@@ -14,7 +14,7 @@ from pytraction.traction import (
     StepOnErrorCallable, StepOnUpdateCallable,
     TractorDumpDict, StepResults, NoDetails, StepState)
 
-from pytraction.exc import (LoadWrongStepError, LoadWrongExtResourceError, MissingSecret)
+from pytraction.exc import (LoadWrongStepError, LoadWrongExtResourceError, MissingSecretError)
 
 class TResults(StepResults):
     x: int = 10
@@ -829,7 +829,7 @@ def test_tractor_dump_load(fixture_shared_results):
 
 
     tractor2 = Tractor(step_map={"TestStep": TStep}, resources_map={'Resource1': TResource, 'TResourceWithSecrets': TResourceWithSecrets})
-    with pytest.raises(MissingSecret):
+    with pytest.raises(MissingSecretError):
         tractor2.load(dumped, {})
 
     tractor2.load(dumped, {"TestStep:test-step-1": {'arg1': Secret('1')},

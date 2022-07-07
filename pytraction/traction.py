@@ -21,7 +21,7 @@ import pydantic.fields
 import pydantic.main
 from pydantic.dataclasses import dataclass
 
-from .exc import LoadWrongStepError, LoadWrongExtResourceError, MissingSecret
+from .exc import LoadWrongStepError, LoadWrongExtResourceError, MissingSecretError
 
 
 Validator = Callable[Any, Any]
@@ -131,7 +131,7 @@ class ExtResource(pydantic.generics.GenericModel):
                 try:
                     setattr(self, f, getattr(parsed, _secrets[f]))
                 except KeyError as e:
-                    raise MissingSecret from e
+                    raise MissingSecretError from e
             else:
                 setattr(self, f, getattr(parsed, f))
         return self
@@ -148,7 +148,7 @@ class ExtResource(pydantic.generics.GenericModel):
             try:
                 dump_copy[secret] = _secrets[secret]
             except KeyError as e:
-                raise MissingSecret from e
+                raise MissingSecretError from e
         return cls.parse_obj(dump_copy)
 
     @property
@@ -673,7 +673,7 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
                 try:
                     loaded_args[f] = secret_args[f]
                 except KeyError as e:
-                    raise MissingSecret(f) from e
+                    raise MissingSecretError(f) from e
             else:
                 loaded_args[f] = step_dump['args'][f]
 
