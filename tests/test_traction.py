@@ -298,7 +298,6 @@ def test_step_run_error():
 
 
 def test_step_dump_load(fixture_isodate_now):
-    """Step run with secret args."""
 
     class TStep(Step[TResults, TSecretArgs, TResources2, TInputs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
@@ -381,6 +380,61 @@ def test_step_dump_load(fixture_isodate_now):
     assert step2.inputs == step3.inputs
     assert step2.args == step3.args
 
+def test_step_dump_load_missing_secrets(fixture_isodate_now):
+
+    class TStep(Step[TResults, TSecretArgs, TResources2, TInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results.x = 1
+            self.details.status = 'done'
+
+
+    standalone_input = TResults(x=55)
+
+    step = TStep("test-step-1",
+                 TSecretArgs(arg1=Secret("supersecret"), arg2=200),
+                 TResources2(service1=TResourceWithSecrets(env='test', uid='res1', secret='secret')),
+                 TInputs(input1=standalone_input))
+    step.run()
+
+    assert step.state == StepState.FINISHED
+            
+    dumped = step.dump()
+    assert dumped == {
+        'args': {'arg1': '*CENSORED*', 'arg2': 200},
+        "details": {'status':'done'},
+        'errors': {'errors': {}},
+        'inputs': {},
+        'inputs_standalone': {"input1": {"x": 55}},
+        'external_resources': {'type': 'TResources2',
+                               'service1': {'env': 'test',
+                                            'uid': 'res1',
+                                            'secret': "*CENSORED*",
+                                            'type': 'TResourceWithSecrets'}},
+        'skip': False,
+        'skip_reason': '',
+        'state': StepState.FINISHED,
+        'stats': {
+            'skip': False,
+            'skipped': False,
+            'skip_reason': '',
+            'state': StepState.FINISHED,
+            'started': '1990-01-01T00:00:00.00000Z',
+            'finished': '1990-01-01T00:00:01.00000Z'
+        },
+        'uid': 'test-step-1',
+        'type': step.NAME,
+        'results': {'x':1}
+    }
+    step2 = TStep("test-step-1",
+                  TSecretArgs(arg1=Secret("supersecret"), arg2=200),
+                  TResources2(service1=TResourceWithSecrets(env='test', uid='res1', secret='secret value')),
+                  TInputs(input1=standalone_input))
+    with pytest.raises(MissingSecretError) as e:
+        step3 = TStep.load_cls(
+            dumped,
+            {})
+
 
 def test_step_dump_load_multiple(fixture_isodate_now):
     """Step run with secret args."""
@@ -456,7 +510,7 @@ def test_step_dump_load_multiple(fixture_isodate_now):
     }
 
     step3 = TStep.load_cls(dumped, {}, secrets={'%s:%s' % (step.NAME, step.uid): {'arg1': 'supersecret'}})
-    step4 = TStep.load_cls(dumped2, {step3.fullname: step3}, secrets={'%s:%s' % (step.NAME, step.uid): {'arg1':'supersecret'}})
+    step4 = TStep.load_cls(dumped2, {step3.fullname: step3}, secrets={'%s:%s' % (step.NAME, step2.uid): {'arg1':'supersecret'}})
 
     assert step3.uid == step.uid
     assert step3.state == step.state

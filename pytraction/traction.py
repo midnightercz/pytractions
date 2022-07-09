@@ -119,22 +119,21 @@ class ExtResource(pydantic.generics.GenericModel):
         ret['type'] = self.NAME
         return ret
 
-    def load(self, dump, secrets: Dict[str, str] = None):
-        _secrets = secrets or {}
+    def load(self, dump):#, secrets: Dict[str, str] = None):
+        #_secrets = secrets or {}
         dump_copy = dump.copy()
         if dump_copy['type'] != self.NAME:
             raise LoadWrongExtResourceError("Cannot load %s into %s" % (dump_copy['type'], self.NAME))
         dump_copy.pop('type')
         parsed = self.parse_obj(dump)
         for f in self.__fields__:
-            print(f)
-            if f in _secrets:
-                try:
-                    setattr(self, f, _secrets[f])
-                except KeyError as e:
-                    raise MissingSecretError(f) from e
-            else:
-                setattr(self, f, getattr(parsed, f))
+            #if f in _secrets:
+            #    try:
+            #        setattr(self, f, _secrets[f])
+            #    except KeyError as e:
+            #        raise MissingSecretError(f) from e
+            #else:
+            setattr(self, f, getattr(parsed, f))
         return self
 
     @classmethod
@@ -144,7 +143,6 @@ class ExtResource(pydantic.generics.GenericModel):
         if dump['type'] != cls.NAME:
             raise LoadWrongExtResourceError("Cannot load %s into %s" %  (dump_copy['type'], cls.NAME))
         dump_copy.pop('type')
-        print("RESOURCE secrets", secrets)
         for secret in cls.SECRETS:
             try:
                 dump_copy[secret] = _secrets[secret]
@@ -188,16 +186,18 @@ class ExtResourcesCls(pydantic.generics.BaseModel, metaclass=ResourcesModelMeta)
                 ret[f] = getattr(self,f).fullname
         return ret
 
-    def load(self, dump, secrets: Dict[str, str] = None):
-        _secrets = secrets or {}
+    def load(self, dump):#, secrets: Dict[str, str] = None):
+        #_secrets = secrets or {}
         dump_copy = dump.copy()
         if dump_copy['type'] != self.NAME:
             raise LoadWrongExtResourceError("Cannot load %s into %s" %  (dump_copy['type'], self.NAME))
         dump_copy.pop('type')
+        #for f in self.__fields__:
+        #    if getattr(self, f).SECRETS and "%s:%s" % (getattr(self, f).NAME, getattr(self, f).uid) not in secrets:
+        #        raise MissingSecretError("Missing secrets for %s:%s" % (getattr(self, f).NAME, getattr(self, f).uid))
         for key, val in dump_copy.items():
-            res_secrets = _secrets.get("%s:%s" % (val['type'], val['uid']), {})
-            print(res_secrets)
-            setattr(self, key, getattr(self, key).load(val, secrets=res_secrets))
+            #res_secrets = _secrets.get("%s:%s" % (val['type'], val['uid']), {})
+            setattr(self, key, getattr(self, key).load(val))#, secrets=res_secrets))
         return self
 
 
@@ -205,6 +205,9 @@ class ExtResourcesCls(pydantic.generics.BaseModel, metaclass=ResourcesModelMeta)
     def load_cls(cls, dump, secrets: Dict[str, str] = None):
         _secrets = secrets or {}
         dump_copy = dump.copy()
+        #for k, v in dump.items():
+        #    if getattr(cls, k).type_.SECRETS and "%s:%s" % (getattr(cls, k).type_.NAME, v['uid']) not in secrets:
+        #        raise MissingSecretError("Missing secrets for %s:%s" % (getattr(cls, k).NAME, v['uid']))
         if dump['type'] != cls.NAME:
             raise LoadWrongExtResourceError("Cannot load %s into %s" %  (dump_copy['type'], cls.NAME))
         dump_copy.pop('type')
@@ -622,8 +625,6 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
 
     def load(self, step_dump, secrets: Dict[str, Dict[str, str]] = None):
         """Load step data from dictionary produced by dump method."""
-
-        print(secrets)
         _secrets = secrets or {}
         if step_dump['type'] != self.NAME:
             raise LoadWrongStepError('Cannot load %s dump to step %s' % (step_dump['type'], self.NAME))
@@ -644,7 +645,7 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         self.errors = step_dump['errors']
         self.stats = step_dump['stats']
         self.results.step = self
-        self.external_resources.load(step_dump['external_resources'], secrets=_secrets)
+        self.external_resources.load(step_dump['external_resources'])#, secrets=_secrets)
 
     @classmethod
     def load_cls(
@@ -669,9 +670,7 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         for f, ftype in args_type.__fields__.items():
             if ftype.type_ == Secret:
                 try:
-                    print(secrets)
-                    print("x %s:%s" % (cls.NAME, step_dump['uid']))
-                    loaded_args[f] = Secret(secrets["%s:%s" % (cls.NAME, step_dump['uid'])][f])
+                    loaded_args[f] = Secret(_secrets["%s:%s" % (cls.NAME, step_dump['uid'])][f])
                 except KeyError as e:
                     raise MissingSecretError(f) from e
             else:
@@ -770,8 +769,6 @@ class Tractor(pydantic.BaseModel,
         self.steps = []
         for fullname, resource_dump in dump_obj["resources"].items():
             resource_dump_copy = resource_dump.copy()
-            print("%s:%s" % (resource_dump['type'], resource_dump['uid']))
-            print(secrets)
             loaded_resources[fullname] = self.resources_map[resource_dump['type']].load_cls(
                 resource_dump_copy, 
                 secrets.get("%s:%s" % (resource_dump['type'], resource_dump['uid']), {})
