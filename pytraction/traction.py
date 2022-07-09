@@ -203,7 +203,7 @@ class ResourcesModelMeta(pydantic.main.ModelMetaclass):
         return ret
 
 
-class ExtResourcesCls(pydantic.generics.BaseModel, metaclass=ResourcesModelMeta):
+class ExtResources(pydantic.generics.BaseModel, metaclass=ResourcesModelMeta):
     NAME: ClassVar[str]
 
     def __init__(self, **kwargs):
@@ -255,7 +255,7 @@ class ExtResourcesCls(pydantic.generics.BaseModel, metaclass=ResourcesModelMeta)
 
 
 ArgsType = TypeVar("ArgsType", bound=ArgsTypeCls)
-ExtResourcesType = TypeVar("ExtResourcesType", bound=ExtResourcesCls)
+ExtResourcesType = TypeVar("ExtResourcesType", bound=ExtResources)
 
 
 class DefaultsModelMeta(pydantic.main.ModelMetaclass):
@@ -529,7 +529,7 @@ class Step(
         type_args = self.get_step_types()
         if not type_args:
             raise TypeError(
-                "Missing generic annotations for Step class. Use Step[ResultsCls, ArgsCls, ExtResourcesCls, InputsCls]"
+                "Missing generic annotations for Step class. Use Step[ResultsCls, ArgsCls, ExtResources, InputsCls]"
             )
 
         results_type = type_args[0]
@@ -905,7 +905,7 @@ class NoArgs(ArgsTypeCls):
     pass
 
 
-class NoResources(ExtResourcesCls):
+class NoResources(ExtResources):
     NAME: ClassVar[str] = "NoResources"
 
 

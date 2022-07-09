@@ -8,7 +8,7 @@ import pytraction
 
 from pytraction.traction import (
     Step, StepResults, ArgsTypeCls, NoInputs, StepInputs, NoResources,
-    ExtResourcesCls, StepOnUpdateCallable, StepErrors, StepDetails,
+    ExtResources, StepOnUpdateCallable, StepErrors, StepDetails,
     ExtResource, NoArgs,
     StepFailedError, Tractor, Secret,
     StepOnErrorCallable, StepOnUpdateCallable,
@@ -40,16 +40,16 @@ class TResourceWithSecrets(ExtResource):
     secret: str
 
 
-class TResources(ExtResourcesCls):
+class TResources(ExtResources):
     NAME: ClassVar[str] = "TResources"
     service1: TResource
 
-class TResourcesWithSecrets(ExtResourcesCls):
+class TResourcesWithSecrets(ExtResources):
     NAME: ClassVar[str] = "TResourcesWithSecrets"
     service1: TResourceWithSecrets
 
 
-class TResources2(ExtResourcesCls):
+class TResources2(ExtResources):
     NAME: ClassVar[str] = "TResources2"
     service1: TResourceWithSecrets
 
@@ -713,7 +713,7 @@ def test_secret_str():
 
 def test_ext_resources_wrong_type():
     with pytest.raises(ValueError) as exc:
-        class TResources(ExtResourcesCls):
+        class TResources(ExtResources):
             NAME: ClassVar[str] = "TResources"
             service1: str
     assert str(exc.value) == "service1 has to be type ExtResource"
