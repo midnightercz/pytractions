@@ -6,10 +6,30 @@ from functools import partial
 import inspect
 
 from typing import (
-    Dict, List, Callable, Optional, TypedDict, Any, Type, Sequence,
-    Generic, TypeVar, Protocol, Mapping, ClassVar, cast, get_args,
-    Tuple, NamedTuple, Union, NewType, runtime_checkable, Callable, Iterator,
-    _GenericAlias)
+    Dict,
+    List,
+    Callable,
+    Optional,
+    TypedDict,
+    Any,
+    Type,
+    Sequence,
+    Generic,
+    TypeVar,
+    Protocol,
+    Mapping,
+    ClassVar,
+    cast,
+    get_args,
+    Tuple,
+    NamedTuple,
+    Union,
+    NewType,
+    runtime_checkable,
+    Callable,
+    Iterator,
+    _GenericAlias,
+)
 import typing_inspect
 
 
@@ -52,7 +72,7 @@ class Secret:
     @classmethod
     def validate(cls, v):
         if not isinstance(v, cls):
-            raise TypeError('Secret required')
+            raise TypeError("Secret required")
         return v
 
     def __init__(self, val: str):
@@ -71,22 +91,27 @@ class Secret:
 
 class StepState(enum.Enum):
     """Enum-like class to store step state."""
-    
-    READY=0
-    PREP=1
-    RUNNING=2
-    FINISHED=3
-    FAILED=4
-    ERROR=5
 
-
+    READY = 0
+    PREP = 1
+    RUNNING = 2
+    FINISHED = 3
+    FAILED = 4
+    ERROR = 5
 
 
 class ArgsTypeCls(pydantic.generics.GenericModel, validate_assignment=True):
+    """Class for Step arguments.
 
-    def dict(self, *,
-        include: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
-        exclude: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
+    Modified pydantic BaseModel which returns string *CENSORED* for Secret
+    arguments on dict() method.
+    """
+
+    def dict(
+        self,
+        *,
+        include: Union["AbstractSetIntStr", "MappingIntStrAny"] = None,
+        exclude: Union["AbstractSetIntStr", "MappingIntStrAny"] = None,
         by_alias: bool = False,
         skip_defaults: bool = None,
         exclude_unset: bool = False,
@@ -94,19 +119,21 @@ class ArgsTypeCls(pydantic.generics.GenericModel, validate_assignment=True):
         exclude_none: bool = False,
     ) -> Dict[str, Any]:
         model_mapping = {}
-        for k,v in self.__dict__.items():
+        for k, v in self.__dict__.items():
             if type(v) == Secret:
                 model_mapping[k] = (str, "*CENSORED*")
             else:
                 model_mapping[k] = (type(v), v)
-        m = pydantic.create_model(
-            self.__class__.__name__+"Dump",
-            **model_mapping
-        )
+        m = pydantic.create_model(self.__class__.__name__ + "Dump", **model_mapping)
         return pydantic.BaseModel.dict(m())
 
 
 class ExtResource(pydantic.generics.GenericModel):
+    """Step Resource class.
+
+    Use SECRETS class variable to mask attributes at the output.
+    """
+
     NAME: ClassVar[str]
     SECRETS: ClassVar[List[str]] = []
     uid: str
@@ -116,33 +143,42 @@ class ExtResource(pydantic.generics.GenericModel):
         for k in ret:
             if k in self.SECRETS:
                 ret[k] = "*CENSORED*"
-        ret['type'] = self.NAME
+        ret["type"] = self.NAME
         return ret
 
-    def load(self, dump):#, secrets: Dict[str, str] = None):
-        #_secrets = secrets or {}
+    def load(self, dump):
+        """Load resource configuration from dump.
+
+        Dump has to be same resource type. Secret values are
+        not loaded from the dump object as they are originaly
+        produced as *CENSORED* string.
+        """
         dump_copy = dump.copy()
-        if dump_copy['type'] != self.NAME:
-            raise LoadWrongExtResourceError("Cannot load %s into %s" % (dump_copy['type'], self.NAME))
-        dump_copy.pop('type')
+        if dump_copy["type"] != self.NAME:
+            raise LoadWrongExtResourceError(
+                "Cannot load %s into %s" % (dump_copy["type"], self.NAME)
+            )
+        dump_copy.pop("type")
         parsed = self.parse_obj(dump)
         for f in self.__fields__:
-            #if f in _secrets:
-            #    try:
-            #        setattr(self, f, _secrets[f])
-            #    except KeyError as e:
-            #        raise MissingSecretError(f) from e
-            #else:
+            if f in self.SECRETS:
+                continue
             setattr(self, f, getattr(parsed, f))
         return self
 
     @classmethod
     def load_cls(cls, dump, secrets: Dict[str, str] = None):
+        """Create new resource instance from dump object.
+
+        attributes listed in cls.SECRETS have to be provided as secrets parameter.
+        """
         _secrets = secrets or {}
         dump_copy = dump.copy()
-        if dump['type'] != cls.NAME:
-            raise LoadWrongExtResourceError("Cannot load %s into %s" %  (dump_copy['type'], cls.NAME))
-        dump_copy.pop('type')
+        if dump["type"] != cls.NAME:
+            raise LoadWrongExtResourceError(
+                "Cannot load %s into %s" % (dump_copy["type"], cls.NAME)
+            )
+        dump_copy.pop("type")
         for secret in cls.SECRETS:
             try:
                 dump_copy[secret] = _secrets[secret]
@@ -155,7 +191,10 @@ class ExtResource(pydantic.generics.GenericModel):
         """Full name of class instance."""
         return "%s:%s" % (self.NAME, self.uid)
 
+
 class ResourcesModelMeta(pydantic.main.ModelMetaclass):
+    """Metaclass to ensure only ExtResource class attributes are defined."""
+
     def __new__(cls, name, bases, attrs):
         ret = super().__new__(cls, name, bases, attrs)
         for k, v in ret.__fields__.items():
@@ -169,51 +208,48 @@ class ExtResourcesCls(pydantic.generics.BaseModel, metaclass=ResourcesModelMeta)
 
     def __init__(self, **kwargs):
         for key, val in kwargs.items():
-            if key == 'uid':
+            if key == "uid":
                 continue
             if not issubclass(type(val), ExtResource):
-                raise ValueError("%s has to be type ExtResource not %s" % (key, type(val)))
+                raise ValueError(
+                    "%s has to be type ExtResource not %s" % (key, type(val))
+                )
 
         super().__init__(**kwargs)
 
     def dump(self, full=True):
         ret = {}
-        ret['type'] = self.NAME
+        ret["type"] = self.NAME
         for f in self.__fields__:
             if full:
                 ret[f] = getattr(self, f).dump()
             else:
-                ret[f] = getattr(self,f).fullname
+                ret[f] = getattr(self, f).fullname
         return ret
 
-    def load(self, dump):#, secrets: Dict[str, str] = None):
-        #_secrets = secrets or {}
+    def load(self, dump):
         dump_copy = dump.copy()
-        if dump_copy['type'] != self.NAME:
-            raise LoadWrongExtResourceError("Cannot load %s into %s" %  (dump_copy['type'], self.NAME))
-        dump_copy.pop('type')
-        #for f in self.__fields__:
-        #    if getattr(self, f).SECRETS and "%s:%s" % (getattr(self, f).NAME, getattr(self, f).uid) not in secrets:
-        #        raise MissingSecretError("Missing secrets for %s:%s" % (getattr(self, f).NAME, getattr(self, f).uid))
+        if dump_copy["type"] != self.NAME:
+            raise LoadWrongExtResourceError(
+                "Cannot load %s into %s" % (dump_copy["type"], self.NAME)
+            )
+        dump_copy.pop("type")
         for key, val in dump_copy.items():
-            #res_secrets = _secrets.get("%s:%s" % (val['type'], val['uid']), {})
-            setattr(self, key, getattr(self, key).load(val))#, secrets=res_secrets))
+            setattr(self, key, getattr(self, key).load(val))  # , secrets=res_secrets))
         return self
-
 
     @classmethod
     def load_cls(cls, dump, secrets: Dict[str, str] = None):
         _secrets = secrets or {}
         dump_copy = dump.copy()
-        #for k, v in dump.items():
-        #    if getattr(cls, k).type_.SECRETS and "%s:%s" % (getattr(cls, k).type_.NAME, v['uid']) not in secrets:
-        #        raise MissingSecretError("Missing secrets for %s:%s" % (getattr(cls, k).NAME, v['uid']))
-        if dump['type'] != cls.NAME:
-            raise LoadWrongExtResourceError("Cannot load %s into %s" %  (dump_copy['type'], cls.NAME))
-        dump_copy.pop('type')
+        if dump["type"] != cls.NAME:
+            raise LoadWrongExtResourceError(
+                "Cannot load %s into %s" % (dump_copy["type"], cls.NAME)
+            )
+        dump_copy.pop("type")
         ret = {}
-        for key, val  in dump_copy.items():
-            res_secrets = _secrets.get("%s:%s" % (val['type'], val['uid']), {})
+        for key, val in dump_copy.items():
+            res_secrets = _secrets.get("%s:%s" % (val["type"], val["uid"]), {})
             ret[key] = cls.__fields__[key].type_.load_cls(val, secrets=res_secrets)
         return cls(**ret)
 
@@ -223,10 +259,12 @@ ExtResourcesType = TypeVar("ExtResourcesType", bound=ExtResourcesCls)
 
 
 class DefaultsModelMeta(pydantic.main.ModelMetaclass):
+    """Metaclass to ensure all defined attributes in StepResults have default value."""
+
     def __new__(cls, name, bases, attrs):
         annotations = attrs.get("__annotations__", {})
         for attrk, attrv in attrs.items():
-            if attrk in ['dump', 'load', 'Config', 'dict']:
+            if attrk in ["dump", "load", "Config", "dict"]:
                 continue
             if attrk.startswith("__"):
                 continue
@@ -243,46 +281,57 @@ class DefaultsModelMeta(pydantic.main.ModelMetaclass):
         return super().__new__(cls, name, bases, attrs)
 
 
-class RequiredDefaultsModel(pydantic.generics.GenericModel, metaclass=DefaultsModelMeta):
+class RequiredDefaultsModel(
+    pydantic.generics.GenericModel, metaclass=DefaultsModelMeta
+):
     class Config:
         validate_assignment = True
+
     pass
 
 
 class StepResults(RequiredDefaultsModel):
     """Class to store results of step."""
+
     step: Optional["Step"] = pydantic.Field(default=None, repr=False)
 
     def __setattr__(self, key, value):
         """Override setattr to make sure assigning to step.results doesn't break
         existing references for step.results"""
-    
-        if key == 'step' and value:
-            dict_without_original_value = {k: v for k, v in self.__dict__.items() if k != key}
-            self.__fields__['step'].validate(value, dict_without_original_value, loc=key)
+
+        if key == "step" and value:
+            dict_without_original_value = {
+                k: v for k, v in self.__dict__.items() if k != key
+            }
+            self.__fields__["step"].validate(
+                value, dict_without_original_value, loc=key
+            )
             object.__setattr__(self, key, value)
         else:
             super().__setattr__(key, value)
 
-    def dict(self,
-             *,
-             include: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
-             exclude: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
-             by_alias: bool = False,
-             skip_defaults: bool = None,
-             exclude_unset: bool = False,
-             exclude_defaults: bool = False,
-             exclude_none: bool = False):
-        return super().dict(exclude={'step'})
+    def dict(
+        self,
+        *,
+        include: Union["AbstractSetIntStr", "MappingIntStrAny"] = None,
+        exclude: Union["AbstractSetIntStr", "MappingIntStrAny"] = None,
+        by_alias: bool = False,
+        skip_defaults: bool = None,
+        exclude_unset: bool = False,
+        exclude_defaults: bool = False,
+        exclude_none: bool = False,
+    ):
+        return super().dict(exclude={"step"})
 
 
 class StepDetails(RequiredDefaultsModel):
     """Class to store step details to."""
+
     pass
 
 
 class StepInputs(pydantic.BaseModel, validate_assignment=True):
-    @pydantic.validator('*', pre=True)
+    @pydantic.validator("*", pre=True)
     def valid_fields(cls, v):
         if not isinstance(v, StepResults):
             raise ValueError("field must be StepResults subclass, but is %s" % type(v))
@@ -291,8 +340,10 @@ class StepInputs(pydantic.BaseModel, validate_assignment=True):
     def __setattr__(self, key, value):
         """Override setattr to make sure assigning to step.results doesn't break
         existing references for step.results"""
-    
-        dict_without_original_value = {k: v for k, v in self.__dict__.items() if k != key}
+
+        dict_without_original_value = {
+            k: v for k, v in self.__dict__.items() if k != key
+        }
         self.__fields__[key].validate(value, dict_without_original_value, loc=key)
         object.__setattr__(self, key, value)
 
@@ -304,13 +355,6 @@ class StepInputs(pydantic.BaseModel, validate_assignment=True):
 
 class NoInputs(StepInputs):
     pass
-
-
-class SharedResults(pydantic.BaseModel):
-    results: Dict[str, Any]
-    
-    class Config:
-        copy_on_model_validation=False
 
 
 ResultsType = TypeVar("ResultsType", bound=StepResults)
@@ -342,7 +386,6 @@ class StepDumpStats(TypedDict):
     state: str
 
 
-
 class StepDict(TypedDict):
     name: str
     step_kwargs: Dict[str, Any]
@@ -351,6 +394,7 @@ class StepDict(TypedDict):
     stats: StepStats
     results: Dict[Any, Any]
     errors: Dict[Any, Any]
+
 
 @dataclass
 class StepDumpDict(Generic[ResultsType]):
@@ -362,13 +406,20 @@ class StepDumpDict(Generic[ResultsType]):
     results: ResultsType
     errors: Dict[Any, Any]
 
+
 StepOnUpdateCallable = Optional[Callable[["Step"], None]]
 StepOnErrorCallable = Optional[Callable[["Step"], None]]
 
 
-class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResourcesType, InputsType, DetailsType],
-           validate_all=True, allow_population_by_field_name=False, extra=pydantic.Extra.forbid, underscore_attrs_are_private=False,
-           validate_assignment=True):
+class Step(
+    pydantic.generics.BaseModel,
+    Generic[ResultsType, ArgsType, ExtResourcesType, InputsType, DetailsType],
+    validate_all=True,
+    allow_population_by_field_name=False,
+    extra=pydantic.Extra.forbid,
+    underscore_attrs_are_private=False,
+    validate_assignment=True,
+):
     """Base class for a Step.
 
     How to use this class: Few things are needed to implement custom step class.
@@ -421,15 +472,17 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
     def __setattr__(self, key, value):
         """Override setattr to make sure assigning to step.results doesn't break
         existing references for step.results"""
-    
-        if key == 'results':
+
+        if key == "results":
             for k in value.__fields__:
                 v = getattr(value, k)
                 setattr(self.results, k, v)
-    
+
             super().__setattr__(key, self.results)
-        elif key == 'inputs':
-            dict_without_original_value = {k: v for k, v in self.__dict__.items() if k != key}
+        elif key == "inputs":
+            dict_without_original_value = {
+                k: v for k, v in self.__dict__.items() if k != key
+            }
             self.__fields__[key].validate(value, dict_without_original_value, loc=key)
             object.__setattr__(self, key, value)
         else:
@@ -437,7 +490,7 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
 
     @classmethod
     def get_step_types(cls):
-        type_args = get_args(cls.__orig_bases__[0]) # type: ignore
+        type_args = get_args(cls.__orig_bases__[0])  # type: ignore
         stack = [cls]
         item = None
         while stack:
@@ -454,13 +507,13 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         type_args = get_args(item)
         return type_args
 
-
-    #@pydantic.validate_arguments(config=dict(arbitrary_types_allowed=False))
-    def __init__(self,
-                 uid: str,
-                 step_args: ArgsType,
-                 external_resources: Optional[ExtResourcesType]=None,
-                 inputs: Optional[InputsType]=None):
+    def __init__(
+        self,
+        uid: str,
+        step_args: ArgsType,
+        external_resources: Optional[ExtResourcesType] = None,
+        inputs: Optional[InputsType] = None,
+    ):
         """Initilize the step.
 
         Args:
@@ -472,10 +525,12 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
             inputs: dict(str, str)
                 Mapping of inputs to results of steps identified by uid
         """
-        
+
         type_args = self.get_step_types()
         if not type_args:
-            raise TypeError("Missing generic annotations for Step class. Use Step[ResultsCls, ArgsCls, ExtResourcesCls, InputsCls]")
+            raise TypeError(
+                "Missing generic annotations for Step class. Use Step[ResultsCls, ArgsCls, ExtResourcesCls, InputsCls]"
+            )
 
         results_type = type_args[0]
         args_type = type_args[1]
@@ -484,11 +539,22 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         details_type = type_args[4]
 
         if type(step_args) != args_type:
-            raise TypeError("Step arguments are not type of %s but %s" % (args_type, type(step_args)))
-        if external_resources is not None and type(external_resources) != resources_type:
-            raise TypeError("Step external resources are not type of %s but %s" % (resources_type, type(external_resources)))
+            raise TypeError(
+                "Step arguments are not type of %s but %s"
+                % (args_type, type(step_args))
+            )
+        if (
+            external_resources is not None
+            and type(external_resources) != resources_type
+        ):
+            raise TypeError(
+                "Step external resources are not type of %s but %s"
+                % (resources_type, type(external_resources))
+            )
         if inputs is not None and type(inputs) != inputs_type:
-            raise TypeError("Step inputs are not type of %s but %s" % (inputs_type, type(inputs)))
+            raise TypeError(
+                "Step inputs are not type of %s but %s" % (inputs_type, type(inputs))
+            )
 
         results = results_type()
         details = details_type()
@@ -501,18 +567,19 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
             "skipped": False,
             "state": StepState.READY,
         }
-        super().__init__(uid=uid,
-                external_resources=external_resources,
-                details=details,
-                skip=False,
-                skip_reason="",
-                state=StepState.READY,
-                results=results,
-                inputs=inputs or StepInputs(),
-                args=step_args,
-                errors=StepErrors(),
-                stats=stats
-                )
+        super().__init__(
+            uid=uid,
+            external_resources=external_resources,
+            details=details,
+            skip=False,
+            skip_reason="",
+            state=StepState.READY,
+            results=results,
+            inputs=inputs or StepInputs(),
+            args=step_args,
+            errors=StepErrors(),
+            stats=stats,
+        )
 
         # override init value copy and set original object via __setattr__
         self.inputs = inputs or StepInputs()
@@ -524,7 +591,11 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         """Full name of class instance."""
         return "%s:%s" % (self.NAME, self.uid)
 
-    def run(self, on_update: StepOnUpdateCallable=None, on_error: StepOnErrorCallable=None) -> None:
+    def run(
+        self,
+        on_update: StepOnUpdateCallable = None,
+        on_error: StepOnErrorCallable = None,
+    ) -> None:
         """Run the step code.
 
         Step is expected to run when step state is ready, prep or error. For other
@@ -548,13 +619,13 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
 
             self.state = StepState.PREP
             self._pre_run()
-            _on_update(self) # type: ignore
+            _on_update(self)  # type: ignore
         try:
             if self.state not in (StepState.PREP, StepState.ERROR):
                 return
             if not self.skip:
                 self.state = StepState.RUNNING
-                _on_update(self) # type: ignore
+                _on_update(self)  # type: ignore
                 self._run(on_update=_on_update)
         except StepFailedError:
             self.state = StepState.FAILED
@@ -566,7 +637,7 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
             self.state = StepState.FINISHED
         finally:
             self._finish_stats()
-            _on_update(self) # type: ignore
+            _on_update(self)  # type: ignore
 
     def _pre_run(self) -> None:
         """Execute code needed before step run.
@@ -594,9 +665,8 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         self.stats["skip_reason"] = self.skip_reason
         self.stats["state"] = self.state
 
-
     @abc.abstractmethod
-    def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pragma: no cover
+    def _run(self, on_update: StepOnUpdateCallable = None) -> None:  # pragma: no cover
         """Run code of the step.
 
         Method expects raise StepFailedError if step code fails due data error
@@ -609,59 +679,67 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
 
     def dump(self, full=True) -> dict[str, Any]:
         """Dump step data into json compatible complex dictionary."""
-        ret = self.dict(exclude={'inputs', 'results'})
-        ret['type'] = self.NAME
-        ret['inputs'] = {}
-        ret['inputs_standalone'] = {}
-        ret['results'] = self.results.dict(exclude={'step'})
-        ret['external_resources'] = self.external_resources.dump(full=full)
-        for f,ftype in self.inputs.__fields__.items():
+        ret = self.dict(exclude={"inputs", "results"})
+        ret["type"] = self.NAME
+        ret["inputs"] = {}
+        ret["inputs_standalone"] = {}
+        ret["results"] = self.results.dict(exclude={"step"})
+        ret["external_resources"] = self.external_resources.dump(full=full)
+        for f, ftype in self.inputs.__fields__.items():
             field = getattr(self.inputs, f)
             if field.step:
-                ret['inputs'][f] = getattr(self.inputs, f).step.fullname
+                ret["inputs"][f] = getattr(self.inputs, f).step.fullname
             else:
-                ret['inputs_standalone'][f] = getattr(self.inputs, f).dict(exclude={"step"})
+                ret["inputs_standalone"][f] = getattr(self.inputs, f).dict(
+                    exclude={"step"}
+                )
         return ret
 
     def load(self, step_dump, secrets: Dict[str, Dict[str, str]] = None):
         """Load step data from dictionary produced by dump method."""
-        _secrets = secrets or {}
-        if step_dump['type'] != self.NAME:
-            raise LoadWrongStepError('Cannot load %s dump to step %s' % (step_dump['type'], self.NAME))
+        if step_dump["type"] != self.NAME:
+            raise LoadWrongStepError(
+                "Cannot load %s dump to step %s" % (step_dump["type"], self.NAME)
+            )
 
-        self.details = self.details.parse_obj(step_dump['details'])
-        self.skip = step_dump['skip']
-        self.skip_reason = step_dump['skip_reason']
-        self.state = step_dump['state']
-        self.results = self.results.parse_obj(step_dump['results'])
+        self.details = self.details.parse_obj(step_dump["details"])
+        self.skip = step_dump["skip"]
+        self.skip_reason = step_dump["skip_reason"]
+        self.state = step_dump["state"]
+        self.results = self.results.parse_obj(step_dump["results"])
         loaded_args = {}
         for f in self.args.__fields__:
             if isinstance(getattr(self.args, f), Secret):
                 loaded_args[f] = getattr(self.args, f)
             else:
-                loaded_args[f] = step_dump['args'][f]
+                loaded_args[f] = step_dump["args"][f]
 
         self.args = self.args.parse_obj(loaded_args)
-        self.errors = step_dump['errors']
-        self.stats = step_dump['stats']
+        self.errors = step_dump["errors"]
+        self.stats = step_dump["stats"]
         self.results.step = self
-        self.external_resources.load(step_dump['external_resources'])#, secrets=_secrets)
+        self.external_resources.load(
+            step_dump["external_resources"]
+        )  # , secrets=_secrets)
 
     @classmethod
     def load_cls(
-            cls,
-            step_dump,
-            inputs_map: Dict[str, "Step[Any, Any, Any, Any]"],
-            external_resources: Optional[ExtResourcesType]=None,
-            secrets: Dict[str, Dict[str, str]]=None):
+        cls,
+        step_dump,
+        inputs_map: Dict[str, "Step[Any, Any, Any, Any]"],
+        external_resources: Optional[ExtResourcesType] = None,
+        secrets: Dict[str, Dict[str, str]] = None,
+    ):
         """Load step data from dictionary produced by dump method."""
 
-        if step_dump['type'] != cls.NAME:
-            raise LoadWrongStepError('Cannot load %s dump to step %s' % (step_dump['type'], cls.NAME))
+        if step_dump["type"] != cls.NAME:
+            raise LoadWrongStepError(
+                "Cannot load %s dump to step %s" % (step_dump["type"], cls.NAME)
+            )
 
         _secrets = secrets or {}
 
-        type_args = get_args(cls.__orig_bases__[0]) # type: ignore
+        type_args = get_args(cls.__orig_bases__[0])  # type: ignore
         args_type = type_args[1]
         inputs_type = type_args[3]
         external_resources_type = type_args[2]
@@ -670,44 +748,49 @@ class Step(pydantic.generics.BaseModel, Generic[ResultsType, ArgsType, ExtResour
         for f, ftype in args_type.__fields__.items():
             if ftype.type_ == Secret:
                 try:
-                    loaded_args[f] = Secret(_secrets["%s:%s" % (cls.NAME, step_dump['uid'])][f])
+                    loaded_args[f] = Secret(
+                        _secrets["%s:%s" % (cls.NAME, step_dump["uid"])][f]
+                    )
                 except KeyError as e:
                     raise MissingSecretError(f) from e
             else:
-                loaded_args[f] = step_dump['args'][f]
+                loaded_args[f] = step_dump["args"][f]
 
         args = args_type.parse_obj(loaded_args)
-        
+
         loaded_inputs = {}
-        for iname, itype in step_dump['inputs'].items():
+        for iname, itype in step_dump["inputs"].items():
             loaded_inputs[iname] = inputs_map[itype].results
-        for iname in step_dump['inputs_standalone']:
+        for iname in step_dump["inputs_standalone"]:
             itype = inputs_type.__fields__[iname]
             loaded_result = itype.type_()
-            for rfield in  itype.type_.__fields__:
-                if rfield == 'step':
+            for rfield in itype.type_.__fields__:
+                if rfield == "step":
                     continue
-                setattr(loaded_result, rfield, step_dump['inputs_standalone'][iname][rfield])
+                setattr(
+                    loaded_result, rfield, step_dump["inputs_standalone"][iname][rfield]
+                )
             loaded_inputs[iname] = loaded_result
-        
+
         inputs = inputs_type.parse_obj(loaded_inputs)
         if not external_resources:
-            _external_resources = external_resources_type.load_cls(step_dump['external_resources'], secrets=_secrets)
+            _external_resources = external_resources_type.load_cls(
+                step_dump["external_resources"], secrets=_secrets
+            )
         else:
             _external_resources = external_resources
 
-        ret = cls(step_dump['uid'], args, _external_resources, inputs)
-        ret.details = ret.details.parse_obj(step_dump['details'])
-        ret.skip = step_dump['skip']
-        ret.skip_reason = step_dump['skip_reason']
-        ret.state = step_dump['state']
-        ret.results = ret.results.parse_obj(step_dump['results'])
-        ret.errors = step_dump['errors']
-        ret.stats = step_dump['stats']
+        ret = cls(step_dump["uid"], args, _external_resources, inputs)
+        ret.details = ret.details.parse_obj(step_dump["details"])
+        ret.skip = step_dump["skip"]
+        ret.skip_reason = step_dump["skip_reason"]
+        ret.state = step_dump["state"]
+        ret.results = ret.results.parse_obj(step_dump["results"])
+        ret.errors = step_dump["errors"]
+        ret.stats = step_dump["stats"]
         ret.results.step = ret
 
         return ret
-
 
 
 class TractorDumpDict(TypedDict):
@@ -719,9 +802,14 @@ class TractorValidateResult(TypedDict):
     valid: bool
 
 
-class Tractor(pydantic.BaseModel,
-              validate_all=True, allow_population_by_field_name=False, extra=pydantic.Extra.forbid, underscore_attrs_are_private=False,
-              validate_assignment=True):
+class Tractor(
+    pydantic.BaseModel,
+    validate_all=True,
+    allow_population_by_field_name=False,
+    extra=pydantic.Extra.forbid,
+    underscore_attrs_are_private=False,
+    validate_assignment=True,
+):
     """Class which runs sequence of steps."""
 
     steps: List[Step[Any, Any, Any, Any, Any]] = []
@@ -729,8 +817,11 @@ class Tractor(pydantic.BaseModel,
     step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]] = {}
     resources_map: Dict[str, Type[ExtResource]] = {}
 
-
-    def __init__(self, step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]], resources_map: Dict[str, Type[ExtResource]]) -> None:
+    def __init__(
+        self,
+        step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]],
+        resources_map: Dict[str, Type[ExtResource]],
+    ) -> None:
         """Initialize the stepper.
 
         Args:
@@ -741,9 +832,7 @@ class Tractor(pydantic.BaseModel,
         step_map = step_map
         current_step = None
         super().__init__(
-            step_map=step_map,
-            current_step=current_step,
-            resources_map=resources_map
+            step_map=step_map, current_step=current_step, resources_map=resources_map
         )
 
     def add_step(self, step: Step[Any, Any, Any, Any, Any]) -> None:
@@ -759,47 +848,57 @@ class Tractor(pydantic.BaseModel,
         for step in self.steps:
             for k in step.external_resources.__fields__:
                 res = getattr(step.external_resources, k)
-                out['resources'][res.fullname] = res.dump()
+                out["resources"][res.fullname] = res.dump()
         return out
 
-    def load(self, dump_obj: TractorDumpDict, secrets: Dict[str, Dict[str, str]]) -> None:
+    def load(
+        self, dump_obj: TractorDumpDict, secrets: Dict[str, Dict[str, str]]
+    ) -> None:
         """Load and initialize stepper from data produced by dump method."""
         loaded_steps = {}
         loaded_resources = {}
         self.steps = []
         for fullname, resource_dump in dump_obj["resources"].items():
             resource_dump_copy = resource_dump.copy()
-            loaded_resources[fullname] = self.resources_map[resource_dump['type']].load_cls(
-                resource_dump_copy, 
-                secrets.get("%s:%s" % (resource_dump['type'], resource_dump['uid']), {})
+            loaded_resources[fullname] = self.resources_map[
+                resource_dump["type"]
+            ].load_cls(
+                resource_dump_copy,
+                secrets.get(
+                    "%s:%s" % (resource_dump["type"], resource_dump["uid"]), {}
+                ),
             )
 
         for step_obj in dump_obj["steps"]:
             step_resources = {}
-            for resource, resource_fullname in step_obj['external_resources'].items():
-                if resource == 'type':
+            for resource, resource_fullname in step_obj["external_resources"].items():
+                if resource == "type":
                     continue
                 step_resources[resource] = loaded_resources[resource_fullname]
-            external_resources_type = self.step_map[step_obj["type"]].get_step_types()[2]
+            external_resources_type = self.step_map[step_obj["type"]].get_step_types()[
+                2
+            ]
             external_resources = external_resources_type(**step_resources)
             step = self.step_map[step_obj["type"]].load_cls(
                 step_obj,
                 loaded_steps,
                 external_resources=external_resources,
-                secrets=secrets) #.get("%s:%s" % (step_obj['type'], step_obj['uid']), {}))
+                secrets=secrets,
+            )  # .get("%s:%s" % (step_obj['type'], step_obj['uid']), {}))
 
             loaded_steps[step.fullname] = step
             self.steps.append(step)
 
-    def run(self,
-            start_from: int=0,
-            on_error: StepOnErrorCallable=None,
-            on_update: StepOnUpdateCallable=None) -> None:
+    def run(
+        self,
+        start_from: int = 0,
+        on_error: StepOnErrorCallable = None,
+        on_update: StepOnUpdateCallable = None,
+    ) -> None:
         """Run the stepper sequence."""
         for step in self.steps[start_from:]:
             self.current_step = step
             step.run(on_update=on_update, on_error=on_error)
-
 
 
 class NoArgs(ArgsTypeCls):
@@ -809,11 +908,11 @@ class NoArgs(ArgsTypeCls):
 class NoResources(ExtResourcesCls):
     NAME: ClassVar[str] = "NoResources"
 
+
 class NoDetails(StepDetails):
     pass
+
 
 @dataclass
 class NoResult:
     pass
-
-

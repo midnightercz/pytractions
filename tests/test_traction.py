@@ -9,7 +9,7 @@ import pytraction
 from pytraction.traction import (
     Step, StepResults, ArgsTypeCls, NoInputs, StepInputs, NoResources,
     ExtResourcesCls, StepOnUpdateCallable, StepErrors, StepDetails,
-    ExtResource, NoArgs, SharedResults,
+    ExtResource, NoArgs,
     StepFailedError, Tractor, Secret,
     StepOnErrorCallable, StepOnUpdateCallable,
     TractorDumpDict, StepResults, NoDetails, StepState)
@@ -43,6 +43,10 @@ class TResourceWithSecrets(ExtResource):
 class TResources(ExtResourcesCls):
     NAME: ClassVar[str] = "TResources"
     service1: TResource
+
+class TResourcesWithSecrets(ExtResourcesCls):
+    NAME: ClassVar[str] = "TResourcesWithSecrets"
+    service1: TResourceWithSecrets
 
 
 class TResources2(ExtResourcesCls):
@@ -720,11 +724,15 @@ def test_ext_resources_wrong_type_init():
     assert str(exc.value) == "service1 has to be type ExtResource not <class 'int'>"
 
 def test_ext_resources_load():
-    dump = {'type': 'TResources',
-            'service1': {'env':'test2', 'uid':'res1', "type": "Resource1"}}
-    res = TResources.load_cls(dump)
-    res = TResources(uid='resource1', service1=TResource(env='test', uid='res1')).load(dump)
+    dump = {'type': 'TResourcesWithSecrets',
+            'service1': {'env':'test2', 'uid':'res1', "type": "TResourceWithSecrets", "secret": "*CENSORED*"}}
+    res = TResourcesWithSecrets.load_cls(dump, secrets={"TResourceWithSecrets:res1": {"secret": "secret value"}})
     assert res.service1.env == 'test2'
+    assert res.service1.secret == 'secret value'
+
+    res = TResourcesWithSecrets(uid='resource1', service1=TResourceWithSecrets(env='test', uid='res1', secret="secret value2")).load(dump)
+    assert res.service1.env == 'test2'
+    assert res.service1.secret == 'secret value2'
 
 def test_ext_resource_load_wrong_type():
     dump = {'type': 'TResources',
