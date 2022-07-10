@@ -89,15 +89,15 @@ class Secret:
             return self.value == other
 
 
-class StepState(enum.Enum):
+class StepState(str, enum.Enum):
     """Enum-like class to store step state."""
 
-    READY = 0
-    PREP = 1
-    RUNNING = 2
-    FINISHED = 3
-    FAILED = 4
-    ERROR = 5
+    READY = 'ready'
+    PREP = 'prep'
+    RUNNING = 'running'
+    FINISHED = 'finished'
+    FAILED = 'failed'
+    ERROR = 'error'
 
 
 class StepArgs(pydantic.generics.GenericModel, validate_assignment=True):

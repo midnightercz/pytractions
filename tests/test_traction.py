@@ -12,7 +12,7 @@ from pytraction.traction import (
     ExtResource, NoArgs,
     StepFailedError, Tractor, Secret,
     StepOnErrorCallable, StepOnUpdateCallable,
-    TractorDumpDict, StepResults, NoDetails, StepState)
+    TractorDumpDict, StepResults, NoDetails, StepState, StepStats)
 
 from pytraction.exc import (LoadWrongStepError, LoadWrongExtResourceError, MissingSecretError)
 
@@ -113,14 +113,14 @@ def test_step_initiation_succesful_no_args_no_inputs():
     assert step.state == StepState.READY
     assert step.skip == False
     assert step.skip_reason == ""
-    assert step.stats == {
-        "started": None,
-        "finished": None,
-        "skip": False,
-        "skip_reason": "",
-        "skipped": False,
-        "state": StepState.READY
-    }
+    assert step.stats == StepStats(
+        started=None,
+        finished=None,
+        skip=False,
+        skip_reason="",
+        skipped=False,
+        state=StepState.READY
+    )
     assert step.errors == StepErrors()
 
 
@@ -334,12 +334,12 @@ def test_step_dump_load(fixture_isodate_now):
                                             'type': 'TResourceWithSecrets'}},
         'skip': False,
         'skip_reason': '',
-        'state': StepState.FINISHED,
+        'state': 'finished',
         'stats': {
             'skip': False,
             'skipped': False,
             'skip_reason': '',
-            'state': StepState.FINISHED,
+            'state': 'finished',
             'started': '1990-01-01T00:00:00.00000Z',
             'finished': '1990-01-01T00:00:01.00000Z'
         },
@@ -417,12 +417,12 @@ def test_step_dump_load_missing_secrets(fixture_isodate_now):
                                             'type': 'TResourceWithSecrets'}},
         'skip': False,
         'skip_reason': '',
-        'state': StepState.FINISHED,
+        'state': 'finished',
         'stats': {
             'skip': False,
             'skipped': False,
             'skip_reason': '',
-            'state': StepState.FINISHED,
+            'state': 'finished',
             'started': '1990-01-01T00:00:00.00000Z',
             'finished': '1990-01-01T00:00:01.00000Z'
         },
@@ -476,12 +476,12 @@ def test_step_dump_load_multiple(fixture_isodate_now):
         'skip': False,
         'skip_reason': '',
         'external_resources': {'type': 'NoResources'},
-        'state': StepState.FINISHED,
+        'state': 'finished',
         'stats': {
             'skip': False,
             'skipped': False,
             'skip_reason': '',
-            'state': StepState.FINISHED,
+            'state': 'finished',
             'started': '1990-01-01T00:00:00.00000Z',
             'finished': '1990-01-01T00:00:01.00000Z'
         },
@@ -498,13 +498,13 @@ def test_step_dump_load_multiple(fixture_isodate_now):
         'inputs_standalone': {},
         'skip': False,
         'skip_reason': '',
-        'state': StepState.FINISHED,
+        'state': 'finished',
         'external_resources': {'type': 'NoResources'},
         'stats': {
             'skip': False,
             'skipped': False,
             'skip_reason': '',
-            'state': StepState.FINISHED,
+            'state': 'finished',
             'started': '1990-01-01T00:00:02.00000Z',
             'finished': '1990-01-01T00:00:03.00000Z'
         },
@@ -564,12 +564,12 @@ def test_step_dump_load_cls_wrong(fixture_isodate_now):
         'inputs_standalone': {"input1": {"x": 55}},
         'skip': False,
         'skip_reason': '',
-        'state': StepState.FINISHED,
+        'state': 'finished',
         'stats': {
             'skip': False,
             'skipped': False,
             'skip_reason': '',
-            'state': StepState.FINISHED,
+            'state': 'finished',
             'started': '1990-01-01T00:00:00.00000Z',
             'finished': '1990-01-01T00:00:01.00000Z'
         },
@@ -606,12 +606,12 @@ def test_step_dump_load_wrong(fixture_isodate_now):
         'inputs_standalone': {"input1":{"x":55}},
         'skip': False,
         'skip_reason': '',
-        'state': StepState.FINISHED,
+        'state': 'finished',
         'stats': {
             'skip': False,
             'skipped': False,
             'skip_reason': '',
-            'state': StepState.FINISHED,
+            'state': 'finished',
             'started': '1990-01-01T00:00:00.00000Z',
             'finished': '1990-01-01T00:00:01.00000Z'
         },
@@ -830,13 +830,13 @@ def test_tractor_dump_load():
                    'results': {'x': 10},
                    'skip': False,
                    'skip_reason': '',
-                   'state': StepState.READY,
+                   'state': 'ready',
                    'stats': {'finished': None,
                              'skip': False,
                              'skip_reason': '',
                              'skipped': False,
                              'started': None,
-                             'state': StepState.READY},
+                             'state': 'ready'},
                    'type': 'TestStep',
                    'uid': 'test-step-1'},
                   {'args': {'arg1': '*CENSORED*', 'arg2': 2},
@@ -849,13 +849,13 @@ def test_tractor_dump_load():
                    'results': {'x': 10},
                    'skip': False,
                    'skip_reason': '',
-                   'state': StepState.READY,
+                   'state': 'ready',
                    'stats': {'finished': None,
                              'skip': False,
                              'skip_reason': '',
                              'skipped': False,
                              'started': None,
-                             'state': StepState.READY},
+                             'state': 'ready'},
                    'type': 'TestStep',
                    'uid': 'test-step-2'},
                   {'args': {'arg1': '*CENSORED*', 'arg2': 3},
@@ -869,13 +869,13 @@ def test_tractor_dump_load():
                    'results': {'x': 10},
                    'skip': False,
                    'skip_reason': '',
-                   'state': StepState.READY,
+                   'state': 'ready',
                    'stats': {'finished': None,
                              'skip': False,
                              'skip_reason': '',
                              'skipped': False,
                              'started': None,
-                             'state': StepState.READY},
+                             'state': 'ready'},
                    'type': 'TestStep',
                    'uid': 'test-step-3'}]
         }
