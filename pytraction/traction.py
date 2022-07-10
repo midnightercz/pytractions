@@ -368,7 +368,7 @@ class StepErrors(pydantic.BaseModel):
     errors: Dict[Any, Any] = {}
 
 
-class StepStats(TypedDict):
+class StepStats(pydantic.BaseModel):
     started: Optional[str]
     finished: Optional[str]
     skip: bool
@@ -559,14 +559,14 @@ class Step(
         results = results_type()
         details = details_type()
 
-        stats = {
-            "started": None,
-            "finished": None,
-            "skip": False,
-            "skip_reason": "",
-            "skipped": False,
-            "state": StepState.READY,
-        }
+        stats = StepStats(
+            started=None,
+            finished=None,
+            skip=False,
+            skip_reason="",
+            skipped=False,
+            state=StepState.READY,
+        )
         super().__init__(
             uid=uid,
             external_resources=external_resources,
@@ -615,7 +615,7 @@ class Step(
             _on_error = on_error
         self._reset_stats()
         if self.state == StepState.READY:
-            self.stats["started"] = isodate_now()
+            self.stats.started = isodate_now()
 
             self.state = StepState.PREP
             self._pre_run()
@@ -649,21 +649,21 @@ class Step(
         pass
 
     def _reset_stats(self) -> None:
-        self.stats = {
-            "started": None,
-            "finished": None,
-            "skip": self.skip,
-            "skip_reason": self.skip_reason,
-            "skipped": False,
-            "state": self.state,
-        }
+        self.stats = StepStats(
+            started=None,
+            finished=None,
+            skip=self.skip,
+            skip_reason=self.skip_reason,
+            skipped=False,
+            state=self.state,
+        )
 
     def _finish_stats(self) -> None:
-        self.stats["finished"] = isodate_now()
-        self.stats["skipped"] = self.skip
-        self.stats["skip"] = self.skip
-        self.stats["skip_reason"] = self.skip_reason
-        self.stats["state"] = self.state
+        self.stats.finished = isodate_now()
+        self.stats.skipped = self.skip
+        self.stats.skip = self.skip
+        self.stats.skip_reason = self.skip_reason
+        self.stats.state = self.state
 
     @abc.abstractmethod
     def _run(self, on_update: StepOnUpdateCallable = None) -> None:  # pragma: no cover
