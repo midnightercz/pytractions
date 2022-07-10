@@ -100,7 +100,7 @@ class StepState(enum.Enum):
     ERROR = 5
 
 
-class ArgsTypeCls(pydantic.generics.GenericModel, validate_assignment=True):
+class StepArgs(pydantic.generics.GenericModel, validate_assignment=True):
     """Class for Step arguments.
 
     Modified pydantic BaseModel which returns string *CENSORED* for Secret
@@ -254,7 +254,7 @@ class ExtResources(pydantic.generics.BaseModel, metaclass=ResourcesModelMeta):
         return cls(**ret)
 
 
-ArgsType = TypeVar("ArgsType", bound=ArgsTypeCls)
+ArgsType = TypeVar("ArgsType", bound=StepArgs)
 ExtResourcesType = TypeVar("ExtResourcesType", bound=ExtResources)
 
 
@@ -901,7 +901,7 @@ class Tractor(
             step.run(on_update=on_update, on_error=on_error)
 
 
-class NoArgs(ArgsTypeCls):
+class NoArgs(StepArgs):
     pass
 
 
@@ -912,7 +912,5 @@ class NoResources(ExtResources):
 class NoDetails(StepDetails):
     pass
 
-
-@dataclass
-class NoResult:
+class NoResults(StepResults):
     pass

@@ -7,7 +7,7 @@ import pytest
 import pytraction
 
 from pytraction.traction import (
-    Step, StepResults, ArgsTypeCls, NoInputs, StepInputs, NoResources,
+    Step, StepResults, StepArgs, NoInputs, StepInputs, NoResources,
     ExtResources, StepOnUpdateCallable, StepErrors, StepDetails,
     ExtResource, NoArgs,
     StepFailedError, Tractor, Secret,
@@ -20,11 +20,11 @@ class TResults(StepResults):
     x: int = 10
 
 
-class TArgs(ArgsTypeCls):
+class TArgs(StepArgs):
     arg1: int
 
 
-class TSecretArgs(ArgsTypeCls):
+class TSecretArgs(StepArgs):
     arg1: Secret
     arg2: int
 
