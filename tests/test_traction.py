@@ -12,9 +12,10 @@ from pytraction.traction import (
     ExtResource, NoArgs,
     StepFailedError, Tractor, Secret,
     StepOnErrorCallable, StepOnUpdateCallable,
-    TractorDumpDict, StepResults, NoDetails, StepState, StepStats)
+    TractorDumpDict, StepResults, NoDetails, StepState, StepStats,
+    NamedTractor, NamedTractorConfig)
 
-from pytraction.exc import (LoadWrongStepError, LoadWrongExtResourceError, MissingSecretError)
+from pytraction.exc import (LoadWrongStepError, LoadWrongExtResourceError, MissingSecretError, DuplicateStepError, DuplicateTractorError)
 
 class TResults(StepResults):
     x: int = 10
@@ -773,7 +774,7 @@ def test_tractor_add_steps():
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results = TResults(x=self.inputs.input1 + self.args.arg1)
 
-    tractor = Tractor(step_map={"TestStep": TStep}, resources_map={'Resource1': TResource})
+    tractor = Tractor(uid='t1')
 
     step1 = TStep("test-step-1", TArgs(arg1=1), NoResources(), TInputs(input1=TResults(x=1)))
     step2 = TStep("test-step-2", TArgs(arg1=2), NoResources(), TInputs(input1=step1.results))
@@ -787,13 +788,27 @@ def test_tractor_add_steps():
     assert tractor.steps == [step1, step2, step3]
 
 
+def test_tractor_add_steps_duplicate():
+    class TStep(Step[TResults, TArgs, NoResources, TInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results = TResults(x=self.inputs.input1 + self.args.arg1)
+
+    tractor = Tractor(uid='t1')
+    step1 = TStep("test-step-1", TArgs(arg1=1), NoResources(), TInputs(input1=TResults(x=1)))
+    
+    tractor.add_step(step1)
+    with pytest.raises(DuplicateStepError):
+        tractor.add_step(step1)
+
+
 def test_tractor_dump_load():
     class TStep(Step[TResults, TSecretArgs, TResources2, TInputs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results = TResults(x=self.inputs.input1 + self.args.arg1)
 
-    tractor = Tractor(step_map={"TestStep": TStep}, resources_map={'Resource1': TResource})
+    tractor = Tractor(uid='t1')
 
     step1 = TStep("test-step-1",
                   TSecretArgs(arg1=Secret('1'), arg2=1),
@@ -814,81 +829,97 @@ def test_tractor_dump_load():
 
     dumped = tractor.dump()
     assert dumped == {
+        'uid': 't1',
         'resources': {'TResourceWithSecrets:res1': {
                         'secret': "*CENSORED*",
                         'env': 'test',
                         'uid': 'res1',
                         'type': 'TResourceWithSecrets'},
                      },
-        'steps': [{'args': {'arg1': '*CENSORED*', 'arg2': 1},
-                   'details': {'status': ''},
-                   'errors': {'errors': {}},
-                   'external_resources': {'service1': 'TResourceWithSecrets:res1',
-                                          'type': 'TResources2'},
-                   'inputs': {},
-                   'inputs_standalone': {'input1': {'x': 1}},
-                   'results': {'x': 10},
-                   'skip': False,
-                   'skip_reason': '',
-                   'state': 'ready',
-                   'stats': {'finished': None,
-                             'skip': False,
-                             'skip_reason': '',
-                             'skipped': False,
-                             'started': None,
-                             'state': 'ready'},
-                   'type': 'TestStep',
-                   'uid': 'test-step-1'},
-                  {'args': {'arg1': '*CENSORED*', 'arg2': 2},
-                   'details': {'status': ''},
-                   'errors': {'errors': {}},
-                   'external_resources': {'service1': 'TResourceWithSecrets:res1',
-                                          'type': 'TResources2'},
-                   'inputs': {'input1': 'TestStep:test-step-1'},
-                   'inputs_standalone': {},
-                   'results': {'x': 10},
-                   'skip': False,
-                   'skip_reason': '',
-                   'state': 'ready',
-                   'stats': {'finished': None,
-                             'skip': False,
-                             'skip_reason': '',
-                             'skipped': False,
-                             'started': None,
-                             'state': 'ready'},
-                   'type': 'TestStep',
-                   'uid': 'test-step-2'},
-                  {'args': {'arg1': '*CENSORED*', 'arg2': 3},
-                   'details': {'status': ''},
-                   'errors': {'errors': {}},
-                   'external_resources': {'service1': 'TResourceWithSecrets:res1',
-                                          'type': 'TResources2',
-                                         },
-                   'inputs': {'input1': 'TestStep:test-step-2'},
-                   'inputs_standalone': {},
-                   'results': {'x': 10},
-                   'skip': False,
-                   'skip_reason': '',
-                   'state': 'ready',
-                   'stats': {'finished': None,
-                             'skip': False,
-                             'skip_reason': '',
-                             'skipped': False,
-                             'started': None,
-                             'state': 'ready'},
-                   'type': 'TestStep',
-                   'uid': 'test-step-3'}]
+        'steps': [{
+                   "type": "step",
+                   "data": {
+                       'args': {'arg1': '*CENSORED*', 'arg2': 1},
+                       'details': {'status': ''},
+                       'errors': {'errors': {}},
+                       'external_resources': {'service1': 'TResourceWithSecrets:res1',
+                                              'type': 'TResources2'},
+                       'inputs': {},
+                       'inputs_standalone': {'input1': {'x': 1}},
+                       'results': {'x': 10},
+                       'skip': False,
+                       'skip_reason': '',
+                       'state': 'ready',
+                       'stats': {'finished': None,
+                                 'skip': False,
+                                 'skip_reason': '',
+                                 'skipped': False,
+                                 'started': None,
+                                 'state': 'ready'},
+                       'type': 'TestStep',
+                       'uid': 'test-step-1'}
+                  },
+                  {"type": "step",
+                   "data": {
+                       'args': {'arg1': '*CENSORED*', 'arg2': 2},
+                       'details': {'status': ''},
+                       'errors': {'errors': {}},
+                       'external_resources': {'service1': 'TResourceWithSecrets:res1',
+                                              'type': 'TResources2'},
+                       'inputs': {'input1': 'TestStep:test-step-1'},
+                       'inputs_standalone': {},
+                       'results': {'x': 10},
+                       'skip': False,
+                       'skip_reason': '',
+                       'state': 'ready',
+                       'stats': {'finished': None,
+                                 'skip': False,
+                                 'skip_reason': '',
+                                 'skipped': False,
+                                 'started': None,
+                                 'state': 'ready'},
+                       'type': 'TestStep',
+                       'uid': 'test-step-2'}
+                   },
+                   {"type": "step",
+                    "data": {
+                       'args': {'arg1': '*CENSORED*', 'arg2': 3},
+                        'details': {'status': ''},
+                        'errors': {'errors': {}},
+                        'external_resources': {'service1': 'TResourceWithSecrets:res1',
+                                               'type': 'TResources2',
+                                              },
+                        'inputs': {'input1': 'TestStep:test-step-2'},
+                        'inputs_standalone': {},
+                        'results': {'x': 10},
+                        'skip': False,
+                        'skip_reason': '',
+                        'state': 'ready',
+                        'stats': {'finished': None,
+                                  'skip': False,
+                                  'skip_reason': '',
+                                  'skipped': False,
+                                  'started': None,
+                                  'state': 'ready'},
+                        'type': 'TestStep',
+                        'uid': 'test-step-3'}
+                   }
+                ]
         }
 
 
-    tractor2 = Tractor(step_map={"TestStep": TStep}, resources_map={'Resource1': TResource, 'TResourceWithSecrets': TResourceWithSecrets})
+    tractor2 = Tractor(uid='t1')
     with pytest.raises(MissingSecretError):
-        tractor2.load(dumped, {})
+        tractor2.load(dumped, {"TestStep": TStep}, {"TResourceWithSecrets": TResourceWithSecrets}, {})
 
-    tractor2.load(dumped, {"TestStep:test-step-1": {'arg1': '1'},
-                           "TestStep:test-step-2": {'arg1': '2'},
-                           "TestStep:test-step-3": {'arg1': '3'},
-                           'TResourceWithSecrets:res1': {'secret': 'secret value'}})
+    tractor2.load(
+        dumped, 
+        {"TestStep": TStep},
+        {"TResourceWithSecrets": TResourceWithSecrets},
+        {"TestStep:test-step-1": {'arg1': '1'},
+         "TestStep:test-step-2": {'arg1': '2'},
+         "TestStep:test-step-3": {'arg1': '3'},
+         'TResourceWithSecrets:res1': {'secret': 'secret value'}})
     assert tractor2.steps[0].args.arg1 == '1'
     assert tractor2.steps[0].details.status == ''
     assert tractor2.steps[0].errors.errors == {}
@@ -923,7 +954,7 @@ def test_tractor_run():
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results = TResults(x=self.inputs.input1.x + self.args.arg2)
 
-    tractor = Tractor(step_map={"TestStep": TStep}, resources_map={'Resource1': TResource})
+    tractor = Tractor(uid='t1')
 
     step1 = TStep("test-step-1", TSecretArgs(arg1=Secret('1'), arg2=1), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=TResults(x=1)))
     step2 = TStep("test-step-2", TSecretArgs(arg1=Secret('2'), arg2=2), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=step1.results))
@@ -932,7 +963,6 @@ def test_tractor_run():
     tractor.add_step(step1)
     tractor.add_step(step2)
     tractor.add_step(step3)
-
     tractor.run()
 
     assert step1.state == StepState.FINISHED
@@ -956,7 +986,7 @@ def test_tractor_run_error():
         print("on error")
         on_error_called['count'] = 1
 
-    tractor = Tractor(step_map={"TestStep": TStep}, resources_map={'Resource1': TResource})
+    tractor = Tractor(uid='t1')
 
     step1 = TStep("test-step-1", TSecretArgs(arg1=Secret('1'), arg2=1), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=TResults(x=1)))
     step2 = TStep("test-step-2", TSecretArgs(arg1=Secret('2'), arg2=2), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=step1.results))
@@ -975,3 +1005,110 @@ def test_tractor_run_error():
 
     assert step3.results.x == 7
     assert on_error_called == {"count": 1}
+
+
+def test_tractor_add_subtractor():
+    class TStep(Step[TResults, TSecretArgs, TResources, TInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results = TResults(x=self.inputs.input1.x + self.args.arg2)
+            if self.results.x > 4:
+                raise ValueError("Value too high")
+
+    on_error_called = {"count": 0}
+
+    def on_error(step: Step):
+        print("on error")
+        on_error_called['count'] = 1
+
+    tractor = Tractor(uid='t1')
+    step1 = TStep("test-step-1", TSecretArgs(arg1=Secret('1'), arg2=1), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=TResults(x=1)))
+    tractor.add_step(step1)
+
+    tractor2 = Tractor(uid='t2')
+    step2 = TStep("test-step-2", TSecretArgs(arg1=Secret('2'), arg2=2), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=step1.results))
+    tractor2.add_step(step2)
+
+    tractor.add_step(tractor2)
+
+    tractor.run(on_error=on_error)
+
+    assert step1.state == StepState.FINISHED
+    assert step2.state == StepState.FINISHED
+
+
+def test_tractor_add_subtractor_duplicate_step():
+    class TStep(Step[TResults, TSecretArgs, TResources, TInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results = TResults(x=self.inputs.input1.x + self.args.arg2)
+            if self.results.x > 4:
+                raise ValueError("Value too high")
+
+    on_error_called = {"count": 0}
+
+    def on_error(step: Step):
+        print("on error")
+        on_error_called['count'] = 1
+
+    tractor = Tractor(uid='t1')
+    step1 = TStep("test-step-1", TSecretArgs(arg1=Secret('1'), arg2=1), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=TResults(x=1)))
+    tractor.add_step(step1)
+
+    tractor2 = Tractor(uid='t2')
+    step2 = TStep("test-step-2", TSecretArgs(arg1=Secret('2'), arg2=2), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=step1.results))
+    tractor2.add_step(step2)
+    tractor.add_step(tractor2)
+
+    tractor3 = Tractor(uid='t2')
+    tractor3.add_step(step2)
+    
+    with pytest.raises(DuplicateStepError):
+        tractor.add_step(tractor3)
+
+
+def test_tractor_add_subtractor_duplicate_tractor():
+    class TStep(Step[TResults, TSecretArgs, TResources, TInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results = TResults(x=self.inputs.input1.x + self.args.arg2)
+            if self.results.x > 4:
+                raise ValueError("Value too high")
+
+    on_error_called = {"count": 0}
+
+    def on_error(step: Step):
+        print("on error")
+        on_error_called['count'] = 1
+
+    tractor = Tractor(uid='t1')
+    step1 = TStep("test-step-1", TSecretArgs(arg1=Secret('1'), arg2=1), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=TResults(x=1)))
+    tractor.add_step(step1)
+
+    tractor2 = Tractor(uid='t2')
+    step2 = TStep("test-step-2", TSecretArgs(arg1=Secret('2'), arg2=2), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=step1.results))
+    tractor2.add_step(step2)
+    tractor.add_step(tractor2)
+
+    tractor3 = Tractor(uid='t3')
+    tractor3.add_step(tractor)
+    
+    with pytest.raises(DuplicateTractorError):
+        tractor.add_step(tractor3)
+
+
+def test_named_tractor():
+    class TStep(Step[TResults, TArgs, NoResources, TInputs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            self.results = TResults(x=self.inputs.input1 + self.args.arg1)
+
+    class TNamedTractor(NamedTractor, metaclass=NamedTractorConfig[TStep]):
+        pass
+    
+
+    TNamedTractor(uid='nt1')
+
+    assert False
+
+

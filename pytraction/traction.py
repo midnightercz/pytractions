@@ -29,6 +29,8 @@ from typing import (
     Callable,
     Iterator,
     _GenericAlias,
+    Union,
+    ForwardRef
 )
 import typing_inspect
 
@@ -41,7 +43,7 @@ import pydantic.fields
 import pydantic.main
 from pydantic.dataclasses import dataclass
 
-from .exc import LoadWrongStepError, LoadWrongExtResourceError, MissingSecretError
+from .exc import LoadWrongStepError, LoadWrongExtResourceError, MissingSecretError, DuplicateStepError, DuplicateTractorError
 
 
 Validator = Callable[Any, Any]
@@ -410,6 +412,24 @@ class StepDumpDict(Generic[ResultsType]):
 StepOnUpdateCallable = Optional[Callable[["Step"], None]]
 StepOnErrorCallable = Optional[Callable[["Step"], None]]
 
+def get_step_types(cls):
+    type_args = get_args(cls.__orig_bases__[0])  # type: ignore
+    stack = [cls]
+    item = None
+    while stack:
+        item = stack.pop(0)
+
+        if hasattr(item, "__orig_bases__"):
+            for base in item.__orig_bases__:
+                stack.insert(0, base)
+        if hasattr(item, "__origin__"):
+            if item.__origin__ == Step:
+                break
+            stack.insert(0, item.__origin__)
+
+    type_args = get_args(item)
+    return type_args
+
 
 class Step(
     pydantic.generics.BaseModel,
@@ -488,24 +508,6 @@ class Step(
         else:
             super().__setattr__(key, value)
 
-    @classmethod
-    def get_step_types(cls):
-        type_args = get_args(cls.__orig_bases__[0])  # type: ignore
-        stack = [cls]
-        item = None
-        while stack:
-            item = stack.pop(0)
-
-            if hasattr(item, "__orig_bases__"):
-                for base in item.__orig_bases__:
-                    stack.insert(0, base)
-            if hasattr(item, "__origin__"):
-                if item.__origin__ == Step:
-                    break
-                stack.insert(0, item.__origin__)
-
-        type_args = get_args(item)
-        return type_args
 
     def __init__(
         self,
@@ -526,7 +528,7 @@ class Step(
                 Mapping of inputs to results of steps identified by uid
         """
 
-        type_args = self.get_step_types()
+        type_args = get_step_types(self)
         if not type_args:
             raise TypeError(
                 "Missing generic annotations for Step class. Use Step[ResultsCls, ArgsCls, ExtResources, InputsCls]"
@@ -626,6 +628,7 @@ class Step(
             if not self.skip:
                 self.state = StepState.RUNNING
                 _on_update(self)  # type: ignore
+                print("Step run")
                 self._run(on_update=_on_update)
         except StepFailedError:
             self.state = StepState.FAILED
@@ -634,6 +637,7 @@ class Step(
             _on_error(self)
             raise
         else:
+            print("step finished")
             self.state = StepState.FINISHED
         finally:
             self._finish_stats()
@@ -726,7 +730,7 @@ class Step(
     def load_cls(
         cls,
         step_dump,
-        inputs_map: Dict[str, "Step[Any, Any, Any, Any]"],
+        inputs_map: Dict[str, "Step[Any, Any, Any, Any, Any]"],
         external_resources: Optional[ExtResourcesType] = None,
         secrets: Dict[str, Dict[str, str]] = None,
     ):
@@ -802,6 +806,10 @@ class TractorValidateResult(TypedDict):
     valid: bool
 
 
+
+
+Tractor= ForwardRef('Tractor')
+
 class Tractor(
     pydantic.BaseModel,
     validate_all=True,
@@ -813,14 +821,16 @@ class Tractor(
     """Class which runs sequence of steps."""
 
     steps: List[Step[Any, Any, Any, Any, Any]] = []
-    current_step: Optional[Step[Any, Any, Any, Any, Any]]
+    current_step: Optional[Union[Step[Any, Any, Any, Any, Any]|Tractor]]
     step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]] = {}
     resources_map: Dict[str, Type[ExtResource]] = {}
+    uid: str
 
     def __init__(
         self,
-        step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]],
-        resources_map: Dict[str, Type[ExtResource]],
+        uid: str,
+        #step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]],
+        #resources_map: Dict[str, Type[ExtResource]],
     ) -> None:
         """Initialize the stepper.
 
@@ -829,30 +839,76 @@ class Tractor(
                 Mapping of step names to step classes. Used when loading stepper from
                 json-compatible dict data
         """
-        step_map = step_map
+        #step_map = {}
+        resource_map = {}
         current_step = None
         super().__init__(
-            step_map=step_map, current_step=current_step, resources_map=resources_map
+            uid=uid,
+            #step_map=step_map,
+            current_step=current_step,
+            #resources_map=resources_map
         )
 
-    def add_step(self, step: Step[Any, Any, Any, Any, Any]) -> None:
+    def add_step(self, step: Union[Step[Any, Any, Any, Any, Any]|"Tractor"]) -> None:
         """Add step to step sequence."""
+        tractor_stack = [s for s in self.steps if isinstance(s, Tractor)]
+        if isinstance(step, Tractor):
+            tractor_stack.append(step)
+        found_steps = [s.fullname for s in self.steps if isinstance(s, Step)]
+        if isinstance(step, Step):
+            if step.fullname in found_steps:
+                raise DuplicateStepError(step.fullname)
+            found_steps.append(step.fullname)
+
+        found_tractors = [self.uid]
+        # check for duplicates and loops
+        while tractor_stack:
+            tractor = tractor_stack.pop(0)
+            if tractor.uid in found_tractors:
+                raise DuplicateTractorError(tractor.fullname)
+            for tstep in tractor.steps:
+                if isinstance(tstep, Step):
+                    if tstep.fullname in found_steps:
+                        raise DuplicateStepError(tstep.fullname)
+                    found_steps.append(tstep.fullname)
+                else:
+                    tractor_stack.append(tstep)
         self.steps.append(step)
+
+    @property
+    def fullname(self):
+        return self.uid
 
     def dump(self) -> TractorDumpDict:
         """Dump stepper state and shared_results to json compatible dict."""
         steps: List[Dict[str, Any]] = []
-        out: TractorDumpDict = {"steps": steps, "resources": {}}
+        out: TractorDumpDict = {"steps": steps, "resources": {}, "uid": self.uid}
+        resources_dump: Dict[str, Any] = {}
         for step in self.steps:
-            steps.append(step.dump(full=False))
-        for step in self.steps:
-            for k in step.external_resources.__fields__:
-                res = getattr(step.external_resources, k)
-                out["resources"][res.fullname] = res.dump()
+            if isinstance(step, Step):
+                steps.append({"type": "step", "data": step.dump(full=False)})
+                for k in step.external_resources.__fields__:
+                    res = getattr(step.external_resources, k)
+                    resources_dump[res.fullname] = res.dump()
+            else:
+                steps.append({"type": "tractor", "data": step.dump(full=False)})
+                for substep in step.steps:
+                    for k in step.external_resources.__fields__:
+                        res = getattr(substep.external_resources, k)
+                        resources_dump[res.fullname] = res.dump()
+        out["resources"] = resources_dump
         return out
 
+    @classmethod
+    def load_cls(
+            cls, dump_obj: TractorDumpDict, step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]], resources_map: Dict[str, Type[ExtResource]], secrets: Dict[str, Dict[str, str]]
+    ) -> None:
+        ret = cls(dump_obj['uid'])
+        ret.load(dump_obj, step_map, resources_map, secrets)
+        return ret
+
     def load(
-        self, dump_obj: TractorDumpDict, secrets: Dict[str, Dict[str, str]]
+        self, dump_obj: TractorDumpDict, step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]], resources_map: Dict[str, Type[ExtResource]], secrets: Dict[str, Dict[str, str]]
     ) -> None:
         """Load and initialize stepper from data produced by dump method."""
         loaded_steps = {}
@@ -860,7 +916,7 @@ class Tractor(
         self.steps = []
         for fullname, resource_dump in dump_obj["resources"].items():
             resource_dump_copy = resource_dump.copy()
-            loaded_resources[fullname] = self.resources_map[
+            loaded_resources[fullname] = resources_map[
                 resource_dump["type"]
             ].load_cls(
                 resource_dump_copy,
@@ -870,24 +926,192 @@ class Tractor(
             )
 
         for step_obj in dump_obj["steps"]:
-            step_resources = {}
-            for resource, resource_fullname in step_obj["external_resources"].items():
-                if resource == "type":
-                    continue
-                step_resources[resource] = loaded_resources[resource_fullname]
-            external_resources_type = self.step_map[step_obj["type"]].get_step_types()[
-                2
-            ]
-            external_resources = external_resources_type(**step_resources)
-            step = self.step_map[step_obj["type"]].load_cls(
-                step_obj,
-                loaded_steps,
-                external_resources=external_resources,
-                secrets=secrets,
-            )  # .get("%s:%s" % (step_obj['type'], step_obj['uid']), {}))
+            if step_obj['type'] == 'step':
+                step_resources = {}
+                for resource, resource_fullname in step_obj['data']["external_resources"].items():
+                    if resource == "type":
+                        continue
+                    step_resources[resource] = loaded_resources[resource_fullname]
+                external_resources_type = get_step_types(step_map[step_obj['data']["type"]])[
+                    2
+                ]
+                external_resources = external_resources_type(**step_resources)
+                step = step_map[step_obj['data']["type"]].load_cls(
+                    step_obj['data'],
+                    loaded_steps,
+                    external_resources=external_resources,
+                    secrets=secrets,
+                )  # .get("%s:%s" % (step_obj['type'], step_obj['uid']), {}))
+                loaded_steps[step.fullname] = step
+                self.steps.append(step)
+            elif step_obj['type'] == 'tractor':
+                tractor = self.load_cls(
+                    step_obj['data'],
+                    step_map,
+                    resources_map,
+                    secrets.get(step_obj['data']['uid'], {})
+                )
+                self.steps.append(tractor)
 
-            loaded_steps[step.fullname] = step
-            self.steps.append(step)
+
+    def run(
+        self,
+        start_from: int = 0,
+        on_error: StepOnErrorCallable = None,
+        on_update: StepOnUpdateCallable = None,
+    ) -> None:
+        """Run the stepper sequence."""
+        for step in self.steps[start_from:]:
+            self.current_step = step
+            step.run(on_update=on_update, on_error=on_error)
+
+Tractor.update_forward_refs()
+
+NTStepsType = TypeVar("NTStepsType", bound=Dict[str, Step])
+NTArgsType = TypeVar("NTArgsType", bound=Dict[str, StepArgs])
+NTResultsType = TypeVar("NTResultsType", bound=Dict[str, ResultsType])
+NTInputsType = TypeVar("NTInputsType", bound=Dict[str, InputsType])
+
+class NamedTractorConfig(pydantic.main.ModelMetaclass, Generic[NTStepsType]):
+    def __new__(cls, name, bases, attrs, **kwargs):  # noqa C901
+       
+        type_args = get_args(cls.__orig_bases__[1])  # type: ignore
+        nt_steps = type_args[0]
+
+        nt_args_model = {}
+        nt_results_model = {}
+        nt_resources_model = {}
+        for nt_step_name, nt_step in nt_steps.items():
+            nt_step_types = get_step_types(nt_step)
+            results_type = nt_step_types[0]
+            args_type = nt_step_types[1]
+            resources_type = nt_step_types[2]
+            inputs_type = nt_step_types[3]
+            
+            nt_args_model[nt_step_name] = args_type
+            nt_results_model[nt_step_name] = results_type
+            nt_resources_model[nt_step_name] = resources_type
+
+        attrs["ArgsModel"] = pydantic.create_model("%s_args" % (cls.__name__,), **nt_args_model)
+        attrs["ResultsModel"] = pydantic.create_model("%s_results" % (cls.__name__,), **nt_results_model)
+        attrs["ResourcesModel"] = pydantic.create_model("%s_resources" % (cls.__name__,), **nt_resources_model)
+        ret = super().__new__(cls, name, bases, attrs)
+
+
+class NamedTractor(pydantic.BaseModel):
+    """Class which runs sequence of steps."""
+
+    steps: List[Step[Any, Any, Any, Any, Any]] = []
+    current_step: Optional[Union[Step[Any, Any, Any, Any, Any]|Tractor]]
+    step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]] = {}
+    resources_map: Dict[str, Type[ExtResource]] = {}
+    uid: str
+
+    def __init__(
+        self,
+        uid: str,
+        #step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]],
+        #resources_map: Dict[str, Type[ExtResource]],
+    ) -> None:
+        """Initialize the stepper.
+
+        Args:
+            step_map: (mapping of "step-name": <step_class>)
+                Mapping of step names to step classes. Used when loading stepper from
+                json-compatible dict data
+        """
+
+        self.args
+
+
+
+        print(type_args)
+        #step_map = {}
+        resource_map = {}
+        current_step = None
+        super().__init__(
+            uid=uid,
+            current_step=current_step,
+        )
+
+    @property
+    def fullname(self):
+        return self.uid
+
+    def dump(self) -> TractorDumpDict:
+        """Dump stepper state and shared_results to json compatible dict."""
+        steps: List[Dict[str, Any]] = []
+        out: TractorDumpDict = {"steps": steps, "resources": {}, "uid": self.uid}
+        resources_dump: Dict[str, Any] = {}
+        for step in self.steps:
+            if isinstance(step, Step):
+                steps.append({"type": "step", "data": step.dump(full=False)})
+                for k in step.external_resources.__fields__:
+                    res = getattr(step.external_resources, k)
+                    resources_dump[res.fullname] = res.dump()
+            else:
+                steps.append({"type": "tractor", "data": step.dump(full=False)})
+                for substep in step.steps:
+                    for k in step.external_resources.__fields__:
+                        res = getattr(substep.external_resources, k)
+                        resources_dump[res.fullname] = res.dump()
+        out["resources"] = resources_dump
+        return out
+
+    @classmethod
+    def load_cls(
+            cls, dump_obj: TractorDumpDict, step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]], resources_map: Dict[str, Type[ExtResource]], secrets: Dict[str, Dict[str, str]]
+    ) -> None:
+        ret = cls(dump_obj['uid'])
+        ret.load(dump_obj, step_map, resources_map, secrets)
+        return ret
+
+    def load(
+        self, dump_obj: TractorDumpDict, step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]], resources_map: Dict[str, Type[ExtResource]], secrets: Dict[str, Dict[str, str]]
+    ) -> None:
+        """Load and initialize stepper from data produced by dump method."""
+        loaded_steps = {}
+        loaded_resources = {}
+        self.steps = []
+        for fullname, resource_dump in dump_obj["resources"].items():
+            resource_dump_copy = resource_dump.copy()
+            loaded_resources[fullname] = resources_map[
+                resource_dump["type"]
+            ].load_cls(
+                resource_dump_copy,
+                secrets.get(
+                    "%s:%s" % (resource_dump["type"], resource_dump["uid"]), {}
+                ),
+            )
+
+        for step_obj in dump_obj["steps"]:
+            if step_obj['type'] == 'step':
+                step_resources = {}
+                for resource, resource_fullname in step_obj['data']["external_resources"].items():
+                    if resource == "type":
+                        continue
+                    step_resources[resource] = loaded_resources[resource_fullname]
+                external_resources_type = get_step_types(step_map[step_obj['data']["type"]])[
+                    2
+                ]
+                external_resources = external_resources_type(**step_resources)
+                step = step_map[step_obj['data']["type"]].load_cls(
+                    step_obj['data'],
+                    loaded_steps,
+                    external_resources=external_resources,
+                    secrets=secrets,
+                )  # .get("%s:%s" % (step_obj['type'], step_obj['uid']), {}))
+                loaded_steps[step.fullname] = step
+                self.steps.append(step)
+            elif step_obj['type'] == 'tractor':
+                tractor = self.load_cls(
+                    step_obj['data'],
+                    step_map,
+                    resources_map,
+                    secrets.get(step_obj['data']['uid'], {})
+                )
+                self.steps.append(tractor)
+
 
     def run(
         self,
