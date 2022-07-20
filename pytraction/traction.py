@@ -819,7 +819,7 @@ class Tractor(
     """Class which runs sequence of steps."""
 
     steps: List[Step[Any, Any, Any, Any, Any]] = []
-    current_step: Optional[Union[Step[Any, Any, Any, Any, Any]|Tractor]]
+    current_step: Optional[Union[Step[Any, Any, Any, Any, Any], Tractor]]
     step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]] = {}
     resources_map: Dict[str, Type[ExtResource]] = {}
     uid: str
@@ -847,7 +847,7 @@ class Tractor(
             #resources_map=resources_map
         )
 
-    def add_step(self, step: Union[Step[Any, Any, Any, Any, Any]|"Tractor"]) -> None:
+    def add_step(self, step: Union[Step[Any, Any, Any, Any, Any], Tractor]) -> None:
         """Add step to step sequence."""
         tractor_stack = [s for s in self.steps if isinstance(s, Tractor)]
         if isinstance(step, Tractor):
@@ -1029,7 +1029,7 @@ class NamedTractor(pydantic.BaseModel, metaclass=NamedTractorMeta, nt_steps=[], 
 
     _step_map: Dict[str, Step[Any, Any, Any, Any, Any]] = {}
     _steps: List[Step[Any, Any, Any, Any, Any]] = []
-    current_step: Optional[Union[Step[Any, Any, Any, Any, Any]|Tractor]] = None
+    current_step: Optional[Union[Step[Any, Any, Any, Any, Any], Tractor]] = None
     uid: str
     INPUTS_MAP: ClassVar[Dict[str, Dict[str, str]]] = {}
 
