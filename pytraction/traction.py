@@ -628,7 +628,6 @@ class Step(
             if not self.skip:
                 self.state = StepState.RUNNING
                 _on_update(self)  # type: ignore
-                print("Step run")
                 self._run(on_update=_on_update)
         except StepFailedError:
             self.state = StepState.FAILED
@@ -637,7 +636,6 @@ class Step(
             _on_error(self)
             raise
         else:
-            print("step finished")
             self.state = StepState.FINISHED
         finally:
             self._finish_stats()
@@ -967,76 +965,103 @@ class Tractor(
 
 Tractor.update_forward_refs()
 
-NTStepsType = TypeVar("NTStepsType", bound=Dict[str, Step])
-NTArgsType = TypeVar("NTArgsType", bound=Dict[str, StepArgs])
-NTResultsType = TypeVar("NTResultsType", bound=Dict[str, ResultsType])
-NTInputsType = TypeVar("NTInputsType", bound=Dict[str, InputsType])
+#NTStepsType = TypeVar("NTStepsType", bound=Dict[str, Step])
+#NTArgsType = TypeVar("NTArgsType", bound=Dict[str, StepArgs])
+#NTResultsType = TypeVar("NTResultsType", bound=Dict[str, ResultsType])
+#NTInputsType = TypeVar("NTInputsType", bound=Dict[str, InputsType])
 
-class NamedTractorConfig(pydantic.main.ModelMetaclass, Generic[NTStepsType]):
-    def __new__(cls, name, bases, attrs, **kwargs):  # noqa C901
-       
-        type_args = get_args(cls.__orig_bases__[1])  # type: ignore
-        nt_steps = type_args[0]
-
+class NamedTractorMeta(pydantic.main.ModelMetaclass):
+    #def __init__(cls, name, bases, namespace, nt_steps={}):
+    def __new__(mcs, name, bases, namespace,
+                nt_steps: List[Tuple[str, Step[Any, Any, Any, Any, Any]]] = [],
+                nt_inputs: Dict[str, Dict[str, str]] = {},
+                **kwargs):
         nt_args_model = {}
         nt_results_model = {}
         nt_resources_model = {}
-        for nt_step_name, nt_step in nt_steps.items():
+        step_inputs_model = {}
+        for (nt_step_name, nt_step) in nt_steps:
             nt_step_types = get_step_types(nt_step)
             results_type = nt_step_types[0]
             args_type = nt_step_types[1]
             resources_type = nt_step_types[2]
             inputs_type = nt_step_types[3]
             
-            nt_args_model[nt_step_name] = args_type
-            nt_results_model[nt_step_name] = results_type
-            nt_resources_model[nt_step_name] = resources_type
+            nt_args_model[nt_step_name] = (args_type, ...)
+            nt_results_model[nt_step_name] = (results_type, results_type())
+            nt_resources_model[nt_step_name] = (resources_type, ...)
+            step_inputs_model[nt_step_name] = inputs_type
 
-        attrs["ArgsModel"] = pydantic.create_model("%s_args" % (cls.__name__,), **nt_args_model)
-        attrs["ResultsModel"] = pydantic.create_model("%s_results" % (cls.__name__,), **nt_results_model)
-        attrs["ResourcesModel"] = pydantic.create_model("%s_resources" % (cls.__name__,), **nt_resources_model)
-        ret = super().__new__(cls, name, bases, attrs)
+        nt_results_model["__base__"] = StepInputs
+
+        ArgsModel = pydantic.create_model("%s_args" % (name,), **nt_args_model)
+        ResultsModel = pydantic.create_model("%s_results" % (name,), **nt_results_model)
+        ResourcesModel = pydantic.create_model("%s_resources" % (name,), **nt_resources_model)
+        StepInputsModel = pydantic.create_model("%s_step_inputs" % (name,), **step_inputs_model)
+
+        nt_inputs_model = {}
+        for input_name, input_type in nt_inputs.items():
+            nt_inputs_model[input_name] = (input_type, ...)
+        NTInputsModel = pydantic.create_model("%s_inputs" % name, **nt_inputs_model)
+
+        namespace.setdefault('__annotations__', {})
+        namespace['__annotations__']['args'] = ArgsModel
+        namespace['__annotations__']['results'] = ResultsModel
+        namespace['__annotations__']['resources'] = ResourcesModel
+        namespace['__annotations__']['inputs'] = NTInputsModel
+        namespace['ResultsModel'] = ResultsModel
+        namespace['ArgsModel'] = ArgsModel
+        namespace['ResourcesModel'] = ResourcesModel
+        namespace['StepInputsModel'] = StepInputsModel
+        namespace['InputsModel'] = NTInputsModel
+        namespace['nt_steps'] = nt_steps
+        namespace['results'] = ResultsModel()
+
+        ret = super().__new__(mcs, name, bases, namespace)
+        return ret
+
+class NTInput(pydantic.BaseModel):
+    name: str
 
 
-class NamedTractor(pydantic.BaseModel):
+class NamedTractor(pydantic.BaseModel, metaclass=NamedTractorMeta, nt_steps=[], nt_inputs={}):
     """Class which runs sequence of steps."""
 
-    steps: List[Step[Any, Any, Any, Any, Any]] = []
-    current_step: Optional[Union[Step[Any, Any, Any, Any, Any]|Tractor]]
-    step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]] = {}
-    resources_map: Dict[str, Type[ExtResource]] = {}
+    _step_map: Dict[str, Step[Any, Any, Any, Any, Any]] = {}
+    _steps: List[Step[Any, Any, Any, Any, Any]] = []
+    current_step: Optional[Union[Step[Any, Any, Any, Any, Any]|Tractor]] = None
     uid: str
+    INPUTS_MAP: ClassVar[Dict[str, Dict[str, str]]] = {}
 
-    def __init__(
-        self,
-        uid: str,
-        #step_map: Dict[str, Type[Step[Any, Any, Any, Any, Any]]],
-        #resources_map: Dict[str, Type[ExtResource]],
-    ) -> None:
-        """Initialize the stepper.
+    def __init__(self, *args, **kwargs):
+        super().__init__(**kwargs)
+        results_model_data = {}
+        for step_name, step_type in self.nt_steps:
+            step_inputs = self.INPUTS_MAP[step_name]
+            inputs_model_data = {}
+            for input_, output_from in step_inputs.items():
+                if isinstance(output_from, str):
+                    inputs_model_data[input_] = self._step_map[output_from].results
+                else:
+                    inputs_model_data[input_] = getattr(self.inputs, output_from.name)
+            step = step_type('%s::%s' % (self.uid, step_name),
+                          getattr(self.args, step_name),
+                          getattr(self.resources, step_name),
+                          getattr(self.StepInputsModel, step_name)(**inputs_model_data))
+            results_model_data[step_name] = step.results
+            self._step_map[step_name] = step
+            self._steps.append(step)
+        self.results = self.ResultsModel(**results_model_data)
 
-        Args:
-            step_map: (mapping of "step-name": <step_class>)
-                Mapping of step names to step classes. Used when loading stepper from
-                json-compatible dict data
-        """
-
-        self.args
-
-
-
-        print(type_args)
-        #step_map = {}
-        resource_map = {}
-        current_step = None
-        super().__init__(
-            uid=uid,
-            current_step=current_step,
-        )
+        #self.make_connections()
 
     @property
     def fullname(self):
         return self.uid
+
+    @property
+    def steps(self):
+        return self._steps
 
     def dump(self) -> TractorDumpDict:
         """Dump stepper state and shared_results to json compatible dict."""

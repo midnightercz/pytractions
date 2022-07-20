@@ -13,7 +13,7 @@ from pytraction.traction import (
     StepFailedError, Tractor, Secret,
     StepOnErrorCallable, StepOnUpdateCallable,
     TractorDumpDict, StepResults, NoDetails, StepState, StepStats,
-    NamedTractor, NamedTractorConfig)
+    NamedTractor, NTInput)
 
 from pytraction.exc import (LoadWrongStepError, LoadWrongExtResourceError, MissingSecretError, DuplicateStepError, DuplicateTractorError)
 
@@ -1101,14 +1101,22 @@ def test_named_tractor():
     class TStep(Step[TResults, TArgs, NoResources, TInputs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            self.results = TResults(x=self.inputs.input1 + self.args.arg1)
+            self.results = TResults(x=self.inputs.input1.x + self.args.arg1)
 
-    class TNamedTractor(NamedTractor, metaclass=NamedTractorConfig[TStep]):
-        pass
-    
+    class TNamedTractor(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)], nt_inputs={'input1': TResults}):
+        INPUTS_MAP = {
+            "step2": {"input1": "step1"},
+            "step1": {"input1": NTInput(name="input1")}
+        }
 
-    TNamedTractor(uid='nt1')
-
-    assert False
-
-
+    nt = TNamedTractor(
+        uid='nt1',
+        args=TNamedTractor.ArgsModel(step1=TArgs(arg1=20), step2=TArgs(arg1=50)),
+        resources=TNamedTractor.ResourcesModel(step1=NoResources(), step2=NoResources()),
+        inputs=TNamedTractor.InputsModel(input1=TResults(x=10))
+    )
+    nt.run()
+    assert nt.steps[0].state == StepState.FINISHED
+    assert nt.steps[1].state == StepState.FINISHED
+    assert nt.results.step1.x == 30
+    assert nt.results.step2.x == 80
