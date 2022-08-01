@@ -1,5 +1,6 @@
 import abc
 import copy
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import datetime
 from dataclasses import make_dataclass, asdict
 from functools import partial
@@ -44,6 +45,7 @@ import pydantic.main
 from pydantic.dataclasses import dataclass
 
 from .exc import LoadWrongStepError, LoadWrongExtResourceError, MissingSecretError, DuplicateStepError, DuplicateTractorError
+
 
 
 Validator = Callable[Any, Any]
@@ -806,7 +808,12 @@ class TractorValidateResult(TypedDict):
 
 
 
-Tractor= ForwardRef('Tractor')
+Tractor = ForwardRef('Tractor')
+
+NamedTractor = ForwardRef('NamedTractor')
+
+STMD = ForwardRef('STMD')
+
 
 class Tractor(
     pydantic.BaseModel,
@@ -965,15 +972,9 @@ class Tractor(
 
 Tractor.update_forward_refs()
 
-#NTStepsType = TypeVar("NTStepsType", bound=Dict[str, Step])
-#NTArgsType = TypeVar("NTArgsType", bound=Dict[str, StepArgs])
-#NTResultsType = TypeVar("NTResultsType", bound=Dict[str, ResultsType])
-#NTInputsType = TypeVar("NTInputsType", bound=Dict[str, InputsType])
-
 class NamedTractorMeta(pydantic.main.ModelMetaclass):
-    #def __init__(cls, name, bases, namespace, nt_steps={}):
     def __new__(mcs, name, bases, namespace,
-                nt_steps: List[Tuple[str, Step[Any, Any, Any, Any, Any]]] = [],
+                nt_steps: List[Tuple[str, Union[Step[Any, Any, Any, Any, Any], NamedTractor]]] = [],
                 nt_inputs: Dict[str, Dict[str, str]] = {},
                 **kwargs):
         nt_args_model = {}
@@ -981,12 +982,18 @@ class NamedTractorMeta(pydantic.main.ModelMetaclass):
         nt_resources_model = {}
         step_inputs_model = {}
         for (nt_step_name, nt_step) in nt_steps:
-            nt_step_types = get_step_types(nt_step)
-            results_type = nt_step_types[0]
-            args_type = nt_step_types[1]
-            resources_type = nt_step_types[2]
-            inputs_type = nt_step_types[3]
-            
+            if issubclass(nt_step, Step):
+                nt_step_types = get_step_types(nt_step)
+                results_type = nt_step_types[0]
+                args_type = nt_step_types[1]
+                resources_type = nt_step_types[2]
+                inputs_type = nt_step_types[3]
+            elif issubclass(nt_step, NamedTractor) or issubclass(nt_step, STMD):
+                results_type = nt_step.ResultsModel
+                args_type = nt_step.ArgsModel
+                resources_type = nt_step.ResourcesModel
+                inputs_type = nt_step.InputsModel
+
             nt_args_model[nt_step_name] = (args_type, ...)
             nt_results_model[nt_step_name] = (results_type, results_type())
             nt_resources_model[nt_step_name] = (resources_type, ...)
@@ -1020,6 +1027,7 @@ class NamedTractorMeta(pydantic.main.ModelMetaclass):
         ret = super().__new__(mcs, name, bases, namespace)
         return ret
 
+
 class NTInput(pydantic.BaseModel):
     name: str
 
@@ -1052,8 +1060,6 @@ class NamedTractor(pydantic.BaseModel, metaclass=NamedTractorMeta, nt_steps=[], 
             self._step_map[step_name] = step
             self._steps.append(step)
         self.results = self.ResultsModel(**results_model_data)
-
-        #self.make_connections()
 
     @property
     def fullname(self):
@@ -1137,7 +1143,6 @@ class NamedTractor(pydantic.BaseModel, metaclass=NamedTractorMeta, nt_steps=[], 
                 )
                 self.steps.append(tractor)
 
-
     def run(
         self,
         start_from: int = 0,
@@ -1148,6 +1153,59 @@ class NamedTractor(pydantic.BaseModel, metaclass=NamedTractorMeta, nt_steps=[], 
         for step in self.steps[start_from:]:
             self.current_step = step
             step.run(on_update=on_update, on_error=on_error)
+
+NamedTractor.update_forward_refs()
+
+class STMDMeta(pydantic.main.ModelMetaclass):
+    def __new__(mcs, name, bases, namespace,
+                tractor_type: Type[NamedTractor],
+                **kwargs):
+        results_model = {"data": (List[tractor_type.ResultsModel], ...)}
+        ResultsModel = pydantic.create_model("%s_results" % (name,), **results_model)
+
+        inputs_model = {"data": ((List[tractor_type.InputsModel], ...))}
+        InputsModel = pydantic.create_model("%s_inputs" % name, **inputs_model)
+
+        namespace.setdefault('__annotations__', {})
+        namespace['__annotations__']['results'] = ResultsModel
+        namespace['__annotations__']['inputs'] = InputsModel
+        namespace['ResultsModel'] = ResultsModel
+        namespace['InputsModel'] = InputsModel
+        namespace['ResultsModel'] = tractor_type.ArgsModel
+        namespace['ResourcesModel'] = tractor_type.ResourcesModel
+        namespace['results'] = ResultsModel()
+        ret = super().__new__(mcs, name, bases, namespace)
+        return ret
+
+
+class STMD(
+    pydantic.BaseModel, metaclass=STMDMeta, tractor_type=None
+):
+    tractors: int
+    uid: str
+    args: TractorType.ArgsModel
+    resources: TractorType.ResourcesModel
+
+    def run(
+        self,
+        on_error: StepOnErrorCallable = None,
+        on_update: StepOnUpdateCallable = None,
+    ) -> None:
+
+        (tractor_type,) = get_step_types(self)
+
+        with ProcessPoolExecutor() as executor:
+            ft_results = {}
+            for i in range(0, self.tractors):
+                res = executor.submit(
+                    tractor_type(uid="%s:%d" % (self.uid, i), args=self.args, resources=self.resources, inputs=self.inputs.data[i]).run
+                )
+                ft_results[res] = i
+            for ft in as_completed(ft_results):
+                self.results.data[ft_results[res]] = ft.result()
+
+STMD.update_forward_refs()
+
 
 
 class NoArgs(StepArgs):
