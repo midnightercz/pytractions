@@ -169,7 +169,7 @@ def test_step_initiation_wrong_inputs_type():
     assert str(exc.value).startswith("Step inputs are not type of <class 'pytraction.traction.NoInputs'>")
 
 
-def test_step_initiation_wrong_external_resources():
+def test_step_initiation_wrong_resources():
     """Step expects NoInputs but TInputs are given."""
 
     class TStep(Step[TResults, NoArgs, NoResources, NoInputs, NoDetails]):
@@ -328,7 +328,7 @@ def test_step_dump_load(fixture_isodate_now):
         'errors': {'errors': {}},
         'inputs': {},
         'inputs_standalone': {"input1": {"x": 55}},
-        'external_resources': {'type': 'TResources2',
+        'resources': {'type': 'TResources2',
                                'service1': {'env': 'test',
                                             'uid': 'res1',
                                             'secret': "*CENSORED*",
@@ -411,7 +411,7 @@ def test_step_dump_load_missing_secrets(fixture_isodate_now):
         'errors': {'errors': {}},
         'inputs': {},
         'inputs_standalone': {"input1": {"x": 55}},
-        'external_resources': {'type': 'TResources2',
+        'resources': {'type': 'TResources2',
                                'service1': {'env': 'test',
                                             'uid': 'res1',
                                             'secret': "*CENSORED*",
@@ -476,7 +476,7 @@ def test_step_dump_load_multiple(fixture_isodate_now):
         'inputs_standalone': {"input1": {"x": 55}},
         'skip': False,
         'skip_reason': '',
-        'external_resources': {'type': 'NoResources'},
+        'resources': {'type': 'NoResources'},
         'state': 'finished',
         'stats': {
             'skip': False,
@@ -500,7 +500,7 @@ def test_step_dump_load_multiple(fixture_isodate_now):
         'skip': False,
         'skip_reason': '',
         'state': 'finished',
-        'external_resources': {'type': 'NoResources'},
+        'resources': {'type': 'NoResources'},
         'stats': {
             'skip': False,
             'skipped': False,
@@ -842,7 +842,7 @@ def test_tractor_dump_load():
                        'args': {'arg1': '*CENSORED*', 'arg2': 1},
                        'details': {'status': ''},
                        'errors': {'errors': {}},
-                       'external_resources': {'service1': 'TResourceWithSecrets:res1',
+                       'resources': {'service1': 'TResourceWithSecrets:res1',
                                               'type': 'TResources2'},
                        'inputs': {},
                        'inputs_standalone': {'input1': {'x': 1}},
@@ -864,7 +864,7 @@ def test_tractor_dump_load():
                        'args': {'arg1': '*CENSORED*', 'arg2': 2},
                        'details': {'status': ''},
                        'errors': {'errors': {}},
-                       'external_resources': {'service1': 'TResourceWithSecrets:res1',
+                       'resources': {'service1': 'TResourceWithSecrets:res1',
                                               'type': 'TResources2'},
                        'inputs': {'input1': 'TestStep:test-step-1'},
                        'inputs_standalone': {},
@@ -886,7 +886,7 @@ def test_tractor_dump_load():
                        'args': {'arg1': '*CENSORED*', 'arg2': 3},
                         'details': {'status': ''},
                         'errors': {'errors': {}},
-                        'external_resources': {'service1': 'TResourceWithSecrets:res1',
+                        'resources': {'service1': 'TResourceWithSecrets:res1',
                                                'type': 'TResources2',
                                               },
                         'inputs': {'input1': 'TestStep:test-step-2'},
@@ -923,7 +923,7 @@ def test_tractor_dump_load():
     assert tractor2.steps[0].args.arg1 == '1'
     assert tractor2.steps[0].details.status == ''
     assert tractor2.steps[0].errors.errors == {}
-    assert tractor2.steps[0].external_resources.service1 == TResourceWithSecrets(env='test', uid='res1', secret='secret value')
+    assert tractor2.steps[0].resources.service1 == TResourceWithSecrets(env='test', uid='res1', secret='secret value')
     assert tractor2.steps[0].inputs.input1 == TResults(x=1)
     assert tractor2.steps[0].skip == False
     assert tractor2.steps[0].skip_reason == ''
@@ -932,7 +932,7 @@ def test_tractor_dump_load():
     assert tractor2.steps[1].args.arg1 == '2'
     assert tractor2.steps[1].details.status == ''
     assert tractor2.steps[1].errors.errors == {}
-    assert tractor2.steps[1].external_resources.service1 == TResourceWithSecrets(env='test', uid='res1', secret='secret value')
+    assert tractor2.steps[1].resources.service1 == TResourceWithSecrets(env='test', uid='res1', secret='secret value')
     assert tractor2.steps[1].inputs.input1 is tractor2.steps[0].results
     assert tractor2.steps[1].skip == False
     assert tractor2.steps[1].skip_reason == ''
@@ -941,7 +941,7 @@ def test_tractor_dump_load():
     assert tractor2.steps[2].args.arg1 == '3'
     assert tractor2.steps[2].details.status == ''
     assert tractor2.steps[2].errors.errors == {}
-    assert tractor2.steps[2].external_resources.service1 == TResourceWithSecrets(env='test', uid='res1', secret='secret value')
+    assert tractor2.steps[2].resources.service1 == TResourceWithSecrets(env='test', uid='res1', secret='secret value')
     assert tractor2.steps[2].inputs.input1 is tractor2.steps[1].results
     assert tractor2.steps[2].skip == False
     assert tractor2.steps[2].skip_reason == ''
