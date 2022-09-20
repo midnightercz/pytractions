@@ -5,7 +5,7 @@ import pydantic
 import pytest
 
 from pytraction.traction import (
-    Step, StepResults, StepArgs, NoInputs, StepInputs, NoResources,
+    Step, StepIOs, StepArgs, NoInputs, NoResources,
     ExtResources, StepOnUpdateCallable, StepErrors, StepDetails,
     ExtResource, NoArgs,
     StepFailedError, Tractor, Secret,
@@ -16,20 +16,20 @@ from pytraction.traction import (
 from pytraction.exc import (LoadWrongStepError, LoadWrongExtResourceError, MissingSecretError, DuplicateStepError, DuplicateTractorError)
 
 from .models import (
-    TResults, TArgs, TResources, TSecretArgs, TResource, TResourceWithSecrets, TResources, TResourcesWithSecrets, TResources2,
-    TInputs, TDetails)
+    TIOs, IntIO, TArgs, TResources, TSecretArgs, TResource, TResourceWithSecrets, TResources, TResourcesWithSecrets, TResources2,
+    TDetails)
 
 def test_tractor_add_steps():
-    class TStep(Step[TResults, TArgs, NoResources, TInputs, TDetails]):
+    class TStep(Step[TIOs, TArgs, NoResources, TIOs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            self.results = TResults(x=self.inputs.input1 + self.args.arg1)
+            self.results.int_io.x = self.inputs.input1 + self.args.arg1
 
     tractor = Tractor(uid='t1')
 
-    step1 = TStep("test-step-1", TArgs(arg1=1), NoResources(), TInputs(input1=TResults(x=1)))
-    step2 = TStep("test-step-2", TArgs(arg1=2), NoResources(), TInputs(input1=step1.results))
-    step3 = TStep("test-step-3", TArgs(arg1=3), NoResources(), TInputs(input1=step2.results))
+    step1 = TStep("test-step-1", TArgs(arg1=1), NoResources(), TIOs(int_io=IntIO(x=1)))
+    step2 = TStep("test-step-2", TArgs(arg1=2), NoResources(), TIOs(int_io=step1.results.int_io))
+    step3 = TStep("test-step-3", TArgs(arg1=3), NoResources(), TIOs(int_io=step2.results.int_io))
     
     tractor.add_step(step1)
     tractor.add_step(step2)
@@ -40,13 +40,13 @@ def test_tractor_add_steps():
 
 
 def test_tractor_add_steps_duplicate():
-    class TStep(Step[TResults, TArgs, NoResources, TInputs, TDetails]):
+    class TStep(Step[TIOs, TArgs, NoResources, TIOs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            self.results = TResults(x=self.inputs.input1 + self.args.arg1)
+            self.results = TIOs(int_io=IntIO(x=self.inputs.int_io.x + self.args.arg1))
 
     tractor = Tractor(uid='t1')
-    step1 = TStep("test-step-1", TArgs(arg1=1), NoResources(), TInputs(input1=TResults(x=1)))
+    step1 = TStep("test-step-1", TArgs(arg1=1), NoResources(), TIOs(int_io=IntIO(x=1)))
     
     tractor.add_step(step1)
     with pytest.raises(DuplicateStepError):
@@ -54,25 +54,25 @@ def test_tractor_add_steps_duplicate():
 
 
 def test_tractor_dump_load():
-    class TStep(Step[TResults, TSecretArgs, TResources2, TInputs, TDetails]):
+    class TStep(Step[TIOs, TSecretArgs, TResources2, TIOs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            self.results = TResults(x=self.inputs.input1 + self.args.arg1)
+            self.results = TIOs(int_io=IntIO(x=self.inputs.int_io.x + self.args.arg1))
 
     tractor = Tractor(uid='t1')
 
     step1 = TStep("test-step-1",
                   TSecretArgs(arg1=Secret('1'), arg2=1),
                   TResources2(service1=TResourceWithSecrets(env='test', secret='1', uid='res1')),
-                  TInputs(input1=TResults(x=1)))
+                  TIOs(int_io=IntIO(x=1)))
     step2 = TStep("test-step-2", 
                    TSecretArgs(arg1=Secret('2'), arg2=2),
                    TResources2(service1=TResourceWithSecrets(env='test', secret='1', uid='res1')),
-                   TInputs(input1=step1.results))
+                   TIOs(int_io=step1.results.int_io))
     step3 = TStep("test-step-3",
                   TSecretArgs(arg1=Secret('3'), arg2=3),
                   TResources2(service1=TResourceWithSecrets(env='test', secret='1', uid='res1')),
-                  TInputs(input1=step2.results))
+                  TIOs(int_io=step2.results.int_io))
     
     tractor.add_step(step1)
     tractor.add_step(step2)
@@ -97,7 +97,7 @@ def test_tractor_dump_load():
                        'resources': {'service1': 'TResourceWithSecrets:res1',
                                               'type': 'TResources2'},
                        'inputs': {},
-                       'inputs_standalone': {'input1': {'x': 1}},
+                       'inputs_standalone': {'int_io': {'x': 1}},
                        'results': {'x': 10},
                        'skip': False,
                        'skip_reason': '',
@@ -115,9 +115,9 @@ def test_tractor_dump_load():
                        'errors': {'errors': {}},
                        'resources': {'service1': 'TResourceWithSecrets:res1',
                                               'type': 'TResources2'},
-                       'inputs': {'input1': 'TestStep:test-step-1'},
+                       'inputs': {'int_io': 'TestStep:test-step-1'},
                        'inputs_standalone': {},
-                       'results': {'x': 10},
+                       'results': {'int_io':{'x': 10}},
                        'skip': False,
                        'skip_reason': '',
                        'state': 'ready',
@@ -135,9 +135,9 @@ def test_tractor_dump_load():
                         'resources': {'service1': 'TResourceWithSecrets:res1',
                                                'type': 'TResources2',
                                               },
-                        'inputs': {'input1': 'TestStep:test-step-2'},
+                        'inputs': {'int_io': 'TestStep:test-step-2'},
                         'inputs_standalone': {},
-                        'results': {'x': 10},
+                        'results': {'int_io':{'x': 10}},
                         'skip': False,
                         'skip_reason': '',
                         'state': 'ready',
@@ -167,7 +167,7 @@ def test_tractor_dump_load():
     assert tractor2.steps[0].details.status == ''
     assert tractor2.steps[0].errors.errors == {}
     assert tractor2.steps[0].resources.service1 == TResourceWithSecrets(env='test', uid='res1', secret='secret value')
-    assert tractor2.steps[0].inputs.input1 == TResults(x=1)
+    assert tractor2.steps[0].inputs.int_io == IntIO(x=1)
     assert tractor2.steps[0].skip == False
     assert tractor2.steps[0].skip_reason == ''
     assert tractor2.steps[0].state == StepState.READY
@@ -192,16 +192,21 @@ def test_tractor_dump_load():
 
 
 def test_tractor_run():
-    class TStep(Step[TResults, TSecretArgs, TResources, TInputs, TDetails]):
+    class TStep(Step[TIOs, TSecretArgs, TResources, TIOs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            self.results = TResults(x=self.inputs.input1.x + self.args.arg2)
+            print("-------- step run", self.fullname)
+            print("input", self.inputs.int_io, id(self.inputs.int_io))
+            print("result", self.results.int_io, id(self.results.int_io))
+            self.results.int_io=IntIO(x=self.inputs.int_io.x + self.args.arg2)
+            print("result", self.results.int_io, id(self.results.int_io))
 
     tractor = Tractor(uid='t1')
 
-    step1 = TStep("test-step-1", TSecretArgs(arg1=Secret('1'), arg2=1), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=TResults(x=1)))
-    step2 = TStep("test-step-2", TSecretArgs(arg1=Secret('2'), arg2=2), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=step1.results))
-    step3 = TStep("test-step-3", TSecretArgs(arg1=Secret('3'), arg2=3), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=step2.results))
+    step1 = TStep("test-step-1", TSecretArgs(arg1=Secret('1'), arg2=1), TResources(service1=TResource(env='test', uid='res1')), TIOs(int_io=IntIO(x=1)))
+    s2_i = TIOs(int_io=step1.results.int_io)
+    step2 = TStep("test-step-2", TSecretArgs(arg1=Secret('2'), arg2=2), TResources(service1=TResource(env='test', uid='res1')), s2_i)
+    step3 = TStep("test-step-3", TSecretArgs(arg1=Secret('3'), arg2=3), TResources(service1=TResource(env='test', uid='res1')), TIOs(int_io=step2.results.int_io))
     
     tractor.add_step(step1)
     tractor.add_step(step2)
@@ -212,15 +217,17 @@ def test_tractor_run():
     assert step2.state == StepState.FINISHED
     assert step3.state == StepState.FINISHED
 
-    assert step3.results.x == 7
+    assert step1.results.int_io.x == 2
+    assert step2.results.int_io.x == 4
+    assert step3.results.int_io.x == 7
 
 
 def test_tractor_run_error():
-    class TStep(Step[TResults, TSecretArgs, TResources, TInputs, TDetails]):
+    class TStep(Step[TIOs, TSecretArgs, TResources, TIOs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            self.results = TResults(x=self.inputs.input1.x + self.args.arg2)
-            if self.results.x > 4:
+            self.results.int_io.x= self.inputs.int_io.x + self.args.arg2
+            if self.results.int_io.x > 4:
                 raise ValueError("Value too high")
 
     on_error_called = {"count": 0}
@@ -231,9 +238,9 @@ def test_tractor_run_error():
 
     tractor = Tractor(uid='t1')
 
-    step1 = TStep("test-step-1", TSecretArgs(arg1=Secret('1'), arg2=1), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=TResults(x=1)))
-    step2 = TStep("test-step-2", TSecretArgs(arg1=Secret('2'), arg2=2), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=step1.results))
-    step3 = TStep("test-step-3", TSecretArgs(arg1=Secret('3'), arg2=3), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=step2.results))
+    step1 = TStep("test-step-1", TSecretArgs(arg1=Secret('1'), arg2=1), TResources(service1=TResource(env='test', uid='res1')), TIOs(int_io=IntIO(x=1)))
+    step2 = TStep("test-step-2", TSecretArgs(arg1=Secret('2'), arg2=2), TResources(service1=TResource(env='test', uid='res1')), TIOs(int_io=step1.results.int_io))
+    step3 = TStep("test-step-3", TSecretArgs(arg1=Secret('3'), arg2=3), TResources(service1=TResource(env='test', uid='res1')), TIOs(int_io=step2.results.int_io))
     
     tractor.add_step(step1)
     tractor.add_step(step2)
@@ -246,16 +253,16 @@ def test_tractor_run_error():
     assert step2.state == StepState.FINISHED
     assert step3.state == StepState.ERROR
 
-    assert step3.results.x == 7
+    assert step3.results.int_io.x == 7
     assert on_error_called == {"count": 1}
 
 
 def test_tractor_add_subtractor():
-    class TStep(Step[TResults, TSecretArgs, TResources, TInputs, TDetails]):
+    class TStep(Step[TIOs, TSecretArgs, TResources, TIOs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            self.results = TResults(x=self.inputs.input1.x + self.args.arg2)
-            if self.results.x > 4:
+            self.results = TIOs(int_io=IntIO(x=self.inputs.int_io.x + self.args.arg2))
+            if self.results.int_io.x > 4:
                 raise ValueError("Value too high")
 
     on_error_called = {"count": 0}
@@ -265,11 +272,11 @@ def test_tractor_add_subtractor():
         on_error_called['count'] = 1
 
     tractor = Tractor(uid='t1')
-    step1 = TStep("test-step-1", TSecretArgs(arg1=Secret('1'), arg2=1), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=TResults(x=1)))
+    step1 = TStep("test-step-1", TSecretArgs(arg1=Secret('1'), arg2=1), TResources(service1=TResource(env='test', uid='res1')), TIOs(int_io=IntIO(x=1)))
     tractor.add_step(step1)
 
     tractor2 = Tractor(uid='t2')
-    step2 = TStep("test-step-2", TSecretArgs(arg1=Secret('2'), arg2=2), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=step1.results))
+    step2 = TStep("test-step-2", TSecretArgs(arg1=Secret('2'), arg2=2), TResources(service1=TResource(env='test', uid='res1')), TIOs(int_io=step1.results.int_io))
     tractor2.add_step(step2)
 
     tractor.add_step(tractor2)
@@ -281,11 +288,11 @@ def test_tractor_add_subtractor():
 
 
 def test_tractor_add_subtractor_duplicate_step():
-    class TStep(Step[TResults, TSecretArgs, TResources, TInputs, TDetails]):
+    class TStep(Step[TIOs, TSecretArgs, TResources, TIOs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            self.results = TResults(x=self.inputs.input1.x + self.args.arg2)
-            if self.results.x > 4:
+            self.results = TIOs(x=self.inputs.int_io.x + self.args.arg2)
+            if self.results.int_io.x > 4:
                 raise ValueError("Value too high")
 
     on_error_called = {"count": 0}
@@ -295,11 +302,11 @@ def test_tractor_add_subtractor_duplicate_step():
         on_error_called['count'] = 1
 
     tractor = Tractor(uid='t1')
-    step1 = TStep("test-step-1", TSecretArgs(arg1=Secret('1'), arg2=1), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=TResults(x=1)))
+    step1 = TStep("test-step-1", TSecretArgs(arg1=Secret('1'), arg2=1), TResources(service1=TResource(env='test', uid='res1')), TIOs(int_io=IntIO(x=1)))
     tractor.add_step(step1)
 
     tractor2 = Tractor(uid='t2')
-    step2 = TStep("test-step-2", TSecretArgs(arg1=Secret('2'), arg2=2), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=step1.results))
+    step2 = TStep("test-step-2", TSecretArgs(arg1=Secret('2'), arg2=2), TResources(service1=TResource(env='test', uid='res1')), TIOs(int_io=step1.results.int_io))
     tractor2.add_step(step2)
     tractor.add_step(tractor2)
 
@@ -311,11 +318,11 @@ def test_tractor_add_subtractor_duplicate_step():
 
 
 def test_tractor_add_subtractor_duplicate_tractor():
-    class TStep(Step[TResults, TSecretArgs, TResources, TInputs, TDetails]):
+    class TStep(Step[TIOs, TSecretArgs, TResources, TIOs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            self.results = TResults(x=self.inputs.input1.x + self.args.arg2)
-            if self.results.x > 4:
+            self.results = TIOs(int_io=IntIO(x=self.inputs.int_io.x + self.args.arg2))
+            if self.results.int_io.x > 4:
                 raise ValueError("Value too high")
 
     on_error_called = {"count": 0}
@@ -325,11 +332,11 @@ def test_tractor_add_subtractor_duplicate_tractor():
         on_error_called['count'] = 1
 
     tractor = Tractor(uid='t1')
-    step1 = TStep("test-step-1", TSecretArgs(arg1=Secret('1'), arg2=1), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=TResults(x=1)))
+    step1 = TStep("test-step-1", TSecretArgs(arg1=Secret('1'), arg2=1), TResources(service1=TResource(env='test', uid='res1')), TIOs(int_io=IntIO(x=1)))
     tractor.add_step(step1)
 
     tractor2 = Tractor(uid='t2')
-    step2 = TStep("test-step-2", TSecretArgs(arg1=Secret('2'), arg2=2), TResources(service1=TResource(env='test', uid='res1')), TInputs(input1=step1.results))
+    step2 = TStep("test-step-2", TSecretArgs(arg1=Secret('2'), arg2=2), TResources(service1=TResource(env='test', uid='res1')), TIOs(int_io=step1.results.int_io))
     tractor2.add_step(step2)
     tractor.add_step(tractor2)
 
@@ -341,134 +348,286 @@ def test_tractor_add_subtractor_duplicate_tractor():
 
 
 def test_named_tractor():
-    class TStep(Step[TResults, TArgs, NoResources, TInputs, TDetails]):
+    class TStep(Step[TIOs, TArgs, TResources, TIOs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            self.results = TResults(x=self.inputs.input1.x + self.args.arg1)
+            self.results = TIOs(int_io=IntIO(x=self.inputs.int_io.x + self.args.arg1))
 
-    class TNamedTractor(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)], nt_inputs={'input1': TResults}):
+    class IOTNamedTractor(StepIOs):
+        int_io: IntIO = IntIO()
+
+    class ATNamedTractor(StepArgs):
+        arg1: int = 10
+
+    class TNamedTractor(NamedTractor,
+            nt_steps=[('step1', TStep), ('step2', TStep)],
+            nt_inputs=IOTNamedTractor,
+            nt_results=IOTNamedTractor,
+            nt_args=ATNamedTractor,
+            nt_resources=TResources
+    ):
         INPUTS_MAP = {
-            "step2": {"input1": "step1"},
-            "step1": {"input1": NTInput(name="input1")}
+            "step1": {"int_io": NTInput(name="int_io")},
+            "step2": {"int_io": ("step1", 'int_io')},
+        }
+        ARGS_MAP = {
+            "step1": {"arg1": "arg1"},
+            "step2": {"arg1": "arg1"},
+        }
+        RESULTS_MAP = {
+            "int_io": ("step2", "int_io")
+        }
+        RESOURCES_MAP = {
+            "step1": {"service1": "service1"},
+            "step2": {"service1": "service1"},
         }
 
     nt = TNamedTractor(
         uid='nt1',
-        args=TNamedTractor.ArgsModel(step1=TArgs(arg1=20), step2=TArgs(arg1=50)),
-        resources=TNamedTractor.ResourcesModel(step1=NoResources(), step2=NoResources()),
-        inputs=TNamedTractor.InputsModel(input1=TResults(x=10))
+        args=TNamedTractor.ArgsModel(arg1=20),
+        resources=TNamedTractor.ResourcesModel(service1=TResourceWithSecrets(uid='res1', env='stage', secret='password')),
+        inputs=TNamedTractor.InputsModel(int_io=IntIO(x=11))
     )
 
     nt.run()
     assert nt.steps[0].state == StepState.FINISHED
     assert nt.steps[1].state == StepState.FINISHED
     assert nt.state == StepState.FINISHED
-    assert nt.results.step1.x == 30
-    assert nt.results.step2.x == 80
+    assert nt.results.int_io.x == 51
 
-
-def test_named_tractor_step_failed():
-    class TStep(Step[TResults, TArgs, NoResources, TInputs, TDetails]):
+def test_multiple_named_tractors():
+    class TStep(Step[TIOs, TArgs, NoResources, TIOs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            self.results = TResults(x=self.inputs.input1.x + self.args.arg1)
-            if self.inputs.input1.x + self.args.arg1>30:
-                raise StepFailedError
+            self.results = TIOs(int_io=IntIO(x=self.inputs.int_io.x + self.args.arg1))
 
-    class TNamedTractor(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)], nt_inputs={'input1': TResults}):
+    class IOTNamedTractor(StepIOs):
+        int_io: IntIO = IntIO()
+
+    class ATNamedTractor(StepArgs):
+        arg1: int = 10
+
+
+    class TNamedTractor(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)], nt_inputs=IOTNamedTractor, nt_results=IOTNamedTractor, nt_args=ATNamedTractor, nt_resources=NoResources):
         INPUTS_MAP = {
-            "step2": {"input1": "step1"},
-            "step1": {"input1": NTInput(name="input1")}
+            "step1": {"int_io": NTInput(name="int_io")},
+            "step2": {"int_io": ("step1", "int_io")},
+        }
+        ARGS_MAP = {
+            "step1": {"arg1": "arg1"},
+            "step2": {"arg1": "arg1"},
+        }
+        RESULTS_MAP = {
+            "int_io": ("step2", "int_io")
+        }
+        RESOURCES_MAP = {
+            "step1": {},
+            "step2": {}
+        }
+
+    class TNamedTractor2(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)], nt_inputs=IOTNamedTractor, nt_results=IOTNamedTractor, nt_args=ATNamedTractor, nt_resources=NoResources):
+        INPUTS_MAP = {
+            "step1": {"int_io": NTInput(name="int_io")},
+            "step2": {"int_io": ("step1", "int_io")},
+        }
+        ARGS_MAP = {
+            "step1": {"arg1": "arg1"},
+            "step2": {"arg1": "arg1"},
+        }
+        RESULTS_MAP = {
+            "int_io": ("step2", "int_io")
+        }
+        RESOURCES_MAP = {
+            "step1": {},
+            "step2": {}
         }
 
     nt = TNamedTractor(
         uid='nt1',
-        args=TNamedTractor.ArgsModel(step1=TArgs(arg1=20), step2=TArgs(arg1=50)),
-        resources=TNamedTractor.ResourcesModel(step1=NoResources(), step2=NoResources()),
-        inputs=TNamedTractor.InputsModel(input1=TResults(x=10))
+        args=TNamedTractor.ArgsModel(arg1=20),
+        resources=TNamedTractor.ResourcesModel(service1=TResourceWithSecrets(uid='res1', env='stage', secret='password')),
+        inputs=TNamedTractor.InputsModel(int_io=IntIO(x=11))
+    )
+
+    nt.run()
+    assert nt.steps[0].state == StepState.FINISHED
+    assert nt.steps[1].state == StepState.FINISHED
+    assert nt.state == StepState.FINISHED
+    assert nt.steps[0].results.int_io.x == 31
+    assert nt.steps[1].results.int_io.x == 51
+    assert nt.results.int_io.x == 51
+
+
+def test_named_tractor_step_failed():
+    class TStep(Step[TIOs, TArgs, NoResources, TIOs, TDetails]):
+        NAME: ClassVar[str] = "TestStep"
+        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
+            if self.inputs.int_io.x + self.args.arg1>70:
+                raise StepFailedError
+            self.results = TIOs(int_io=IntIO(x=self.inputs.int_io.x + self.args.arg1))
+
+    class IOTNamedTractor(StepIOs):
+        int_io: IntIO = IntIO()
+
+    class ATNamedTractor(StepArgs):
+        arg1: int = 10
+
+    class TNamedTractor(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)], nt_inputs=IOTNamedTractor, nt_results=IOTNamedTractor, nt_args=ATNamedTractor, nt_resources=NoResources):
+        INPUTS_MAP = {
+            "step1": {"int_io": NTInput(name="int_io")},
+            "step2": {"int_io": ("step1", "int_io")},
+        }
+        ARGS_MAP = {
+            "step1": {"arg1": "arg1"},
+            "step2": {"arg1": "arg1"},
+        }
+        RESULTS_MAP = {
+            "int_io": ("step2", "int_io")
+        }
+        RESOURCES_MAP = {
+            "step1": {},
+            "step2": {}
+        }
+
+    nt = TNamedTractor(
+        uid='nt1',
+        args=TNamedTractor.ArgsModel(arg1=50),
+        resources=NoResources(),
+        inputs=TNamedTractor.InputsModel(int_io=IntIO(x=11))
     )
 
     nt.run()
     assert nt.steps[0].state == StepState.FINISHED
     assert nt.steps[1].state == StepState.FAILED
     assert nt.state == StepState.FAILED
-    assert nt.results.step1.x == 30
-    assert nt.results.step2.x == 80
+    assert nt.steps[0].results.int_io.x == 61
+    # second step failed, so result should be default one
+    assert nt.steps[1].results.int_io.x == 10
+    # tractor result as well
+    assert nt.results.int_io.x == 10
 
 
 def test_named_tractor_nested():
-    class TStep(Step[TResults, TArgs, NoResources, TInputs, TDetails]):
+    class TStep(Step[TIOs, TArgs, NoResources, TIOs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            self.results = TResults(x=self.inputs.input1.x + self.args.arg1)
+            self.results.int_io = IntIO(x=self.inputs.int_io.x + self.args.arg1)
 
-    class TNamedTractor2(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)], nt_inputs={'input1': TResults}):
+    class IOTNamedTractor2(StepIOs):
+        int_io: IntIO = IntIO()
+
+    class ATNamedTractor2(StepArgs):
+        arg1: int = 10
+
+    class TNamedTractor(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)], nt_inputs=IOTNamedTractor2, nt_results=IOTNamedTractor2, nt_args=ATNamedTractor2, nt_resources=NoResources):
         INPUTS_MAP = {
-            "step2": {"input1": "step1"},
-            "step1": {"input1": NTInput(name="input1")}
+            "step2": {"int_io": ("step1", "int_io")},
+            "step1": {"int_io": NTInput(name="int_io")}
+        }
+        ARGS_MAP = {
+            "step1": {"arg1": "arg1"},
+            "step2": {"arg1": "arg1"},
+        }
+        RESULTS_MAP = {
+            "int_io": ("step2", "int_io")
+        }
+        RESOURCES_MAP = {
+            "step1": {},
+            "step2": {}
         }
 
-    class TNamedTractor(NamedTractor, nt_steps=[('step1', TStep), ('nt', TNamedTractor2)], nt_inputs={'input1': TResults}):
+    class TNamedTractor2(NamedTractor, nt_steps=[('step1', TStep), ('nt1', TNamedTractor)], nt_inputs=IOTNamedTractor2, nt_results=IOTNamedTractor2, nt_args=ATNamedTractor2, nt_resources=NoResources):
         INPUTS_MAP = {
-            "nt": {"input1": "step1"},
-            "step1": {"input1": NTInput(name="input1")}
+            "step1": {"int_io": NTInput(name="int_io")},
+            "nt1": {"int_io": ("step1", "int_io")}
+        }
+        ARGS_MAP = {
+            "step1": {"arg1": "arg1"},
+            "nt1": {"arg1": "arg1"},
+        }
+        RESULTS_MAP = {
+            "int_io": ("nt1", "int_io")
+        }
+        RESOURCES_MAP = {
+            "step1": {},
+            "nt1": {}
         }
 
-    nt = TNamedTractor(
+    nt = TNamedTractor2(
         uid='nt1',
-        args=TNamedTractor.ArgsModel(
-            step1=TArgs(arg1=20), 
-            nt=TNamedTractor2.ArgsModel(
-                step1=TArgs(arg1=30),
-                step2=TArgs(arg1=40))),
-        resources=TNamedTractor.ResourcesModel(step1=NoResources(), nt=TNamedTractor2.ResourcesModel(step1=NoResources(), step2=NoResources())),
-        inputs=TNamedTractor.InputsModel(input1=TResults(x=10))
+        args=TNamedTractor2.ArgsModel(arg1=20),
+        resources=TNamedTractor2.ResourcesModel(),
+        inputs=TNamedTractor2.InputsModel(int_io=IntIO(x=10))
     )
     nt.run()
     assert nt.steps[0].state == StepState.FINISHED
     assert nt.steps[1].state == StepState.FINISHED
-    assert nt.results.step1.x == 30
-    assert nt.results.nt.step1.x == 60
-    assert nt.results.nt.step2.x == 100
+    assert nt.steps[0].results.int_io.x == 30
+    assert nt.steps[1].results.int_io.x == 70
+    assert nt.results.int_io.x == 70
 
 
 def test_named_tractor_nested_dump(fixture_isodate_now):
-    class TStep(Step[TResults, TArgs, NoResources, TInputs, TDetails]):
+    class TStep(Step[TIOs, TArgs, NoResources, TIOs, TDetails]):
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            self.results = TResults(x=self.inputs.input1.x + self.args.arg1)
+            self.results.int_io = IntIO(x=self.inputs.int_io.x + self.args.arg1)
 
-    class TNamedTractor2(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)], nt_inputs={'input1': TResults}):
+    class IOTNamedTractor2(StepIOs):
+        int_io: IntIO = IntIO()
+
+    class ATNamedTractor2(StepArgs):
+        arg1: int = 10
+
+    class TNamedTractor(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)], nt_inputs=IOTNamedTractor2, nt_results=IOTNamedTractor2, nt_args=ATNamedTractor2, nt_resources=NoResources):
         INPUTS_MAP = {
-            "step2": {"input1": "step1"},
-            "step1": {"input1": NTInput(name="input1")}
+            "step2": {"int_io": ("step1", "int_io")},
+            "step1": {"int_io": NTInput(name="int_io")}
+        }
+        ARGS_MAP = {
+            "step1": {"arg1": "arg1"},
+            "step2": {"arg1": "arg1"},
+        }
+        RESULTS_MAP = {
+            "int_io": ("step2", "int_io")
+        }
+        RESOURCES_MAP = {
+            "step1": {},
+            "step2": {}
         }
 
-    class TNamedTractor(NamedTractor, nt_steps=[('step1', TStep), ('nt', TNamedTractor2)], nt_inputs={'input1': TResults}):
+    class TNamedTractor2(NamedTractor, nt_steps=[('step1', TStep), ('nt1', TNamedTractor)], nt_inputs=IOTNamedTractor2, nt_results=IOTNamedTractor2, nt_args=ATNamedTractor2, nt_resources=NoResources):
         INPUTS_MAP = {
-            "nt": {"input1": "step1"},
-            "step1": {"input1": NTInput(name="input1")}
+            "step1": {"int_io": NTInput(name="int_io")},
+            "nt1": {"int_io": ("step1", "int_io")}
+        }
+        ARGS_MAP = {
+            "step1": {"arg1": "arg1"},
+            "nt1": {"arg1": "arg1"},
+        }
+        RESULTS_MAP = {
+            "int_io": ("nt1", "int_io")
+        }
+        RESOURCES_MAP = {
+            "step1": {},
+            "nt1": {}
         }
 
-    nt = TNamedTractor(
-        uid='nt1',
-        args=TNamedTractor.ArgsModel(
-            step1=TArgs(arg1=20), 
-            nt=TNamedTractor2.ArgsModel(
-                step1=TArgs(arg1=30),
-                step2=TArgs(arg1=40))),
-        resources=TNamedTractor.ResourcesModel(step1=NoResources(), nt=TNamedTractor2.ResourcesModel(step1=NoResources(), step2=NoResources())),
-        inputs=TNamedTractor.InputsModel(input1=TResults(x=10))
+    nt = TNamedTractor2(
+        uid='nt2',
+        args=TNamedTractor2.ArgsModel(arg1=20),
+        resources=TNamedTractor2.ResourcesModel(),
+        inputs=TNamedTractor2.InputsModel(int_io=IntIO(x=10))
     )
     nt.run()
     assert nt.dump(full=False) == {
       "state": "finished",
-      "current_step": "nt1::nt",
+      "current_step": "nt2::nt1",
       "steps": [
         {
           "type": "step",
           "data": {
-            "uid": "nt1::step1",
+            "uid": "nt2::step1",
             "state": StepState.FINISHED,
             "skip": False,
             "skip_reason": "",
@@ -492,24 +651,21 @@ def test_named_tractor_nested_dump(fixture_isodate_now):
             "type": "TestStep",
             "inputs": {},
             "inputs_standalone": {
-              "input1": {
-                "x": 10
-              }
             },
             "results": {
-              "x": 30
+                "int_io":{ "x": 30}
             }
           }
         },
         {
           "type": "tractor",
           "data": {
-            "current_step": "TestStep:nt1::nt::step2",
+            "current_step": "TestStep:nt2::nt1::step2",
             "state": "finished",
             "steps": [{
                 "type": "step",
                 "data": {
-                  "uid": "nt1::nt::step1",
+                  "uid": "nt2::nt1::step1",
                   "state": StepState.FINISHED,
                   "skip": False,
                   "skip_reason": "",
@@ -528,24 +684,22 @@ def test_named_tractor_nested_dump(fixture_isodate_now):
                     "type": "NoResources"
                   },
                   "args": {
-                    "arg1": 30
+                    "arg1": 20
                   },
                   "type": "TestStep",
                   "inputs": {},
                   "inputs_standalone": {
-                    "input1": {
-                      "x": 30
-                    }
+                    "int_io": {"x": 30}
                   },
                   "results": {
-                    "x": 60
+                      "int_io":{"x": 50}
                   }
                 }
               },
               {
                 "type": "step",
                 "data": {
-                  "uid": "nt1::nt::step2",
+                  "uid": "nt2::nt1::step2",
                   "state": StepState.FINISHED,
                   "skip": False,
                   "skip_reason": "",
@@ -564,41 +718,59 @@ def test_named_tractor_nested_dump(fixture_isodate_now):
                     "type": "NoResources"
                   },
                   "args": {
-                    "arg1": 40
+                    "arg1": 20
                   },
                   "type": "TestStep",
                   "inputs": {},
                   "inputs_standalone": {
-                    "input1": {
-                      "x": 60
-                    }
+                    "int_io": {"x": 50}
                   },
                   "results": {
-                    "x": 100
+                      "int_io":{"x": 70}
                   }
                 }
               }
             ],
             "resources": {},
-            "uid": "nt1::nt"
+            "uid": "nt2::nt1"
           }
         }
       ],
       "resources": {},
-      "uid": "nt1"
+      "uid": "nt2"
     }
 
 
-class STMD_TStep(Step[TResults, TArgs, NoResources, TInputs, TDetails]):
+class STMD_TStep(Step[TIOs, TArgs, NoResources, TIOs, TDetails]):
     NAME: ClassVar[str] = "TestStep"
     def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-        self.results = TResults(x=self.inputs.input1.x + self.args.arg1)
+        self.results = TIOs(int_io=IntIO(x=self.inputs.int_io.x + self.args.arg1))
 
-class STMD_TNamedTractor(NamedTractor, nt_steps=[('step1', STMD_TStep), ('step2', STMD_TStep)], nt_inputs={'input1': TResults}):
-    INPUTS_MAP = {
-        "step2": {"input1": "step1"},
-        "step1": {"input1": NTInput(name="input1")}
-    }
+class IOSTMD_TNamedTractor(StepIOs):
+    int_io: IntIO = IntIO()
+
+class STMD_TNamedTractor(NamedTractor,
+        nt_steps=[('step1', STMD_TStep), ('step2', STMD_TStep)],
+        nt_inputs=IOSTMD_TNamedTractor,
+        nt_args=TArgs,
+        nt_resources=NoResources,
+        nt_results=IOSTMD_TNamedTractor
+):
+        INPUTS_MAP = {
+            "step2": {"int_io": ("step1", "int_io")},
+            "step1": {"int_io": NTInput(name="int_io")}
+        }
+        ARGS_MAP = {
+            "step1": {"arg1": "arg1"},
+            "step2": {"arg1": "arg1"},
+        }
+        RESULTS_MAP = {
+            "int_io": ("step2", "int_io")
+        }
+        RESOURCES_MAP = {
+            "step1": {},
+            "step2": {}
+        }
 
 
 def test_stmd():
@@ -607,15 +779,13 @@ def test_stmd():
        pass
 
     tstmd = TSTMD('test-stmd-1',
-        args=TSTMD.ArgsModel(step1=TArgs(arg1=50),
-                             step2=TArgs(arg1=100),
-                             tractors=10),
-        resources=TSTMD.ResourcesModel(step1=NoResources(), step2=NoResources()),
+        args=TSTMD.ArgsModel(arg1=10, tractors=10),
+        resources=TSTMD.ResourcesModel(),
         inputs=TSTMD.InputsModel(
-        data=TSTMD.MultiDataModel(
-            multidata=[
-                      STMD_TNamedTractor.InputsModel(input1=TResults(x=10)),
-                      STMD_TNamedTractor.InputsModel(input1=TResults(x=20)),
+            multidata=TSTMD.MultiDataInput(
+                inputs=[
+                      STMD_TNamedTractor.InputsModel(int_io=IntIO(x=10)),
+                      STMD_TNamedTractor.InputsModel(int_io=IntIO(x=20)),
                 ]
             )
         )
