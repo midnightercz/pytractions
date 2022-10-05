@@ -381,6 +381,7 @@ def test_named_tractor():
             "step1": {"service1": "service1"},
             "step2": {"service1": "service1"},
         }
+        NAME: ClassVar[str] = "TNamedTractor"
 
     nt = TNamedTractor(
         uid='nt1',
@@ -424,6 +425,7 @@ def test_multiple_named_tractors():
             "step1": {},
             "step2": {}
         }
+        NAME: ClassVar[str] = "TNamedTractor"
 
     class TNamedTractor2(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)], nt_inputs=IOTNamedTractor, nt_results=IOTNamedTractor, nt_args=ATNamedTractor, nt_resources=NoResources):
         INPUTS_MAP = {
@@ -441,6 +443,7 @@ def test_multiple_named_tractors():
             "step1": {},
             "step2": {}
         }
+        NAME: ClassVar[str] = "TNamedTractor2"
 
     nt = TNamedTractor(
         uid='nt1',
@@ -488,6 +491,7 @@ def test_named_tractor_step_failed():
             "step1": {},
             "step2": {}
         }
+        NAME: ClassVar[str] = "TNamedTractor"
 
     nt = TNamedTractor(
         uid='nt1',
@@ -535,6 +539,7 @@ def test_named_tractor_nested():
             "step1": {},
             "step2": {}
         }
+        NAME: ClassVar[str] = "TNamedTractor"
 
     class TNamedTractor2(NamedTractor, nt_steps=[('step1', TStep), ('nt1', TNamedTractor)], nt_inputs=IOTNamedTractor2, nt_results=IOTNamedTractor2, nt_args=ATNamedTractor2, nt_resources=NoResources):
         INPUTS_MAP = {
@@ -552,6 +557,7 @@ def test_named_tractor_nested():
             "step1": {},
             "nt1": {}
         }
+        NAME: ClassVar[str] = "TNamedTractor2"
 
     nt = TNamedTractor2(
         uid='nt1',
@@ -595,6 +601,7 @@ def test_named_tractor_nested_dump(fixture_isodate_now):
             "step1": {},
             "step2": {}
         }
+        NAME: ClassVar[str] = "TNamedTractor"
 
     class TNamedTractor2(NamedTractor, nt_steps=[('step1', TStep), ('nt1', TNamedTractor)], nt_inputs=IOTNamedTractor2, nt_results=IOTNamedTractor2, nt_args=ATNamedTractor2, nt_resources=NoResources):
         INPUTS_MAP = {
@@ -612,6 +619,7 @@ def test_named_tractor_nested_dump(fixture_isodate_now):
             "step1": {},
             "nt1": {}
         }
+        NAME: ClassVar[str] = "TNamedTractor2"
 
     nt = TNamedTractor2(
         uid='nt2',
@@ -756,40 +764,33 @@ class STMD_TNamedTractor(NamedTractor,
         nt_resources=NoResources,
         nt_results=IOSTMD_TNamedTractor
 ):
-        INPUTS_MAP = {
-            "step2": {"int_io": ("step1", "int_io")},
-            "step1": {"int_io": NTInput(name="int_io")}
-        }
-        ARGS_MAP = {
-            "step1": {"arg1": "arg1"},
-            "step2": {"arg1": "arg1"},
-        }
-        RESULTS_MAP = {
-            "int_io": ("step2", "int_io")
-        }
-        RESOURCES_MAP = {
-            "step1": {},
-            "step2": {}
-        }
+    INPUTS_MAP = {
+        "step2": {"int_io": ("step1", "int_io")},
+        "step1": {"int_io": NTInput(name="int_io")}
+    }
+    ARGS_MAP = {
+        "step1": {"arg1": "arg1"},
+        "step2": {"arg1": "arg1"},
+    }
+    RESULTS_MAP = {
+        "int_io": ("step2", "int_io")
+    }
+    RESOURCES_MAP = {
+        "step1": {},
+        "step2": {}
+    }
+    NAME: ClassVar[str] = "STMD_TNamedTractor"
 
 
 def test_stmd():
-
     class TSTMD(STMD, tractor_type=STMD_TNamedTractor):
-       pass
+        NAME: ClassVar[str] = "TSMTD"
 
     tstmd = TSTMD('test-stmd-1',
         args=TSTMD.ArgsModel(arg1=10, tractors=10),
         resources=TSTMD.ResourcesModel(),
-        inputs=TSTMD.InputsModel(
-            multidata=TSTMD.MultiDataInput(
-                inputs=[
-                      STMD_TNamedTractor.InputsModel(int_io=IntIO(x=10)),
-                      STMD_TNamedTractor.InputsModel(int_io=IntIO(x=20)),
-                ]
-            )
+        inputs=TSTMD.InputsModel(data=TSTMD.InputsModel.ListModel(list_data=[IOSTMD_TNamedTractor(int_io=IntIO(x=10))]))
         )
-    )
     tstmd.run()
 
 

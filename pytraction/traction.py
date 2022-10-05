@@ -424,11 +424,6 @@ class StepIOList(StepIO):
 
     def __setitem__(self, n, item):
         self._check_type(type(item))
-        #print("***** set_item", item.)
-        #if self._input_mode:
-        #    list.__getitem__(self._list_data, n)._ref = item
-        #else:
-        #print("__setitem__", )
         _item = self.list_data[n]
         for f in _item.__fields__:
             object.__setattr__(_item, f, getattr(item, f))
@@ -436,8 +431,6 @@ class StepIOList(StepIO):
     def append(self, item):
         self._check_type(type(item))
         ret = self.list_data.append(item)
-        #print(item)
-        #self._list_data[-1].input_mode(self._input_mode)
         return ret
 
     def count(self, item):
@@ -509,7 +502,7 @@ class NoCopyModel(pydantic.generics.BaseModel):
 
     def check_type(self, key, value):
         if key in self.__fields__:
-            if get_origin(self.__fields__[key].type_) == Union:
+            if get_origin(self.__fields__[key].outer_type_) == Union:
                 final_types = []
                 types = [] + list(get_args(self.__fields__[key].type_))
                 while types:
@@ -525,8 +518,13 @@ class NoCopyModel(pydantic.generics.BaseModel):
                         final_types.append(_type)
                 if not any([isinstance(value, type_) for type_ in final_types]):
                     raise TypeError(f'"{self.__class__.__name__}->{key}" has to be one of {final_types} types not %s' % type(value))
+            elif get_origin(self.__fields__[key].outer_type_) ==  list:
+                if not isinstance(value, list):
+                    raise TypeError(f'"{self.__class__.__name__}->{key}" has to be type {self.__fields__[key].outer_type_}" not %s' % type(value))
+                for x in value:
+                    self.check_type(x, self.__fields__[key].outer_type_.__args__[0])
             else:
-                if not isinstance(value, self.__fields__[key].type_):
+                if not isinstance(value, self.__fields__[key].outer_type_):
                     raise TypeError(f'"{self.__class__.__name__}->{key}" has to be type "{self.__fields__[key].type_}" not %s' % type(value))
 
     def __setattr__(self, key, value):
@@ -553,7 +551,6 @@ class NoCopyModel(pydantic.generics.BaseModel):
 
     def __init__(self, **data: Any) -> None:
         for k, v in data.items():
-            #print("??? NOCOPY init", k, v, id(v))
             self.check_type(k, v)
         super().__init__(**data)
         for k, v in data.items():
@@ -588,7 +585,7 @@ class StepIOs(NoCopyModel, metaclass=StepIOsMeta):
            setattr(self, k, v)
 
     def input_mode(self, mode: bool = True):
-        self._input_mode = mode
+        #self._input_mode = mode
         for f in self.__fields__.keys():
             v = getattr(self, f)
             v.input_mode(mode=mode)
@@ -612,14 +609,11 @@ class StepIOs(NoCopyModel, metaclass=StepIOsMeta):
         self.check_type(key, value)
 
         if not isinstance(value, StepIO):
-            #print("copying ordinary object", key)
             object.__setattr__(self, key, value)
         elif object.__getattribute__(self, key)._input_mode:
-            #print("copying step input", key, value)
             object.__getattribute__(self, key)._ref = value
         else:
             # do set stepIO, rather copy its attributes.
-            #print("copying step output")
             self_io = getattr(self, key)
             for f in value.__fields__:
                 if f.startswith("_"):
@@ -634,10 +628,8 @@ class StepIOs(NoCopyModel, metaclass=StepIOsMeta):
             if not isinstance(v, StepIO):
                 return v
             if object.__getattribute__(self, key)._ref:
-                #print("getattr ref", key)
                 return object.__getattribute__(self, key)._ref
             else:
-                #print("getattr no ref", key)
                 return object.__getattribute__(self, key)
 
     def __str__(self):
@@ -664,7 +656,6 @@ class StepIOsListMeta(pydantic.main.ModelMetaclass):
         }
         IOList = pydantic.create_model("%s_list" % (name,), **io_list_model_data)
         setattr(pydantic.main, "%s_list" % (name,), IOList)
-        #print("IOList fields", IOList.__fields__)
         attrs['_ios_type'] = ios_type
         attrs.setdefault('__annotations__', {})
         attrs['__annotations__']['data'] = IOList
@@ -676,7 +667,6 @@ class StepIOsListMeta(pydantic.main.ModelMetaclass):
 class StepIOsListBase(NoCopyModel, metaclass=StepIOsListMeta):
 
     def __init__(self, **data: Any) -> None:
-        #print("!!! StepIOsListBase init")
         for k, v in data.items():
             self.check_type(k, v)
 
@@ -703,10 +693,8 @@ class StepIOsListBase(NoCopyModel, metaclass=StepIOsListMeta):
             if not isinstance(v, StepIO):
                 return v
             if object.__getattribute__(self, key)._ref:
-                #print("getattr ref", key)
                 return object.__getattribute__(self, key)._ref
             else:
-                #print("getattr no ref", key)
                 return object.__getattribute__(self, key)
 
     def __setattr__(self, key, value):
@@ -724,14 +712,11 @@ class StepIOsListBase(NoCopyModel, metaclass=StepIOsListMeta):
         self.check_type(key, value)
 
         if not isinstance(value, StepIO):
-            #print("list copying ordinary object", key)
             object.__setattr__(self, key, value)
         elif object.__getattribute__(self, key)._input_mode:
-            #print("list copying step input", key, value)
             object.__getattribute__(self, key)._ref = value
         else:
             # do set stepIO, rather copy its attributes.
-            #print("list copying step output")
             self_io = getattr(self, key)
             for f in value.__fields__:
                 if f.startswith("_"):
@@ -746,8 +731,6 @@ class StepIOsListBase(NoCopyModel, metaclass=StepIOsListMeta):
         return cls(**res_data)
 
     def input_mode(self, mode: bool = True):
-        #print("------- set mode to ", mode)
-        self._input_mode = mode
         for f in self.__fields__.keys():
             v = getattr(self, f)
             v.input_mode(mode=mode)
@@ -760,14 +743,12 @@ class StepIOsList(StepIOsListMeta):
     lists = {}
     def __new__(mcs, ios_type):
         if ios_type not in mcs.lists:
-            #print("MCS", mcs)
             ret = super().__new__(
                 mcs, 
                 "%sList" % ios_type.__name__,
                 (StepIOsListBase, ), 
                 {"_ios_type": ios_type},
                 ios_type=ios_type)
-            #print("RET", ret)
             mcs.lists[ios_type] = ret
             setattr(abc, "%sList" % ios_type.__name__, ret)
             return ret
@@ -825,29 +806,14 @@ class BaseTractionModel(pydantic.generics.BaseModel):
         """Override setattr to make sure assigning to step.results doesn't break
         existing references for step.results"""
 
-        #if key == "results":
-        #    print("--setting results")
-        #    print(id(self.results))
-        #    for k in value.__fields__:
-        #        v = getattr(value, k)
-        #        setattr(self.results, k, v)
-        #
-        #    #super().__setattr__(key, self.results)
-        #    print(id(self.results))
         if key in ("inputs", "results"):
             dict_without_original_value = {
                 k: v for k, v in self.__dict__.items() if k != key
             }
             self.__fields__[key].validate(value, dict_without_original_value, loc=key)
             self_field = getattr(self, key)
-            #print(self_field, type(self_field))
             if issubclass(type(self_field), StepIOs):
-                print("setting stepios", key, value)
                 for f in self_field.__fields__:
-                    if key == "results":
-                        setattr(value, "_input_mode", False)
-                    else:
-                        setattr(value, "_input_mode", True)
                     setattr(self_field, f, getattr(value, f))
             else: # StepIOsList
                 if key == "results":
@@ -861,16 +827,24 @@ class BaseTractionModel(pydantic.generics.BaseModel):
         else:
             super().__setattr__(key, value)
 
+class StepMeta(pydantic.main.ModelMetaclass):
+    def __new__(mcs, name, bases, namespace, **kwargs):
+
+        ret = super().__new__(mcs, name, bases, namespace, **kwargs)
+        return ret
+
 
 class Step(
     BaseTractionModel,
     Generic[ResultsType, ArgsType, ExtResourcesType, InputsType, DetailsType],
+    metaclass=StepMeta,
     validate_all=False,
     allow_population_by_field_name=False,
     extra=pydantic.Extra.forbid,
     underscore_attrs_are_private=False,
     validate_assignment=True,
 ):
+    TYPE: ClassVar[str] = "Step"
     NAME: ClassVar[str]
     uid: str
     state: StepState
@@ -889,8 +863,8 @@ class Step(
         self,
         uid: str,
         args: ArgsType,
-        resources: Optional[ExtResourcesType] = None,
-        inputs: Optional[InputsType] = None,
+        resources: ExtResourcesType,
+        inputs: InputsType
     ):
         """Initilize the step.
 
@@ -950,11 +924,6 @@ class Step(
             skipped=False,
         )
 
-        #print(uid, self.NAME)
-        #print("results", results_type, results, results_type.__fields__)
-        #print("results", results)
-        #print("inputs", type(inputs), inputs)
-        #print("self fields", self.__fields__)
         super().__init__(
             uid=uid,
             resources=resources,
@@ -976,7 +945,7 @@ class Step(
     @property
     def fullname(self) -> str:
         """Full name of class instance."""
-        return "%s:%s" % (self.NAME, self.uid)
+        return "%s[%s]" % (self.NAME, self.uid)
 
     def run(
         self,
@@ -1016,9 +985,10 @@ class Step(
                 self._run(on_update=_on_update)
         except StepFailedError:
             self.state = StepState.FAILED
-        except Exception:
+        except Exception as e:
             self.state = StepState.ERROR
             _on_error(self)
+            self.errors.errors['exception'] = str(e)
             raise
         else:
             self.state = StepState.FINISHED
@@ -1064,6 +1034,7 @@ class Step(
         ret["type"] = self.NAME
         ret["inputs"] = {}
         ret["inputs_standalone"] = {}
+        ret['errors'] = self.errors.dict()
         ret["results"] = self.results.dict(exclude={"step"})
         ret["resources"] = self.resources.dump(full=full)
         for f, ftype in self.inputs.__fields__.items():
@@ -1098,7 +1069,7 @@ class Step(
         self.args = self.args.parse_obj(loaded_args)
         self.errors = step_dump["errors"]
         self.stats = step_dump["stats"]
-        self.results.step = self
+        self.results.set_step(self)
         self.resources.from_dict(
             step_dump["resources"]
         )  # , secrets=_secrets)
@@ -1204,16 +1175,16 @@ class StepNGMeta(pydantic.main.ModelMetaclass):
                 raise TypeError("Cannot use abstract StepIOs as results_type")
 
             if inputs_type is StepIOs:
-                raise TypeError("Cannot use abstract StepIOs as results_type")
+                raise TypeError("Cannot use abstract StepIOs as inputs_type")
 
             if args_type is StepArgs:
-                raise TypeError("Cannot use abstract StepArgs as results_type")
+                raise TypeError("Cannot use abstract StepArgs as args_type")
 
             if resources_type is ExtResources:
-                raise TypeError("Cannot use abstract ExtResources as results_type")
+                raise TypeError("Cannot use abstract ExtResources as resources_type")
 
             if details_type is StepDetails:
-                raise TypeError("Cannot use abstract StepDetails as results_type")
+                raise TypeError("Cannot use abstract StepDetails as details_type")
 
         namespace['ResultsModel'] = results_type
         namespace['InputsModel'] = inputs_type
@@ -1247,6 +1218,7 @@ class StepNG(
     underscore_attrs_are_private=False,
     validate_assignment=True,
 ):
+    TYPE: ClassVar[str] = "Step"
     NAME: ClassVar[str]
     uid: str
     state: StepState
@@ -1309,7 +1281,7 @@ class StepNG(
     @property
     def fullname(self) -> str:
         """Full name of class instance."""
-        return "%s:%s" % (self.NAME, self.uid)
+        return "%s[%s]" % (self.NAME, self.uid)
 
     def run(
         self,
@@ -1349,8 +1321,9 @@ class StepNG(
                 self._run(on_update=_on_update)
         except StepFailedError:
             self.state = StepState.FAILED
-        except Exception:
+        except Exception as e:
             self.state = StepState.ERROR
+            self.errors.errors['exception'] = str(e)
             _on_error(self)
             raise
         else:
@@ -1358,6 +1331,7 @@ class StepNG(
         finally:
             self._finish_stats()
             _on_update(self)  # type: ignore
+        return self
 
     def _pre_run(self) -> None:
         """Execute code needed before step run.
@@ -1398,6 +1372,7 @@ class StepNG(
         ret["inputs"] = {}
         ret["inputs_standalone"] = {}
         ret["results"] = self.results.dict(exclude={"step"})
+        ret['errors'] = self.errors.dict()
         ret["resources"] = self.resources.dump(full=full)
         for f, ftype in self.inputs.__fields__.items():
             field = getattr(self.inputs, f)
@@ -1762,6 +1737,9 @@ class NamedTractorMeta(pydantic.main.ModelMetaclass):
         if not issubclass(nt_results, StepIOs) and not issubclass(nt_results, StepIOsListBase):
             raise TypeError("nt_results has to be StepIOs  or StepIOsListBase subclass")
 
+        if "NAME" not in namespace:
+            raise TypeError("Tractor has to have NAME attribute")
+
         if "INPUTS_MAP" not in namespace:
             raise TypeError("Missing INPUTS_MAP definition")
         if "ARGS_MAP" not in namespace:
@@ -1786,8 +1764,6 @@ class NamedTractorMeta(pydantic.main.ModelMetaclass):
                     raise TypeError("INPUTS_MAP->%s->%s value has to be tuple" % (step_name, input_name))
                 if isinstance(output_map, NTInput):
                     if output_map.name not in nt_inputs.__fields__:
-                        #print(output_map.name)
-                        #print(nt_inputs.__fields__)
                         raise TypeError("output step INPUTS_MAP->%s->%s = NTInput(%s), %s is not in %s " % (step_name, input_name, output_map.name, output_map.name, nt_inputs))
                 else:
                     output_step, output_key = output_map
@@ -1798,7 +1774,7 @@ class NamedTractorMeta(pydantic.main.ModelMetaclass):
                     if nt_step_inputs[step_name][input_name] != nt_step_results[output_step][output_key]:
                         raise TypeError("output step INPUTS_MAP->%s->%s = (%s, %s) result type is %s but %s is required" % (
                             step_name, input_name, output_step, output_key, nt_step_results[output_step][output_key],
-                            nt_step_results[step_name][output_key]
+                            nt_step_inputs[step_name][input_name]
                             )
                         )
 
@@ -1827,8 +1803,6 @@ class NamedTractorMeta(pydantic.main.ModelMetaclass):
                 raise TypeError("Tractor doesn't have step %s mentioned in RESULTS_MAP" % step_name)
             if step_result not in nt_step_results[step_name]:
                 raise TypeError("Step %s doesn't have result %s" % (step_name, step_result))
-            #print(nt_step_results[step_name][step_result], nt_results.__fields__[result_io].type_)
-            #print(id(nt_step_results[step_name][step_result]), id(nt_results.__fields__[result_io].type_))
             if not issubclass(nt_step_results[step_name][step_result], nt_results.__fields__[result_io].type_):
                 raise TypeError("Step result '%s'(%s) (%s) is not subtype of tractor result '%s' (%s)" % (
                         step_result, nt_step_results[step_name][step_result], step_name, result_io, nt_results.__fields__[result_io].type_)
@@ -1864,27 +1838,34 @@ class NamedTractor(NoCopyModel, metaclass=NamedTractorMeta, nt_steps=[], nt_inpu
     _step_map: Dict[str, Union[Step[Any, Any, Any, Any, Any],NamedTractor]] = {}
     steps: List[Union[StepNG, Step[Any, Any, Any, Any, Any],NamedTractor]] = []
     _current_step: Union[StepNG, Step[Any, Any, Any, Any, Any],NamedTractor, STMD, None] = None # TODO: fix
+    _step_name_by_uid: Dict[str, Union[Step[Any, Any, Any, Any, Any],NamedTractor]]
     uid: str
     state: StepState = StepState.READY
+    TYPE: ClassVar[str] = "Tractor"
+
     INPUTS_MAP: ClassVar[Dict[str, Dict[str, str]]] = {}
     ARGS_MAP: ClassVar[Dict[str, Dict[str, str]]] = {}
     DETAILS_MAP: ClassVar[Dict[str, Dict[str, str]]] = {}
     RESULTS_MAP: ClassVar[Dict[str, Dict[str, str]]] = {}
     RESOURCES_MAP: ClassVar[Dict[str, Dict[str, str]]] = {}
+    NAME: ClassVar[str] = "NamedTractor"
 
     def __init__(self, *args, **kwargs):
         results_model_data = {}
         details_model_data = {}
 
         results = self.ResultsModel(**results_model_data)
+        results.input_mode(mode=False)
         #results.input_mode(mode=False)
         kwargs['results'] = results
         kwargs['details'] = self.DetailsModel()
         super().__init__(**kwargs)
+        self._step_name_by_uid = {}
         #self.inputs = kwargs['inputs']
 
+        i = 0
         for step_name, step_type in self._nt_steps:
-            print("STEP", step_name)
+            i += 1
             step_inputs = self.INPUTS_MAP[step_name]
             step_args_map = self.INPUTS_MAP[step_name]
             inputs_model_data = {}
@@ -1901,59 +1882,35 @@ class NamedTractor(NoCopyModel, metaclass=NamedTractorMeta, nt_steps=[], nt_inpu
                 if isinstance(output_from, tuple):
                     output_step, output_key = output_from
                     if output_step not in self._step_map:
-                        raise ValueError("Required step '%s' is not in tractor steps" % output_step)
-                    #print("mapping %s to %s->%s" % (input_, output_step, output_key))
+                        raise ValueError("(%s) Required step '%s' is not in tractor steps" % (self.NAME, output_step))
                     inputs_model_data[input_] = getattr(self._step_map[output_step].results, output_key)
                 else: # NTInput
                     inputs_model_data[input_] = getattr(self.inputs, output_from.name)
 
 
-            #print('<<', step_name, "inputs model", inputs_model_data)
-            #for f in inputs_model_data:
-            #    print('<<', step_name, "inputs model", f, id(inputs_model_data[f]))
-
-            #print('<I<', step_name, "inputs model", type(self._steps_inputs[step_name]))
             inputs_model = self._steps_inputs[step_name](**inputs_model_data)
-            #print("INPUTS MODEL ID", id(inputs_model))
-
-            #for f in inputs_model.__fields__:
-            #    print('<<', step_name, "inputs model instance", f, getattr(inputs_model, f), id(getattr(inputs_model, f)._ref))
 
             args_model = self._steps_args[step_name](**args_model_data)
             resources_model = self._steps_resources[step_name](**resources_model_data)
 
-            step = step_type(uid='%s::%s' % (self.uid, step_name),
+            step = step_type(uid='%s:%d.%s' % (self.uid, i, step_name),
                           args=args_model,
                           resources=resources_model,
                           inputs=inputs_model)
-
-            #step.inputs = inputs_model
-
-            #print('<II<', step_name, "inputs model", type(self._steps_inputs[step_name]))
-            #inputs_model = self._steps_inputs[step_name](**inputs_model_data)
-
-            #for f in step.inputs.__fields__:
-            #    print('<<', step_name, "inputs model instance", f, getattr(step.inputs, f), id(getattr(step.inputs, f)), id(getattr(step.inputs, f)._ref))
-
-            #print('>>', step_name, "results model", step.results)
-            #if hasattr(step.results, 'data'):
-            #    print('>>', step_name, "results model", id(step.results.data))
-            
+            self._step_name_by_uid[step.uid] = step_name
 
             self.steps.append(step)
 
             self._step_map[step_name] = step
         for res_key, res_map in self.RESULTS_MAP.items():
             (res_step, res_step_key) = res_map
-            results_model_data[res_key] = getattr(self._step_map[res_step].results, res_step_key)
+            setattr(self.results, res_key, getattr(self._step_map[res_step].results, res_step_key))
+
 
         details = self.DetailsModel(**details_model_data)
         self._current_step = None
 
         results = self.ResultsModel(**results_model_data)
-        #results.input_mode(mode=False)
-         # Tractor results should actually act as inputs as references to steps results needs to work here
-        self.results = results
         # update step reference in individual results
         for f in self.results.__fields__:
             getattr(self.results, f)._step = self
@@ -1962,8 +1919,9 @@ class NamedTractor(NoCopyModel, metaclass=NamedTractorMeta, nt_steps=[], nt_inpu
         self.state = StepState.READY
 
     @property
-    def fullname(self):
-        return self.uid
+    def fullname(self) -> str:
+        """Full name of class instance."""
+        return "%s[%s]" % (self.NAME, self.uid)
 
     def _dump_resources(self, full: bool) -> TractorDumpDict:
         """Dump stepper state and shared_results to json compatible dict."""
@@ -1981,11 +1939,6 @@ class NamedTractor(NoCopyModel, metaclass=NamedTractorMeta, nt_steps=[], nt_inpu
                 for k in step.resources.__fields__:
                     res = getattr(step.resources, k)
                     resources_dump[res.fullname] = res.dump()
-                #for tractor_step_name, resources in step.resources:
-                #    for resource in resources:
-                #        for k in resources.__fields__:
-                #            res = getattr(resources, k)
-                #            resources_dump[res.fullname] = res.dump()
             else: # named tractor
                 _resources = step._dump_resources(full=full)
                 for res_fullname, res in _resources.items():
@@ -2000,7 +1953,8 @@ class NamedTractor(NoCopyModel, metaclass=NamedTractorMeta, nt_steps=[], nt_inpu
             "steps": steps,
             "resources": {},
             "uid": self.uid,
-            "current_step": self._current_step.fullname}
+            'results': self.results.dict(),
+            "current_step": self._current_step.fullname if self._current_step else None}
         resources_dump: Dict[str, Any] = {}
         for step in self.steps:
             if isinstance(step, Step):
@@ -2080,6 +2034,10 @@ class NamedTractor(NoCopyModel, metaclass=NamedTractorMeta, nt_steps=[], nt_inpu
             self._current_step = step
 
             step.run(on_update=on_update, on_error=on_error)
+            for res_key, res_map in self.RESULTS_MAP.items():
+                (res_step, res_step_key) = res_map
+                if self._step_name_by_uid[step.uid] == res_step:
+                    setattr(self.results, res_key, getattr(step.results, res_step_key))
 
 
             if step.state == StepState.ERROR:
@@ -2114,25 +2072,9 @@ class STMDMeta(pydantic.main.ModelMetaclass):
         stmd_io_ins_model = {}
         stmd_io_ins_data = {}
 
-        #if not issubclass(tractor_type.InputsModel, StepIOsListBase):
-        #    print(tractor_type.InputsModel.__base__)
-        #    raise TypeError("SMTD tractor has to have inputs of StepIOsListBase, has %s" % tractor_type.InputsModel)
 
-        results_model["__base__"] = StepIOs
         args_model["__base__"] = tractor_type.ArgsModel
-        inputs_model["__base__"] = StepIOs
         details_model["__base__"] = StepDetails
-
-        stmd_io_res_model['__base__'] = StepIO
-        stmd_io_res_model['results'] = (List[tractor_type.ResultsModel], [])
-        STMDIOResModel = pydantic.create_model("%s_stmd_io_res" % (name,), **stmd_io_res_model)
-        setattr(pydantic.main, "%s_stmd_io_res" % (name,), STMDIOResModel)
-        STMDIOResModel.update_forward_refs(**globals())
-
-        #results_model["multidata"] = (STMDIOResModel, STMDIOResModel())
-        #ResultsModel = pydantic.create_model("%s_results" % (name,), **results_model)
-        #setattr(pydantic.main, "%s_results" % (name,), ResultsModel)
-        #ResultsModel.update_forward_refs(**globals())
 
         args_model["tractors"] = (int, ...)
         ArgsModel = pydantic.create_model("%s_args" % (name,), **args_model)
@@ -2144,29 +2086,13 @@ class STMDMeta(pydantic.main.ModelMetaclass):
         setattr(pydantic.main, "%s_details" % (name,), DetailsModel)
         DetailsModel.update_forward_refs(**globals())
 
-        #stmd_io_ins_model['__base__'] = StepIO
-        #stmd_io_ins_model['inputs'] = tractor_type.InputsModel
-        #STMDIOInsModel = pydantic.create_model("%s_stmd_io_ins" % (name,), **stmd_io_ins_model)
-        #setattr(pydantic.main, "%s_stmd_io_ins" % (name,), STMDIOInsModel)
-        #STMDIOInsModel.update_forward_refs(**globals())
-
-        #MultiDataModel = pydantic.create_model(
-        #    "%s_multi_model" % name,
-        #    **{ "__base__": StepIOs,
-        #        "multidata": (STMDIOInsModel, STMDIOInsModel())}
-        #)
-        #MultiDataModel.update_forward_refs(**globals())
-
-        #inputs_model["data"] = (MultiDataModel, ...)
-        #InputsModel = pydantic.create_model("%s_inputs" % name, **inputs_model)
-        #InputsModel.update_forward_refs(**globals())
-    
         namespace.setdefault('__annotations__', {})
         namespace['__annotations__']['results'] = StepIOsList(tractor_type.ResultsModel)
         namespace['__annotations__']['inputs'] = StepIOsList(tractor_type.InputsModel)
         namespace['__annotations__']['args'] = ArgsModel
         namespace['__annotations__']['resources'] = tractor_type.ResourcesModel
         namespace['__annotations__']['details'] = DetailsModel
+        namespace['__annotations__']['tractions'] = List[Union[Step, StepNG, NamedTractor, STMD]]
 
         namespace['ResultsModel'] = StepIOsList(tractor_type.ResultsModel)
         namespace['InputsModel'] = StepIOsList(tractor_type.InputsModel)
@@ -2184,6 +2110,7 @@ class STMDMeta(pydantic.main.ModelMetaclass):
 class STMD(
     NoCopyModel, metaclass=STMDMeta, tractor_type=NamedTractor
 ):
+    TYPE: ClassVar[str] = "STMD"
     uid: str
     state: StepState
 
@@ -2213,13 +2140,9 @@ class STMD(
             inputs=inputs,
             args=args,
             details=self.DetailsModel(),
-            state=StepState.READY
+            state=StepState.READY,
+            tractions=[]
         )
-        #print(self.inputs)
-        #print(self.inputs.data, id(self.inputs.data))
-
-        # override init value copy and set original object via __setattr__
-        self.inputs = inputs or StepIOs()
 
         self.results.input_mode(mode=False)
         # update step reference in individual results
@@ -2228,8 +2151,9 @@ class STMD(
 
 
     @property
-    def fullname(self):
-        return self.uid
+    def fullname(self) -> str:
+        """Full name of class instance."""
+        return "%s[%s]" % (self.NAME, self.uid)
 
     def run(
         self,
@@ -2245,8 +2169,6 @@ class STMD(
         with ProcessPoolExecutor(max_workers=self.args.tractors) as executor:
             ft_results = {}
             nts = []
-            #print("STMD RUN", self.NAME, "inputs", self.inputs.data, id(self.inputs.data))
-            #print("STMD RUN ", self.NAME, "data len", len(self.inputs.data.list_data))
             for i in range(0, len(self.inputs.data)):
                 nt = self.TractorType(uid="%s:%d" % (self.uid, i),
                                  args=self.args,
@@ -2254,25 +2176,18 @@ class STMD(
                                  inputs=self.inputs.data[i])
                 self.details.data.append(self.TractorType.DetailsModel())
                 self.details.data[i] = nt.details
-                #nt.run()
-                res = executor.submit(nt.run)
-                #print("RUN RES ID", id(res))
+                self.tractions.append(nt)
+                res = executor.submit(nt.run, on_update=on_update, on_error=on_error)
                 ft_results[res] = (nt, i)
-                #print("NT RESULTS ID", id(nt.results))
-                #print("NT ID", self.NAME, id(nt))
                 self.results.data.append(self.TractorType.ResultsModel())
-                #self.results.data.append(nt.results)
             _on_update(self)
             for ft in as_completed(ft_results):
                 (_, i) = ft_results[ft]
                 nt = ft.result()
-                #print("STMD NT RESULTS", id(nt), id(nt.results.data), len(nt.results.data))
-                #print("STMD NT2 RESULTS", id(nt2), id(nt2.results.data), nt2.results, len(nt2.results.data), nt2.results.data.list_data)
+                self.tractions[i] = nt
                 self.results.data[i] = nt.results
                 self.details.data[i] = nt.details
-                #print("STMD RESULTS", len(self.results.data[i]))
                 _on_update(self)
-            #print("STMD RESULTS", id(self.results.data))
 
         self.state = StepState.FINISHED
 
