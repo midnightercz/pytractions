@@ -360,12 +360,12 @@ def test_named_tractor():
         arg1: int = 10
 
     class TNamedTractor(NamedTractor,
-            nt_steps=[('step1', TStep), ('step2', TStep)],
-            nt_inputs=IOTNamedTractor,
-            nt_results=IOTNamedTractor,
-            nt_args=ATNamedTractor,
-            nt_resources=TResources
-    ):
+            nt_steps=[('step1', TStep), ('step2', TStep)]):
+        inputs: IOTNamedTractor
+        results: IOTNamedTractor
+        args: ATNamedTractor
+        resources: TResources
+
         INPUTS_MAP = {
             "step1": {"int_io": NTInput(name="int_io")},
             "step2": {"int_io": ("step1", 'int_io')},
@@ -409,7 +409,12 @@ def test_multiple_named_tractors():
         arg1: int = 10
 
 
-    class TNamedTractor(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)], nt_inputs=IOTNamedTractor, nt_results=IOTNamedTractor, nt_args=ATNamedTractor, nt_resources=NoResources):
+    class TNamedTractor(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)]):
+        inputs: IOTNamedTractor
+        results: IOTNamedTractor
+        args: ATNamedTractor
+        resources: NoResources
+
         INPUTS_MAP = {
             "step1": {"int_io": NTInput(name="int_io")},
             "step2": {"int_io": ("step1", "int_io")},
@@ -427,7 +432,12 @@ def test_multiple_named_tractors():
         }
         NAME: ClassVar[str] = "TNamedTractor"
 
-    class TNamedTractor2(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)], nt_inputs=IOTNamedTractor, nt_results=IOTNamedTractor, nt_args=ATNamedTractor, nt_resources=NoResources):
+    class TNamedTractor2(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)]):
+        inputs: IOTNamedTractor
+        results: IOTNamedTractor
+        args: ATNamedTractor
+        resources: NoResources
+
         INPUTS_MAP = {
             "step1": {"int_io": NTInput(name="int_io")},
             "step2": {"int_io": ("step1", "int_io")},
@@ -475,7 +485,12 @@ def test_named_tractor_step_failed():
     class ATNamedTractor(StepArgs):
         arg1: int = 10
 
-    class TNamedTractor(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)], nt_inputs=IOTNamedTractor, nt_results=IOTNamedTractor, nt_args=ATNamedTractor, nt_resources=NoResources):
+    class TNamedTractor(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)]):
+        inputs: IOTNamedTractor
+        results: IOTNamedTractor
+        args: ATNamedTractor
+        resources: NoResources
+
         INPUTS_MAP = {
             "step1": {"int_io": NTInput(name="int_io")},
             "step2": {"int_io": ("step1", "int_io")},
@@ -523,7 +538,12 @@ def test_named_tractor_nested():
     class ATNamedTractor2(StepArgs):
         arg1: int = 10
 
-    class TNamedTractor(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)], nt_inputs=IOTNamedTractor2, nt_results=IOTNamedTractor2, nt_args=ATNamedTractor2, nt_resources=NoResources):
+    class TNamedTractor(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)]):
+        inputs: IOTNamedTractor2
+        results: IOTNamedTractor2
+        args: ATNamedTractor2
+        resources: NoResources
+
         INPUTS_MAP = {
             "step2": {"int_io": ("step1", "int_io")},
             "step1": {"int_io": NTInput(name="int_io")}
@@ -541,7 +561,12 @@ def test_named_tractor_nested():
         }
         NAME: ClassVar[str] = "TNamedTractor"
 
-    class TNamedTractor2(NamedTractor, nt_steps=[('step1', TStep), ('nt1', TNamedTractor)], nt_inputs=IOTNamedTractor2, nt_results=IOTNamedTractor2, nt_args=ATNamedTractor2, nt_resources=NoResources):
+    class TNamedTractor2(NamedTractor, nt_steps=[('step1', TStep), ('nt1', TNamedTractor)]):
+        inputs: IOTNamedTractor2
+        results: IOTNamedTractor2
+        args: ATNamedTractor2
+        resources: NoResources
+
         INPUTS_MAP = {
             "step1": {"int_io": NTInput(name="int_io")},
             "nt1": {"int_io": ("step1", "int_io")}
@@ -585,7 +610,12 @@ def test_named_tractor_nested_dump(fixture_isodate_now):
     class ATNamedTractor2(StepArgs):
         arg1: int = 10
 
-    class TNamedTractor(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)], nt_inputs=IOTNamedTractor2, nt_results=IOTNamedTractor2, nt_args=ATNamedTractor2, nt_resources=NoResources):
+    class TNamedTractor(NamedTractor, nt_steps=[('step1', TStep), ('step2', TStep)]):
+        inputs: IOTNamedTractor2
+        results: IOTNamedTractor2
+        args: ATNamedTractor2
+        resources: NoResources
+
         INPUTS_MAP = {
             "step2": {"int_io": ("step1", "int_io")},
             "step1": {"int_io": NTInput(name="int_io")}
@@ -603,7 +633,12 @@ def test_named_tractor_nested_dump(fixture_isodate_now):
         }
         NAME: ClassVar[str] = "TNamedTractor"
 
-    class TNamedTractor2(NamedTractor, nt_steps=[('step1', TStep), ('nt1', TNamedTractor)], nt_inputs=IOTNamedTractor2, nt_results=IOTNamedTractor2, nt_args=ATNamedTractor2, nt_resources=NoResources):
+    class TNamedTractor2(NamedTractor, nt_steps=[('step1', TStep), ('nt1', TNamedTractor)]):
+        inputs: IOTNamedTractor2
+        results: IOTNamedTractor2
+        args: ATNamedTractor2
+        resources: NoResources
+
         INPUTS_MAP = {
             "step1": {"int_io": NTInput(name="int_io")},
             "nt1": {"int_io": ("step1", "int_io")}
@@ -758,12 +793,14 @@ class IOSTMD_TNamedTractor(StepIOs):
     int_io: IntIO = IntIO()
 
 class STMD_TNamedTractor(NamedTractor,
-        nt_steps=[('step1', STMD_TStep), ('step2', STMD_TStep)],
-        nt_inputs=IOSTMD_TNamedTractor,
-        nt_args=TArgs,
-        nt_resources=NoResources,
-        nt_results=IOSTMD_TNamedTractor
-):
+        nt_steps=[('step1', STMD_TStep), ('step2', STMD_TStep)]):
+
+    inputs: IOSTMD_TNamedTractor
+    args: TArgs
+    resources: NoResources
+    results: IOSTMD_TNamedTractor
+    details: NoDetails
+
     INPUTS_MAP = {
         "step2": {"int_io": ("step1", "int_io")},
         "step1": {"int_io": NTInput(name="int_io")}

@@ -24,7 +24,13 @@ from .models import (
 
 
 def test_step_ng():
-    class TStep(StepNG, results_type=TIOs, inputs_type=TIOs, args_type=TArgs, resources_type=TResources, details_type=TDetails):
+    class TStep(StepNG):
+        results: TIOs
+        inputs: TIOs
+        args: TArgs
+        resources: TResources
+        details: TDetails
+
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             pass
          
@@ -33,37 +39,72 @@ def test_step_ng():
 
 def test_step_ng_wrong_results_type():
     with pytest.raises(TypeError):
-        class TStep(StepNG, results_type=TArgs, inputs_type=TIOs, args_type=TArgs, resources_type=TResources, details_type=TDetails):
+        class TStep(StepNG):
+            results: TArgs
+            inputs: TIOs
+            args: TArgs
+            resources: TResources
+            details: TDetails
+
             def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
                 pass
 
 def test_step_ng_wrong_inputs_type():
     with pytest.raises(TypeError):
-        class TStep(StepNG, results_type=TIOs, inputs_type=TArgs, args_type=TArgs, resources_type=TResources, details_type=TDetails):
+        class TStep(StepNG):
+            results: TIOs
+            inputs: TArgs
+            args: TArgs
+            resources: TResources
+            details: TDetails
+
             def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
                 pass
 
 def test_step_ng_wrong_args_type():
     with pytest.raises(TypeError):
         class TStep(StepNG, results_type=TIOs, inputs_type=TIOs, args_type=TIOs, resources_type=TResources, details_type=TDetails):
+            results: TIOs
+            inputs: TIOs
+            args: TIOs
+            resources: TResources
+            details: TDetails
+
             def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
                 pass
 
 def test_step_ng_wrong_resources_type():
     with pytest.raises(TypeError):
-        class TStep(StepNG, results_type=TIOs, inputs_type=TIOs, args_type=TArgs, resources_type=TIOs, details_type=TDetails):
+        class TStep(StepNG):
+            results: TIOs
+            inputs: TIOs
+            args: TArgs
+            resources: TIOs
+            details: TDetails
+
             def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
                 pass
 
 def test_step_ng_wrong_details_type():
     with pytest.raises(TypeError):
-        class TStep(StepNG, results_type=TIOs, inputs_type=TIOs, args_type=TArgs, resources_type=TResources, details_type=TIOs):
+        class TStep(StepNG):
+            results: TIOs
+            inputs: TIOs
+            args: TArgs
+            resources: TResources
+            details: TIOs
+
             def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
                 pass
 
 
 def test_step_ng_invalid_inputs():
-    class TStep(StepNG, results_type=TIOs, inputs_type=TIOs, args_type=TArgs, resources_type=TResources, details_type=TDetails):
+    class TStep(StepNG):
+        results: TIOs
+        inputs: TIOs
+        args: TArgs
+        resources: TResources
+        details: TDetails
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             pass
 
