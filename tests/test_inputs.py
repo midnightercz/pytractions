@@ -5,7 +5,7 @@ import pydantic
 import pytest
 
 from pytraction.traction import (
-    Step, StepIOs, StepIO, StepArgs, NoInputs, NoResources,
+    StepIOs, StepIO, StepArgs, NoInputs, NoResources,
     ExtResources, StepOnUpdateCallable, StepErrors, StepDetails,
     ExtResource, NoArgs,
     StepFailedError, Tractor, Secret,

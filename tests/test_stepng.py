@@ -7,7 +7,7 @@ import pytest
 import pytraction
 
 from pytraction.traction import (
-    Step, StepIO, StepIOs, StepArgs, NoInputs, NoResources,
+    StepIO, StepIOs, StepArgs, NoInputs, NoResources,
     ExtResources, StepOnUpdateCallable, StepErrors, StepDetails,
     ExtResource, NoArgs,
     StepFailedError, Tractor, Secret,

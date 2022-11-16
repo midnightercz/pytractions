@@ -6,7 +6,7 @@ import pytest
 import pytraction
 
 from pytraction.traction import (
-    Step, StepIOs, StepIO, StepArgs, NoInputs, NoResources,
+    StepNG, StepIOs, StepIO, StepArgs, NoInputs, NoResources,
     ExtResources, StepOnUpdateCallable, StepErrors, StepDetails,
     ExtResource, NoArgs,
     StepFailedError, Tractor, Secret,
@@ -22,73 +22,45 @@ from .models import (
     TDetails)
 
 
-def test_step_initiation_no_generic():
-    class TStep(Step):
-        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            pass
-         
-    with pytest.raises(TypeError) as exc:
-        TStep("test-step-1", {}, resources=NoResources(), inputs=NoInputs())
-
-    print(exc)
-    assert str(exc.value).startswith("Missing generic annotations for Step class")
-
-
 def test_step_initiation_no_run_method():
-    class TStep(Step[TIOs, TArgs, TResources, NoInputs, NoDetails]):
-        pass
+    class TStep(StepNG):
+        results: TIOs
+        args: TArgs
+        resources: TResources
+        inputs: NoInputs
+        details: NoDetails
     
     with pytest.raises(TypeError) as exc:
         step = TStep("test-step-1")
     assert str(exc.value) == "Can't instantiate abstract class TStep with abstract method _run"
 
 
-# def test_step_initiation_succesful_no_args_no_inputs():
-    # class TStep(Step[TIOs, NoArgs, TResources, NoInputs, NoDetails]):
-        # NAME: ClassVar[str] = "TestStep"
-        # def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            # pass
-    
-    # step = TStep("test-step-1", NoArgs())
-    # assert step.inputs == NoInputs()
-    # assert step.state == StepState.READY
-    # assert step.skip == False
-    # assert step.skip_reason == ""
-    # assert step.stats == StepStats(
-        # started=None,
-        # finished=None,
-        # skip=False,
-        # skip_reason="",
-        # skipped=False,
-        # state=StepState.READY
-    # )
-    # assert step.errors == StepErrors()
-
-
 def test_step_initiation_succesful_no_args():
-    class TStep(Step[TIOs, NoArgs, TResources, TIOs, NoDetails]):
+    class TStep(StepNG):
+        results: TIOs
+        args: NoArgs
+        resources: TResources
+        inputs: TIOs
+        details: NoDetails
         NAME: ClassVar[str] = "TestStep"
+
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             pass
  
-    step = TStep("test-step-1", NoArgs(),  TResources(service1=TResource(env='test', uid='res1')), TIOs(int_io=IntIO()))
+    step = TStep("test-step-1", NoArgs(), TResources(service1=TResource(env='test', uid='res1')), TIOs(int_io=IntIO()))
     assert step.inputs.int_io.x == 10
-
-
-# def test_step_initiation_succesful_no_inputs():
-    # class TStep(Step[TIOs, TArgs, TResources, NoInputs, NoDetails]):
-        # NAME: ClassVar[str] = "TestStep"
-        # def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            # pass
-    
-    # step = TStep("test-step-1", TArgs(arg1=10))
-    # assert step.args.arg1 == 10
 
 
 def test_step_initiation_wrong_arg_type():
     """Step expects NoArgs but TArgs are given."""
-    class TStep(Step[TIOs, NoArgs, TResources, NoInputs, NoDetails]):
+    class TStep(StepNG):
+        results: TIOs
+        args: NoArgs
+        resources: TResources
+        inputs: NoInputs
+        details: NoDetails
         NAME: ClassVar[str] = "TestStep"
+
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             pass
     
@@ -99,21 +71,33 @@ def test_step_initiation_wrong_arg_type():
 def test_step_initiation_wrong_inputs_type():
     """Step expects NoInputs but TIOs are given."""
 
-    class TStep(Step[TIOs, NoArgs, TResources, NoInputs, NoDetails]):
+    class TStep(StepNG):
+        results: TIOs
+        args: NoArgs
+        resources: TResources
+        inputs: NoInputs
+        details: NoDetails
         NAME: ClassVar[str] = "TestStep"
+
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             pass
     
-    with pytest.raises(TypeError) as exc:
-        step = TStep("test-step-1", NoArgs(), TResources(service1=TResource(env='test', uid='res1')), TIOs(int_io=IntIO(x=1)))
-    assert str(exc.value).startswith("Step inputs are not type of <class 'pytraction.traction.NoInputs'>")
+    with pytest.raises(pydantic.ValidationError) as exc:
+        step = TStep(uid="test-step-1", args=NoArgs(), resources=TResources(service1=TResource(env='test', uid='res1')), inputs=TIOs(int_io=IntIO(x=1)))
+    assert '"NoInputs" object has no field "int_io"' in str(exc.value)
 
 
 def test_step_initiation_wrong_resources():
     """Step expects NoInputs but TIOs are given."""
 
-    class TStep(Step[TIOs, NoArgs, NoResources, NoInputs, NoDetails]):
+    class TStep(StepNG):
+        resuls: TIOs
+        args: NoArgs
+        resources: NoResources
+        inputs: NoInputs
+        details: NoDetails
         NAME: ClassVar[str] = "TestStep"
+
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             pass
     
@@ -124,8 +108,14 @@ def test_step_initiation_wrong_resources():
 def test_step_initiation_missing_arguments():
     """Step initiation is missing shared_reults."""
 
-    class TStep(Step[TIOs, NoArgs, NoResources, NoInputs, NoDetails]):
+    class TStep(StepNG):
+        results: TIOs
+        args: NoArgs
+        resources: NoResources
+        inputs: NoInputs
+        details: NoDetails
         NAME: ClassVar[str] = "TestStep"
+
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             pass
     
@@ -135,8 +125,14 @@ def test_step_initiation_missing_arguments():
 
 def test_step_run_results():
     """Step run results test."""
-    class TStep(Step[TIOs, NoArgs, NoResources, NoInputs, NoDetails]):
+    class TStep(StepNG):
+        results: TIOs
+        args: NoArgs
+        resources: NoResources
+        inputs: NoInputs
+        details: NoDetails
         NAME: ClassVar[str] = "TestStep"
+
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results.int_io.x = 10
             
@@ -147,8 +143,14 @@ def test_step_run_results():
 
 def test_step_run_details():
     """Step run with details."""
-    class TStep(Step[TIOs, NoArgs, NoResources, NoInputs, TDetails]):
+    class TStep(StepNG):
+        results: TIOs
+        args: NoArgs
+        resources: NoResources
+        inputs: NoInputs
+        details: TDetails
         NAME: ClassVar[str] = "TestStep"
+
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.details.status = "ok"
             self.results.int_io.x = 10
@@ -169,8 +171,14 @@ def test_step_run_status_update():
     def state_collect(step):
         states_collected.append(step.state)
 
-    class TStep(Step[TIOs, NoArgs, NoResources, NoInputs, TDetails]):
+    class TStep(StepNG):
+        results: TIOs
+        args: NoArgs
+        resources: NoResources
+        inputs: NoInputs
+        details: TDetails
         NAME: ClassVar[str] = "TestStep"
+
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.details.status = "ok"
             on_update(self)
@@ -189,9 +197,14 @@ def test_step_run_secret_arg():
     class TTIOs(StepIOs):
         str_io: StrIO = StrIO(x="")
 
-
-    class TStep(Step[TTIOs, TSecretArgs, NoResources, NoInputs, TDetails]):
+    class TStep(StepNG):
+        results: TTIOs
+        args: TSecretArgs
+        resources: NoResources
+        inputs: NoInputs
+        details: TDetails
         NAME: ClassVar[str] = "TestStep"
+
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results.str_io.x = str(self.args.arg1)
 
@@ -204,8 +217,14 @@ def test_step_run_secret_arg():
 def test_step_run_invalid_state():
     """Step run in invalid state."""
 
-    class TStep(Step[TIOs, TArgs, NoResources, NoInputs, TDetails]):
+    class TStep(StepNG):
+        results: TIOs
+        args: TArgs
+        resources: NoResources
+        inputs: NoInputs
+        details: TDetails
         NAME: ClassVar[str] = "TestStep"
+
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results.int_io.x = self.args.arg1
 
@@ -218,7 +237,12 @@ def test_step_run_invalid_state():
 def test_step_run_failed():
     """Step initiation is missing shared_reults."""
 
-    class TStep(Step[TIOs, TArgs, NoResources, NoInputs, TDetails]):
+    class TStep(StepNG):
+        results: TIOs
+        args: TArgs
+        resources: NoResources
+        inputs: NoInputs
+        details: TDetails
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             raise StepFailedError("step run failed")
@@ -231,8 +255,14 @@ def test_step_run_failed():
 def test_step_run_error():
     """Step initiation is missing shared_reults."""
 
-    class TStep(Step[TIOs, TArgs, NoResources, NoInputs, TDetails]):
+    class TStep(StepNG):
+        results: TIOs
+        args: TArgs
+        resources: NoResources
+        inputs: NoInputs
+        details: TDetails
         NAME: ClassVar[str] = "TestStep"
+
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             raise ValueError("unexpected error")
 
@@ -244,7 +274,13 @@ def test_step_run_error():
 
 def test_step_dump_load(fixture_isodate_now):
 
-    class TStep(Step[TIOs, TSecretArgs, TResources2, TIOs, TDetails]):
+    class TStep(StepNG):
+        results: TIOs
+        args: TSecretArgs
+        resources: TResources2
+        inputs: TIOs
+        details: TDetails
+
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results.int_io.x = 1
@@ -292,7 +328,7 @@ def test_step_dump_load(fixture_isodate_now):
     step2.load(dumped, secrets={'TResourceWithSecrets:res1':{'secret': 'secret value'}})
     assert step2.args.arg1 == "supersecret"
     assert step2.args.arg2 == 200
-    assert step2.results.x == 1
+    assert step2.results.int_io.x == 1
     assert step2.skip is False
     assert step2.skip_reason == ''
     assert step2.state == StepState.FINISHED
@@ -321,8 +357,14 @@ def test_step_dump_load(fixture_isodate_now):
 
 def test_step_dump_load_missing_secrets(fixture_isodate_now):
 
-    class TStep(Step[TIOs, TSecretArgs, TResources2, TIOs, TDetails]):
+    class TStep(StepNG):
+        results: TIOs
+        args: TSecretArgs
+        resources: TResources2
+        inputs: TIOs
+        details: TDetails
         NAME: ClassVar[str] = "TestStep"
+
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results.int_io.x = 1
             self.details.status = 'done'
@@ -375,8 +417,14 @@ def test_step_dump_load_missing_secrets(fixture_isodate_now):
 def test_step_dump_load_multiple(fixture_isodate_now):
     """Step run with secret args."""
 
-    class TStep(Step[TIOs, TSecretArgs, NoResources, TIOs, TDetails]):
+    class TStep(StepNG):
+        results: TIOs
+        args: TSecretArgs
+        resources: NoResources
+        inputs: TIOs
+        details: TDetails
         NAME: ClassVar[str] = "TestStep"
+
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results.int_io.x = 1
             self.details.status = 'done'
@@ -423,7 +471,7 @@ def test_step_dump_load_multiple(fixture_isodate_now):
         'args': {'arg1': '*CENSORED*', 'arg2': 200},
         "details": {'status': 'done'},
         'errors': {'errors': {}},
-        'inputs': {'int_io': 'TestStep:test-step-1'},
+        'inputs': {'int_io': ('TestStep[test-step-1]', 'int_io')},
         'inputs_standalone': {},
         'skip': False,
         'skip_reason': '',
@@ -439,7 +487,9 @@ def test_step_dump_load_multiple(fixture_isodate_now):
         'results': {'int_io':{'x': 1}}
     }
 
+    print("step 3 load")
     step3 = TStep.load_cls(dumped, {}, secrets={'%s:%s' % (step.NAME, step.uid): {'arg1': 'supersecret'}})
+    print("step 4 load")
     step4 = TStep.load_cls(dumped2, {step3.fullname: step3}, secrets={'%s:%s' % (step.NAME, step2.uid): {'arg1':'supersecret'}})
 
     assert step3.uid == step.uid
@@ -468,7 +518,13 @@ def test_step_dump_load_multiple(fixture_isodate_now):
 def test_step_dump_load_cls_wrong(fixture_isodate_now):
     """Step run with secret args."""
 
-    class TStep(Step[TIOs, TSecretArgs, NoResources, TIOs, TDetails]):
+    class TStep(StepNG):
+        results: TIOs
+        args: TSecretArgs
+        resources: NoResources
+        inputs: TIOs
+        details: TDetails
+
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results.int_io.x = 1
@@ -510,8 +566,14 @@ def test_step_dump_load_cls_wrong(fixture_isodate_now):
 def test_step_dump_load_wrong(fixture_isodate_now):
     """Step run with secret args."""
 
-    class TStep(Step[TIOs, TSecretArgs, NoResources, TIOs, TDetails]):
+    class TStep(StepNG):
+        results: TIOs
+        args: TSecretArgs
+        resources: NoResources
+        inputs: TIOs
+        details: TDetails
         NAME: ClassVar[str] = "TestStep"
+
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results.int_io.x = 1
             self.details.status = 'done'
@@ -552,40 +614,18 @@ def test_step_dump_load_wrong(fixture_isodate_now):
 def test_step_dict():
     """Step initiation is missing shared_reults."""
 
-    class TStep(Step[TIOs, TSecretArgs, NoResources, NoInputs, TDetails]):
+    class TStep(StepNG):
+        results: TIOs
+        args: TSecretArgs
+        resources: NoResources
+        inputs: NoInputs
+        details: TDetails
         NAME: ClassVar[str] = "TestStep"
+
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results.x = self.args.arg1
 
     step = TStep("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2=200), NoResources(), NoInputs())
-    assert step.dict()['args']['arg1'] == "*CENSORED*"
-    assert step.dict()['args']['arg2'] == 200
-
-
-def test_step_generic():
-    """Step initiation is missing shared_reults."""
-
-    TLoaderIO = TypeVar("TLoaderIO")
-
-    class Model1(StepIO):
-        attribute1: str = 'attr1'
-
-    class GTIOs(StepIOs, Generic[TLoaderIO]):
-        models: Optional[TLoaderIO] = None
-
-    class TGenericLoader(Step[GTIOs[TLoaderIO], TSecretArgs, NoResources, NoInputs, TDetails], Generic[TLoaderIO]):
-        NAME: ClassVar[str] = "TestStep"
-        def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
-            generic_args = get_args(self.__orig_bases__[0])
-            modelcls = generic_args[0]
-            self.results.models.append(modelcls())
-
-    class Model1Loader(TGenericLoader[Model1]):
-        pass
-
-
-    step = Model1Loader("test-step-1", TSecretArgs(arg1=Secret("supersecret"), arg2=200), NoResources(), NoInputs())
-    step.run()
     assert step.dict()['args']['arg1'] == "*CENSORED*"
     assert step.dict()['args']['arg2'] == 200
 
@@ -675,7 +715,12 @@ def test_ext_resources_load_wrong_type():
     assert str(exc.value) == "Cannot load TResources2 into TResources"
 
 def test_results_assignment():
-    class TStep(Step[TIOs, TArgs, NoResources, NoInputs, TDetails]):
+    class TStep(StepNG):
+        results: TIOs
+        args: TArgs
+        resources: NoResources
+        inputs: NoInputs
+        details: TDetails
         NAME: ClassVar[str] = "TestStep"
         def _run(self, on_update: StepOnUpdateCallable=None) -> None:  # pylint: disable=unused-argument
             self.results = TIOs(int_io=IntIO(x=200))
