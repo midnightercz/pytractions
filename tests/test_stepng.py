@@ -12,7 +12,7 @@ from pytraction.traction import (
     ExtResource, NoArgs,
     StepFailedError, Tractor, Secret,
     StepOnErrorCallable, StepOnUpdateCallable,
-    StepNG)
+    Step)
 
 from pytraction.exc import (LoadWrongStepError, LoadWrongExtResourceError, MissingSecretError, DuplicateStepError, DuplicateTractorError)
 
@@ -24,7 +24,7 @@ from .models import (
 
 
 def test_step_ng():
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         inputs: TIOs
         args: TArgs
@@ -39,7 +39,7 @@ def test_step_ng():
 
 def test_step_ng_wrong_results_type():
     with pytest.raises(TypeError):
-        class TStep(StepNG):
+        class TStep(Step):
             results: TArgs
             inputs: TIOs
             args: TArgs
@@ -51,7 +51,7 @@ def test_step_ng_wrong_results_type():
 
 def test_step_ng_wrong_inputs_type():
     with pytest.raises(TypeError):
-        class TStep(StepNG):
+        class TStep(Step):
             results: TIOs
             inputs: TArgs
             args: TArgs
@@ -63,7 +63,7 @@ def test_step_ng_wrong_inputs_type():
 
 def test_step_ng_wrong_args_type():
     with pytest.raises(TypeError):
-        class TStep(StepNG, results_type=TIOs, inputs_type=TIOs, args_type=TIOs, resources_type=TResources, details_type=TDetails):
+        class TStep(Step, results_type=TIOs, inputs_type=TIOs, args_type=TIOs, resources_type=TResources, details_type=TDetails):
             results: TIOs
             inputs: TIOs
             args: TIOs
@@ -75,7 +75,7 @@ def test_step_ng_wrong_args_type():
 
 def test_step_ng_wrong_resources_type():
     with pytest.raises(TypeError):
-        class TStep(StepNG):
+        class TStep(Step):
             results: TIOs
             inputs: TIOs
             args: TArgs
@@ -87,7 +87,7 @@ def test_step_ng_wrong_resources_type():
 
 def test_step_ng_wrong_details_type():
     with pytest.raises(TypeError):
-        class TStep(StepNG):
+        class TStep(Step):
             results: TIOs
             inputs: TIOs
             args: TArgs
@@ -99,7 +99,7 @@ def test_step_ng_wrong_details_type():
 
 
 def test_step_ng_invalid_inputs():
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         inputs: TIOs
         args: TArgs

@@ -5,7 +5,7 @@ import pydantic
 import pytest
 
 from pytraction.traction import (
-    StepNG, StepIOs, StepArgs, NoInputs, NoResources,
+    Step, StepIOs, StepArgs, NoInputs, NoResources,
     ExtResources, StepOnUpdateCallable, StepErrors, StepDetails,
     ExtResource, NoArgs,
     StepFailedError, Tractor, Secret,
@@ -20,7 +20,7 @@ from .models import (
     TDetails)
 
 def test_named_tractor():
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: TArgs
         resources: TResources
@@ -75,7 +75,7 @@ def test_named_tractor():
     assert nt.results.int_io.x == 51
 
 def test_multiple_named_tractors():
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: TArgs
         resources: NoResources
@@ -156,7 +156,7 @@ def test_multiple_named_tractors():
 
 
 def test_named_tractor_step_failed():
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: TArgs
         resources: NoResources
@@ -217,7 +217,7 @@ def test_named_tractor_step_failed():
 
 
 def test_named_tractor_nested():
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: TArgs
         resources: NoResources
@@ -295,7 +295,7 @@ def test_named_tractor_nested():
 
 
 def test_named_tractor_nested_dump(fixture_isodate_now):
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: TArgs
         resources: NoResources
@@ -483,7 +483,7 @@ def test_named_tractor_nested_dump(fixture_isodate_now):
     }
 
 
-class STMD_TStep(StepNG):
+class STMD_TStep(Step):
     results: TIOs
     args: TArgs
     resources: NoResources

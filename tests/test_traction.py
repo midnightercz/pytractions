@@ -6,7 +6,7 @@ import pytest
 import pytraction
 
 from pytraction.traction import (
-    StepNG, StepIOs, StepIO, StepArgs, NoInputs, NoResources,
+    Step, StepIOs, StepIO, StepArgs, NoInputs, NoResources,
     ExtResources, StepOnUpdateCallable, StepErrors, StepDetails,
     ExtResource, NoArgs,
     StepFailedError, Tractor, Secret,
@@ -23,7 +23,7 @@ from .models import (
 
 
 def test_step_initiation_no_run_method():
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: TArgs
         resources: TResources
@@ -36,7 +36,7 @@ def test_step_initiation_no_run_method():
 
 
 def test_step_initiation_succesful_no_args():
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: NoArgs
         resources: TResources
@@ -53,7 +53,7 @@ def test_step_initiation_succesful_no_args():
 
 def test_step_initiation_wrong_arg_type():
     """Step expects NoArgs but TArgs are given."""
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: NoArgs
         resources: TResources
@@ -71,7 +71,7 @@ def test_step_initiation_wrong_arg_type():
 def test_step_initiation_wrong_inputs_type():
     """Step expects NoInputs but TIOs are given."""
 
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: NoArgs
         resources: TResources
@@ -90,7 +90,7 @@ def test_step_initiation_wrong_inputs_type():
 def test_step_initiation_wrong_resources():
     """Step expects NoInputs but TIOs are given."""
 
-    class TStep(StepNG):
+    class TStep(Step):
         resuls: TIOs
         args: NoArgs
         resources: NoResources
@@ -108,7 +108,7 @@ def test_step_initiation_wrong_resources():
 def test_step_initiation_missing_arguments():
     """Step initiation is missing shared_reults."""
 
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: NoArgs
         resources: NoResources
@@ -125,7 +125,7 @@ def test_step_initiation_missing_arguments():
 
 def test_step_run_results():
     """Step run results test."""
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: NoArgs
         resources: NoResources
@@ -143,7 +143,7 @@ def test_step_run_results():
 
 def test_step_run_details():
     """Step run with details."""
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: NoArgs
         resources: NoResources
@@ -171,7 +171,7 @@ def test_step_run_status_update():
     def state_collect(step):
         states_collected.append(step.state)
 
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: NoArgs
         resources: NoResources
@@ -197,7 +197,7 @@ def test_step_run_secret_arg():
     class TTIOs(StepIOs):
         str_io: StrIO = StrIO(x="")
 
-    class TStep(StepNG):
+    class TStep(Step):
         results: TTIOs
         args: TSecretArgs
         resources: NoResources
@@ -217,7 +217,7 @@ def test_step_run_secret_arg():
 def test_step_run_invalid_state():
     """Step run in invalid state."""
 
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: TArgs
         resources: NoResources
@@ -237,7 +237,7 @@ def test_step_run_invalid_state():
 def test_step_run_failed():
     """Step initiation is missing shared_reults."""
 
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: TArgs
         resources: NoResources
@@ -255,7 +255,7 @@ def test_step_run_failed():
 def test_step_run_error():
     """Step initiation is missing shared_reults."""
 
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: TArgs
         resources: NoResources
@@ -274,7 +274,7 @@ def test_step_run_error():
 
 def test_step_dump_load(fixture_isodate_now):
 
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: TSecretArgs
         resources: TResources2
@@ -357,7 +357,7 @@ def test_step_dump_load(fixture_isodate_now):
 
 def test_step_dump_load_missing_secrets(fixture_isodate_now):
 
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: TSecretArgs
         resources: TResources2
@@ -417,7 +417,7 @@ def test_step_dump_load_missing_secrets(fixture_isodate_now):
 def test_step_dump_load_multiple(fixture_isodate_now):
     """Step run with secret args."""
 
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: TSecretArgs
         resources: NoResources
@@ -518,7 +518,7 @@ def test_step_dump_load_multiple(fixture_isodate_now):
 def test_step_dump_load_cls_wrong(fixture_isodate_now):
     """Step run with secret args."""
 
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: TSecretArgs
         resources: NoResources
@@ -566,7 +566,7 @@ def test_step_dump_load_cls_wrong(fixture_isodate_now):
 def test_step_dump_load_wrong(fixture_isodate_now):
     """Step run with secret args."""
 
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: TSecretArgs
         resources: NoResources
@@ -614,7 +614,7 @@ def test_step_dump_load_wrong(fixture_isodate_now):
 def test_step_dict():
     """Step initiation is missing shared_reults."""
 
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: TSecretArgs
         resources: NoResources
@@ -715,7 +715,7 @@ def test_ext_resources_load_wrong_type():
     assert str(exc.value) == "Cannot load TResources2 into TResources"
 
 def test_results_assignment():
-    class TStep(StepNG):
+    class TStep(Step):
         results: TIOs
         args: TArgs
         resources: NoResources
