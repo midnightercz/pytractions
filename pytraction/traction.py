@@ -1,11 +1,8 @@
 import abc
-import copy
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 import datetime
-from functools import partial
 import inspect
 import json
-import os
 
 from typing import (
     Dict,
@@ -40,10 +37,8 @@ import typing_inspect
 
 
 import enum
-import pydantic
-import pydantic.generics
-import pydantic.fields
-import pydantic.main
+
+import dataclasses
 
 from .exc import (
     LoadWrongStepError,
@@ -54,6 +49,9 @@ from .exc import (
     StepFailedError,
 )
 
+from .utils import (
+    get_type, _get_args, check_type
+)
 
 Validator = Callable[Any, Any]
 
@@ -66,6 +64,32 @@ NamedTractor = ForwardRef("NamedTractor")
 STMD = ForwardRef("STMD")
 
 
+@dataclasses.dataclass
+class BaseConfig:
+    validate_set_attr: bool = True
+
+
+class BaseMeta(type):
+    def __new__(cls, name, bases, attrs):
+        if 'config' in attrs:
+            assert get_type()
+
+        ret = super().__new__(cls, name, bases, attrs)
+
+
+
+        if attrs['config'].validate_set_attr:
+
+        
+        return ret
+
+
+@dataclasses.dataclass
+class Base(metaclass=BaseMeta):
+    _config: BaseConfig = BaseConfig()
+
+
+
 def empty_on_error_callback() -> None:
     return None
 
@@ -73,143 +97,6 @@ def empty_on_error_callback() -> None:
 def isodate_now() -> str:
     """Return current datetime in iso8601 format."""
     return "%s%s" % (datetime.datetime.utcnow().isoformat(), "Z")
-
-
-class ANYMeta(abc.ABCMeta):
-    "A helper object that compares equal to everything."
-
-    def __eq__(mcs, other):
-        return True
-
-    def __ne__(mcs, other):
-        return False
-
-    def __repr__(mcs):
-        return '<ANY>'
-
-    def __hash__(mcs):
-        return id(mcs)
-
-
-class ANY(metaclass=ANYMeta):
-
-    @classmethod
-    def __get_validators__(cls) -> Iterator[Validator]:
-        return []
-
-    pass
-
-#ANY = _ANY()
-
-
-class OType:
-    origins: Any
-    args: List["OType" | Any]
-    parameters: List["OType" | Any]
-
-    def __init__(self):
-        self.origins = []
-        self.args = []
-        self.parameters = []
-
-    def __str__(self):
-        return f"OType({self.origins}, {self.args}, {self.parameters})"
-
-    def __eq__(self, other):
-        return (
-            self.origins == other.origins
-            and self.args == other.args
-            and self.parameters == other.parameters
-        )
-
-    def __le__(self, other):
-        if self.origins in ([list], [List]) and other.origins in ([list], [List[ANY]]):
-            # TODO: fix list check
-            olte = True
-            return True
-        else:
-            olte = (
-                self.origins == other.origins or
-                any([issubclass(o1, o2) for o1, o2 in zip(self.origins, other.origins)])
-            )
-        alte = True
-        if len(self.args) != len(other.args):
-            alte = False
-        else:
-            for (a1, a2) in zip(self.args, other.args):
-                if isinstance(a1, OType) and isinstance(a2, OType):
-                    alte &= a1 <= a2
-                elif not isinstance(a1, OType) and not isinstance(a2, OType):
-                    alte &= any([issubclass(o1, o2) for o1, o2 in zip(self.origins, other.origins)])
-                else:
-                    alte = False
-                    break
-        return olte and alte
-
-    def __check_generics__(self, other):
-        olte = (
-            self.origins == other.origins or
-            any([issubclass(o1, o2) for o1, o2 in zip(self.origins, other.origins)])
-        )
-        alte = True
-        if len(self.args) != len(other.parameters):
-            alte = False
-        else:
-            alte = True
-        return olte and alte
-
-
-def _get_args(v):
-    return get_args(v) or v.__targs__ if hasattr(v, "__targs__") else []
-
-
-def _get_origin(v):
-    return get_origin(v) or v.__torigin__ if hasattr(v, "__torigin__") else None
-
-
-def get_type(var):
-    root = OType()
-    if _get_origin(var) == Union:
-        root.origins = _get_origin(get_args(var))
-    elif _get_origin(var):
-        root.origins = [_get_origin(var)]
-    else:
-        root.origins = [var]
-
-    root.parameters = getattr(var, "__parameters__", [])
-
-    to_process = []
-    if _get_args(var):
-        for arg in _get_args(var):
-            to_process.append((root, arg))
-
-    while to_process:
-        croot, arg = to_process.pop(0)
-        child = OType()
-        child.parameters = arg.__parameters__ if hasattr(arg, "__parameters__") else []
-        if _get_origin(arg) == Union:
-            child.origins = _get_args(_get_origin(arg))
-        elif _get_origin(arg):
-            child.origins = [_get_origin(arg)]
-        else:
-            child.origins = [arg]
-
-        if _get_args(arg):
-            for charg in get_args(arg):
-                to_process.append((child, charg))
-        croot.args.append(child)
-
-    return root
-
-
-def check_type(to_check, expected):
-    t1 = get_type(to_check)
-    t2 = get_type(expected)
-    return t1 <= t2
-
-
-def check_type_generics(to_check, expected_generic):
-    return get_type(to_check).__check_generics__(get_type(expected_generic))
 
 
 class Secret:
