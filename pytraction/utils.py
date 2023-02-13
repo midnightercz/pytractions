@@ -1,6 +1,6 @@
 import abc
 
-from typing import Any, List, get_origin, get_args, Union
+from typing import Any, Dict, List, get_origin, get_args, Union
 
 
 class ANYMeta(abc.ABCMeta):
@@ -216,27 +216,32 @@ class Node:
         return True
 
     def json_compatible(self):
-        op = self.__determine_op(self, other)
-        node = CMPNode(self, other, op)
-        post_order = self.__post_order(node)
+        node = CMPNode(self, Node(Union[int, str, List, Dict, bool, "Base"]), "any")
+        stack = [node]
+        post_order = []
+        post_order.insert(0, node)
+        while stack:
+            current_node = stack.pop()
+            for ch1 in current_node.n1.children:
+                node = CMPNode(ch1, Node(Union[int, str, List, Dict, bool]), "any")
+                stack.insert(0, node)
+                post_order.insert(0, node)
 
+        print(post_order)
         for cmp_node in post_order:
-            if cmp_node.op == "any":
-                if cmp_node.children:
-                    ch_eq = any([ch.eq for ch in cmp_node.children])
-                else:
-                    ch_eq = True
+            if cmp_node.children:
+                ch_eq = any([ch.eq for ch in cmp_node.children])
             else:
-                ch_eq = all([ch.eq for ch in cmp_node.children])
+                ch_eq = True
 
+            print(cmp_node.n1, cmp_node.n2)
             ch_eq &= cmp_node.n1.type_ == cmp_node.n2.type_ or issubclass(
                 cmp_node.n1.type_, cmp_node.n2.type_
             )
             if not ch_eq:
                 return False
-        return True
 
-
+        return True 
 
 
 def type_tree(type_):
