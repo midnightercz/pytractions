@@ -63,33 +63,6 @@ NamedTractor = ForwardRef("NamedTractor")
 
 STMD = ForwardRef("STMD")
 
-
-@dataclasses.dataclass
-class BaseConfig:
-    validate_set_attr: bool = True
-
-
-class BaseMeta(type):
-    def __new__(cls, name, bases, attrs):
-        if 'config' in attrs:
-            assert get_type()
-
-        ret = super().__new__(cls, name, bases, attrs)
-
-
-
-        if attrs['config'].validate_set_attr:
-
-        
-        return ret
-
-
-@dataclasses.dataclass
-class Base(metaclass=BaseMeta):
-    _config: BaseConfig = BaseConfig()
-
-
-
 def empty_on_error_callback() -> None:
     return None
 
