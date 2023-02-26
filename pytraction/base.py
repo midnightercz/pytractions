@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_compl
 import datetime
 import inspect
 import json
+from types import prepare_class, resolve_bases
 
 from typing import (
     Dict,
@@ -16,7 +17,9 @@ from typing import (
     Optional,
     TypeVar,
     Generic,
-    Tuple
+    GenericAlias,
+    Tuple,
+    Type
 )
 
 import dataclasses
@@ -24,6 +27,7 @@ import dataclasses
 
 Base = ForwardRef("Base")
 TList = ForwardRef("TList")
+TDict = ForwardRef("TDict")
 
 
 class NoAnnotationError(TypeError):
@@ -72,6 +76,8 @@ class TypeNode:
 
     @classmethod
     def from_type(cls, type_):
+        """Create TypeNode from provided type)."""
+
         root = cls(type_=type_)
         current = root
         stack = []
@@ -87,28 +93,20 @@ class TypeNode:
         return root
 
     def replace_params(self, params_map):
-        print(params_map)
+        """Replace Typevars in TypeNode structure with values from provided mapping."""
+
         stack = [(self, 0, None)]
-        post_order = []
         while stack:
             current, parent_index, current_parent = stack.pop(0)
             for n, ch in enumerate(current.children):
                 stack.insert(0, (ch, n, current))
             if type(current.type_) == TypeVar:
-                print("replacing", current.type_)
                 if current.type_ in params_map:
-                    print("replaced", params_map[current.type_])
                     current.type_ = params_map[current.type_]
-            post_order.insert(0, (current, parent_index, current_parent))
-        for item in post_order:
-            node, parent_index, parent = item
-            print("-- REPLACE", node.type_, parent_index, parent)
-            if not parent:
-                continue
-            parent.children[parent_index] = node
-            print(parent, parent.children)
 
-    def to_type(self):
+    def to_type(self, types_cache={}):
+        """Return new type for TypeNode or already existing type from cache."""
+
         stack = [(self, 0, None)]
         post_order = []
         while stack:
@@ -119,12 +117,21 @@ class TypeNode:
 
         for item in post_order:
             node, parent_index, parent = item
-            print("TO TYPE", node, parent_index, parent, node.children)
 
             if node.children:
-                print("children to type", node.type_)
-                node.type_ = (get_origin(node.type_) or type(node.type_))[tuple([x.type_ for x in node.children])]
-                print("children to type2", node.type_)
+                if hasattr(node.type_, "__origin__"):
+                    type_ = node.type_.__origin__
+                else:
+                    type_ = type(node.type_)
+
+                children_types = tuple([x.type_ for x in node.children])
+
+                if f"{type_.__qualname__}[{children_types}]" in types_cache:
+                    node.type_ = types_cache[f"{type_.__qualname__}[{children_types}]"][0]
+                else:
+                    type_.__class_getitem__(tuple([x.type_ for x in node.children]))
+                    node.type_ = types_cache[f"{type_.__qualname__}[{children_types}]"][0]
+
             if not parent:
                 continue
             parent.children[parent_index] = node
@@ -150,9 +157,7 @@ class TypeNode:
         post_order.insert(0, root_node)
         while stack:
             current_node = stack.pop()
-            print("current", current_node.op, current_node.n1, current_node.n2)
             if get_origin(current_node.n1.type_) == Union and get_origin(current_node.n2.type_) != Union:
-                print("1")
                 for ch1 in current_node.n1.children:
                     node = CMPNode(ch1, current_node.n2, "all", "all")
                     stack.insert(0, node)
@@ -160,11 +165,7 @@ class TypeNode:
                     current_node.children.append(node)
 
             elif get_origin(current_node.n1.type_) != Union and get_origin(current_node.n2.type_) == Union:
-                print("2")
-                print(current_node.n2.type_)
-                print(current_node.n2.children)
                 for ch2 in current_node.n2.children:
-                    print("ch2", ch2)
                     node = CMPNode(current_node.n1, ch2, "all", "all")
                     stack.insert(0, node)
                     post_order.insert(0, node)
@@ -202,9 +203,7 @@ class TypeNode:
         node = CMPNode(self, other, op, op)
         post_order = self.__eq_post_order(node)
 
-        print("--- EQ ---")
         for cmp_node in post_order:
-            print("cmp node", cmp_node.eq, cmp_node.op, cmp_node.n1.type_, cmp_node.n2.type_)
             if cmp_node.op == "any":
                 if cmp_node.children:
                     ch_eq = any([ch.eq for ch in cmp_node.children])
@@ -216,7 +215,6 @@ class TypeNode:
             n1_type = get_origin(cmp_node.n1.type_) or cmp_node.n1.type_
             n2_type = get_origin(cmp_node.n2.type_) or cmp_node.n2.type_
 
-            print("EQ CMP", n1_type, n2_type)
             # check types only of both types are not union
             # otherwise equality was already decided by check above
             if n1_type != Union and n2_type != Union:
@@ -255,7 +253,6 @@ class TypeNode:
                     post_order.insert(0, node)
                     current_node.children.append(node)
 
-        #print(post_order)
         for cmp_node in post_order:
             n1_type = get_origin(cmp_node.n1.type_) or cmp_node.n1.type_
             n2_type = get_origin(cmp_node.n2.type_) or cmp_node.n2.type_
@@ -294,32 +291,31 @@ class TypeNode:
 
 class BaseMeta(type):
     def __new__(cls, name, bases, attrs):
-        # if config is provided, make sure it's subsclass of BaseConfig
-        new_attrs = {k: v for k, v in attrs.items()}
+
         if '_config' in attrs:
             assert TypeNode.from_type(type(attrs["_config"])) == TypeNode(BaseConfig)
-            config = new_attrs['_config']
+            config = attrs['_config']
         else:
             # if not, provide default config
             config = BaseConfig()
-            new_attrs["_config"] = config
+            attrs["_config"] = config
 
         if config.validate_set_attr:
             # if setter validation is on, use _validate_setattr_
             # or find it in class bases
-            if '_validate_setattr_' in new_attrs:
-                _setattr = new_attrs['_validate_setattr_']
+            if '_validate_setattr_' in attrs:
+                _setattr = attrs['_validate_setattr_']
             else:
                 _setattr = find_attr(bases, '_validate_setattr_')
-            new_attrs['__setattr__'] = _setattr
+            attrs['__setattr__'] = _setattr
         else:
-            if '_no_validate_setattr_' in new_attrs:
-                _setattr = new_attrs['_no_validate_setattr_']
+            if '_no_validate_setattr_' in attrs:
+                _setattr = attrs['_no_validate_setattr_']
             else:
                 _setattr = find_attr(bases, '_no_validate_setattr_')
-            attrs['__setattr__'] = new_attrs['_no_validate_setattr_']
+            attrs['__setattr__'] = attrs['_no_validate_setattr_']
 
-        annotations = new_attrs.get('__annotations__', {})
+        annotations = attrs.get('__annotations__', {})
         for attr, attrv in attrs.items():
             # skip annotation check for methods and functions
             if inspect.ismethod(attrv) or inspect.isfunction(attrv):
@@ -342,18 +338,19 @@ class BaseMeta(type):
                 raise JSONIncompatibleError(f"Attribute {attr} is not json compatible")
 
         # record fields to private attribute
-        new_attrs['_fields'] = {k: v for k, v in new_attrs.get('__annotations__', {}).items() if not k.startswith("_")}
+        attrs["_attrs"] = attrs
+        attrs['_fields'] = {k: v for k, v in attrs.get('__annotations__', {}).items() if not k.startswith("_")}
 
-        #print("->>>>>>>>>> FIELDS", new_attrs['_fields'])
-        ret = super().__new__(cls, name, bases, new_attrs)
+        ret = super().__new__(cls, name, bases, attrs)
         ret = dataclasses.dataclass(ret, kw_only=True)
-        print("META RET FIELDS", ret._fields)
         return ret
 
 
 class Base(metaclass=BaseMeta):
     _config: ClassVar[BaseConfig] = BaseConfig()
     _fields: ClassVar[Dict[str, Any]]
+    _generic_cache: ClassVar[Dict[str, Type[Any]]] = {}
+
 
     def _no_validate_setattr_(self, name: str, value: Any) -> None:
         return super().__setattr__(name, value)
@@ -364,44 +361,52 @@ class Base(metaclass=BaseMeta):
         if not name.startswith("_"):
             if name not in self._fields and not self._config.allow_extra:
                 raise AttributeError(f"{self.__class__} doesn't have attribute name")
-            #print("SETATTR", type(value))
-            #print("FIELD VALUE", self._fields[name])
 
             vtype = value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
-            #print("VTYPE", vtype)
             tt1 = TypeNode.from_type(vtype)
             tt2 = TypeNode.from_type(self._fields[name])
             if tt1 != tt2:
                 raise TypeError(f"Cannot set attribute {self.__class__}.{name} to type {vtype}, expected {self._fields[name]}")
         return super().__setattr__(name, value)
 
-    def __class_getitem__(cls, *params):
-        ret = super().__class_getitem__(*params)
+    def __class_getitem__(cls, param):
+        _params = param if isinstance(param, tuple) else (param,)
+        # Create new class to have its own parametrized fields
+        if f"{cls.__qualname__}[{_params}]" in cls._generic_cache:
+            ret, alias = cls._generic_cache[f"{cls.__qualname__}[{_params}]"]
+            return alias
+        bases = [x for x in resolve_bases([cls] + list(cls.__bases__)) if x is not Generic]
+        attrs = {k: v for k, v in cls._attrs.items() if k not in ("_attrs", "_fields")}
+        meta, ns, kwds = prepare_class(f"{cls.__name__}[{param}]", bases, attrs)
 
-        print("cls getitem", ret, id(ret))
-        print("cls fields", ret._fields, id(ret._fields))
-        print("PARAMS", params, cls.__parameters__)
-        _params = params[0] if isinstance(params[0], tuple) else params
-        ret._params_map = dict(zip(cls.__parameters__, _params))
+        _params_map = dict(zip(cls.__parameters__, _params))
 
         # Fields needs to be copied to specific subclass, otherwise
         # it's stays shared with base class
         new_fields = {}
-        for attr, type_ in ret._fields.items():
-            print("REPLACE old type", type_, id(type_))
+        for attr, type_ in cls._fields.items():
             tn = TypeNode.from_type(type_)
-            tn.replace_params(ret._params_map)
-            new_type = tn.to_type()
-            print("REPLACE new type", new_type, id(new_type))
+            tn.replace_params(_params_map)
+            new_type = tn.to_type(types_cache=cls._generic_cache)
+            if hasattr(new_type, "_params"):
+                cache_key = f"{new_type.__qualname__}[{new_type._params}]"
+            if new_type != type_:
+                if hasattr(new_type, "_params"):
+                    cls._generic_cache[cache_key] = (new_type, GenericAlias(new_type, new_type._params))
+            if hasattr(new_type, "_params"):
+                new_type = cls._generic_cache[cache_key][1]
 
             if not tn.json_compatible():
                 raise JSONIncompatibleError(f"Attribute  {attr}: {new_type} is not json compatible")
             new_fields[attr] = new_type
+            kwds["__annotations__"][attr] = new_type
 
-        ret._fields = new_fields
+        kwds["_params"] = _params
+        ret = meta(f"{cls.__qualname__}[{param}]", tuple(bases), kwds)
+        alias = GenericAlias(ret, param)
 
-        ret._params = params[0]
-        return ret
+        cls._generic_cache[f"{cls.__qualname__}[{_params}]"] = (ret, alias)
+        return alias
 
 
 T = TypeVar("T")

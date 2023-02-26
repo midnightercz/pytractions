@@ -6,6 +6,8 @@ from pytraction.base import Base, JSONIncompatibleError, TList, TDict
 
 # Jsonable test cases
 
+T = TypeVar("T")
+
 def test_base_jsonable_basic_ok():
     class TestC(Base):
         i: int
@@ -80,15 +82,11 @@ def test_base_jsonable_basic_clasess_union_ok():
 
 
 def test_generic_jsonable_ok():
-    T = TypeVar("T")
-
     class TestC1(Base, Generic[T]):
         x: T
 
 
 def test_generic_jsonable_concrete_ok():
-    T = TypeVar("T")
-
     class TestC1(Base, Generic[T]):
         x: T
 
@@ -155,8 +153,6 @@ def test_base_jsonable_basic_clasess_union_fail():
 
 
 def test_generic_jsonable_concrete_fail():
-    T = TypeVar("T")
-
     class X:
         pass
 
@@ -197,22 +193,20 @@ def test_base_setattr_complex_ok():
     class TestC(Base):
         s: TList[int]
 
-    t = TestC(s=TList(["a"]))
-    t.s = TList([10])
+    t = TestC(s=TList[int](["a"]))
+    t.s = TList[int]([10])
 
 
 def test_base_setattr_complex1_ok():
     class TestC(Base):
         s: TList[int]
 
-    l: TList[int] = TList([10])
-    t = TestC(s=TList(["a"]))
+    l: TList[int] = TList[int]([10])
+    t = TestC(s=TList[int](["a"]))
     t.s = l
 
 
 def test_base_setattr_complex2_ok():
-    T = TypeVar("T")
-
     class TestC(Base, Generic[T]):
         td: TDict[str, T]
 
@@ -258,7 +252,7 @@ def test_base_setattr_complex_fail():
     class TestC(Base):
         s: TList[str]
 
-    t = TestC(s=TList(["a"]))
+    t = TestC(s=TList[str](["a"]))
     with pytest.raises(TypeError):
         t.s = [10]
 
@@ -269,45 +263,43 @@ def test_base_setattr_complex1_fail():
 
     l: TList[str] = TList[str](["a"])
     t = TestC(s=TList[int]([10]))
-    print("orig", l.__orig_class__, l.__class__)
-    print(dir(l))
     with pytest.raises(TypeError):
         t.s = l
 
 
 def test_base_setattr_complex2_fail():
-    T = TypeVar("T")
-
     class TestList(Base, Generic[T]):
         l: TList[T]
-
-    print("----------------------------------")
 
     class TestC(Base):
         tl: TestList[int]
 
-    print("----------------------------------")
-    print("######### params", TestList[str]._params)
-    print("######### fields", TestList[str]._fields)
+    l=TList[str](["a"])
 
-    tl2: TestList[str] = TestList[str](l=TList[str](["a"]))
+    tl2: TestList[str] = TestList[str](l=l)
 
     t = TestC(tl=TestList[int](l=TList[int]([20])))
     with pytest.raises(TypeError):
         t.tl = tl2
 
 def test_base_setattr_complex3_ok():
-    T = TypeVar("T")
 
     class TestDict(Base, Generic[T]):
-        l: Dict[str, T]
+        d: TDict[str, T]
 
     class TestC(Base):
-        tl: TestDict[int]
+        td: TestDict[int]
 
-    l: Dict[str, int]  = {"a": 10}
+    d: Dict[str, int]  = {"a": 10}
+    
+    with pytest.raises(TypeError):
+        tl2: TestDict[int] = TestDict[int](d=d)
 
-    tl2: TestDict[int] = TestDict[int](l=l)
+    d2: TDict[str, int]  = TDict[str, int]({"a": 10})
+    d3: TDict[str, str]  = TDict[str, str]({"a": "a"})
 
-    t = TestC(tl=TestDict[int](l={"b": 30}))
-    t.tl = tl2
+    td: TestDict[int] = TestDict[int](d=d2)
+    t = TestC(td=td)
+    td2: TestDict[str] = TestDict[str](d=d3)
+    with pytest.raises(TypeError):
+        t.td = td2
