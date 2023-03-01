@@ -217,6 +217,8 @@ class TypeNode:
 
             # check types only of both types are not union
             # otherwise equality was already decided by check above
+
+            print("EQ", n1_type, n2_type)
             if n1_type != Union and n2_type != Union:
                 ch_eq &= n1_type == n2_type or issubclass(
                     n1_type, n2_type
@@ -350,15 +352,14 @@ class Base(metaclass=BaseMeta):
     _config: ClassVar[BaseConfig] = BaseConfig()
     _fields: ClassVar[Dict[str, Any]]
     _generic_cache: ClassVar[Dict[str, Type[Any]]] = {}
-
+    _params: ClassVar[List[Any]] = []
 
     def _no_validate_setattr_(self, name: str, value: Any) -> None:
         return super().__setattr__(name, value)
 
     def _validate_setattr_(self, name: str, value: Any) -> None:
-        
 
-        if not name.startswith("_"):
+        if not name.startswith("_"): # do not check for private attrs
             if name not in self._fields and not self._config.allow_extra:
                 raise AttributeError(f"{self.__class__} doesn't have attribute name")
 
@@ -417,19 +418,22 @@ TV = TypeVar("TV")
 class TList(Base, Generic[T]):
     _list: List[T]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, iterable):
         self._list = []
-        list.__init__(self._list, *args, **kwargs)
+        for item in iterable:
+            if TypeNode.from_type(type(item)) != TypeNode.from_type(self._params[0]):
+                raise TypeError(f"Cannot assign item {type(item)} to list of type {self._params[0]}")
+        list.__init__(self._list, iterable)
 
     def __add__(self, value):
-        if TypeNode.from_type(value) != TypeNode.from_type(self):
+        if TypeNode.from_type(type(value)) != TypeNode.from_type(type(self)):
             raise TypeError(f"Cannot extend list {type(self)} with {type(value)}")
-        self.__add__(value)
+        return self.__class__(self._list.__add__(value._list))
 
     def __contains__(self, value):
-        if TypeNode.from_type(value) != TypeNode.from_type(self):
-            raise TypeError(f"Cannot extend list {type(self)} with {type(value)}")
-        self.__contains__(value)
+        if TypeNode.from_type(type(value)) != TypeNode.from_type(self._params[0]):
+            raise TypeError(f"Cannot call __contains__ on {self._params[0]} with {type(value)}")
+        return self._list.__contains__(value)
 
     def __delitem__(self, x):
         return self._list.__delitem__(x)
@@ -447,13 +451,13 @@ class TList(Base, Generic[T]):
         return self._list.__reversed__()
 
     def __setitem__(self, key, value):
-        if TypeNode.from_type(value) != TypeNode.from_type(T):
-            raise TypeError(f"Cannot assign item {type(value)} to list of type {type(T)}")
+        if TypeNode.from_type(type(value)) != TypeNode.from_type(self._params[0]):
+            raise TypeError(f"Cannot assign item {type(value)} to list of type {self._params[0]}")
         self._list.__setitem__(key, value)
 
     def append(self, obj: T) -> None:
-        if TypeNode.from_type(obj) != TypeNode.from_type(T):
-            raise TypeError(f"Cannot assign item {type(obj)} to list of type {type(T)}")
+        if TypeNode.from_type(type(obj)) != TypeNode.from_type(self._params[0]):
+            raise TypeError(f"Cannot assign item {type(obj)} to list of type {type(self._params[0])}")
         self._list.append(obj)
 
     def clear(self):
@@ -463,22 +467,23 @@ class TList(Base, Generic[T]):
         return self._list.count(value)
 
     def extend(self, iterable):
-        if TypeNode.from_type(iterable) != TypeNode.from_type(self):
+        if TypeNode.from_type(type(iterable)) != TypeNode.from_type(type(self)):
             raise TypeError(f"Cannot extend list {type(self)} with {type(iterable)}")
+        self._list.extend(iterable._list)
 
-    def index(self, value, start, stop):
+    def index(self, value, start=0, stop=-1):
         return self._list.index(value, start, stop)
 
     def insert(self, index, obj):
-        if TypeNode.from_type(obj) != TypeNode.from_type(T):
-            raise TypeError(f"Cannot assign item {type(obj)} to list of type {type(T)}")
+        if TypeNode.from_type(type(obj)) != TypeNode.from_type(self._params[0]):
+            raise TypeError(f"Cannot assign item {type(obj)} to list of type {type(self._params[0])}")
         self._list.insert(index, obj)
 
     def pop(self, *args, **kwargs):
         return self._list.pop(*args, **kwargs)
 
-    def remove(self, *args, **kwargs):
-        return self._list.remove(*args, **kwargs)
+    def remove(self, value):
+        return self._list.remove(value)
 
     def reverse(self):
         return self._list.reverse()
@@ -486,7 +491,8 @@ class TList(Base, Generic[T]):
     def sort(self, *args, **kwargs):
         return self._list.sort(*args, **kwargs)
 
-class TDict(Base, Generic[TK,TV]):
+
+class TDict(Base, Generic[TK, TV]):
     _dict: Dict[TK, TV]
 
     def __contains__(self, key: TK) -> bool:
