@@ -500,7 +500,7 @@ class TDict(Base, Generic[TK, TV]):
         _tv = self._params[1]
         if TypeNode.from_type(type(key)) != TypeNode.from_type(_tk):
             raise TypeError(f"Cannot check key {key} of type {type(key)} in dict of type {Dict[_tk, _tv]}")
-        return self._dict.__contains__(TK)
+        return self._dict.__contains__(key)
 
     def __delitem__(self, key: TK):
         _tk = self._params[0]
@@ -543,7 +543,15 @@ class TDict(Base, Generic[TK, TV]):
         self._dict.clear()
 
     def fromkeys(self, iterable, value):
-        pass
+        _tk = self._params[0]
+        _tv = self._params[1]
+        for key in iterable:
+            if TypeNode.from_type(type(key)) != TypeNode.from_type(_tk):
+                raise TypeError(f"Cannot set item by key {key} of type {type(key)} in dict of type {Dict[_tk, _tv]}")
+        if TypeNode.from_type(type(value)) != TypeNode.from_type(_tv):
+            raise TypeError(f"Cannot set item {value} of type {type(value)} in dict of type {Dict[_tk, _tv]}")
+        new_d = self._dict.fromkeys(iterable, value)
+        return self.__class__(new_d)
 
     def get(self, key: TK, default=None):
         if TypeNode.from_type(type(key)) != TypeNode.from_type(TK):
@@ -556,17 +564,21 @@ class TDict(Base, Generic[TK, TV]):
     def keys(self):
         return self._dict.keys()
 
-    def pop(self, k:TK, d=None):
-        if TypeNode.from_type(type(k)) != TypeNode.from_type(TK):
-            raise TypeError(f"Cannot pop item by key {k} of type {type(k)} in dict of type {Dict[TK, TV]}")
+    def pop(self, k: TK, d=None):
+        _tk = self._params[0]
+        _tv = self._params[1]
+        if TypeNode.from_type(type(k)) != TypeNode.from_type(_tk):
+            raise TypeError(f"Cannot pop item by key {k} of type {type(k)} in dict of type {Dict[_tk, _tv]}")
         return self._dict.pop(k, d)
 
     def popitem(self) -> Tuple[TK, TV]:
         return self._dict.popitem()
 
     def setdefault(self, key, default):
-        if TypeNode.from_type(type(key)) != TypeNode.from_type(TK):
-            raise TypeError(f"Cannot setdefault for key {key} of type {type(key)} in dict of type {Dict[TK, TV]}")
+        _tk = self._params[0]
+        _tv = self._params[1]
+        if TypeNode.from_type(type(key)) != TypeNode.from_type(_tk):
+            raise TypeError(f"Cannot setdefault for key {key} of type {type(key)} in dict of type {Dict[_tk, _tv]}")
         return self._dict.setdefault(key, default)
 
     def update(self, other):
