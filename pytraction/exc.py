@@ -12,5 +12,6 @@ class DuplicateStepError(Exception):
 
 class DuplicateTractorError(Exception):
     pass
-class StepFailedError(Exception):
+
+class TractionFailedError(Exception):
     """Exception indidating failure of a step."""

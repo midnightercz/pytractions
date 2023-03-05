@@ -193,17 +193,8 @@ def test_base_setattr_complex_ok():
     class TestC(Base):
         s: TList[int]
 
-    t = TestC(s=TList[int](["a"]))
+    t = TestC(s=TList[int]([5]))
     t.s = TList[int]([10])
-
-
-def test_base_setattr_complex1_ok():
-    class TestC(Base):
-        s: TList[int]
-
-    l: TList[int] = TList[int]([10])
-    t = TestC(s=TList[int](["a"]))
-    t.s = l
 
 
 def test_base_setattr_complex2_ok():
@@ -303,3 +294,56 @@ def test_base_setattr_complex3_ok():
     td2: TestDict[str] = TestDict[str](d=d3)
     with pytest.raises(TypeError):
         t.td = td2
+
+
+# test json store/load
+
+def test_base_to_json_simple():
+    class TestC(Base):
+        foo: int
+        bar: str
+
+    tc = TestC(foo=10, bar="bar")
+    assert tc.to_json() == {"foo": 10, "bar": "bar"}
+
+
+def test_base_to_json_complex():
+    class TestC2(Base):
+        attr1: str
+        attr2: int
+
+    class TestC(Base):
+        c2: TestC2
+        foo: int
+        bar: str
+
+    tc = TestC(foo=10, bar="bar", c2=TestC2(attr1="a", attr2=10))
+    assert tc.to_json() == {"foo": 10, "bar": "bar", "c2":{"attr1": "a", "attr2": 10}}
+
+
+def test_base_from_json_simple():
+    class TestC(Base):
+        foo: int
+        bar: str
+
+    tc = TestC.from_json({"foo": 10, "bar": "bar"})
+    assert tc.foo == 10
+    assert tc.bar == "bar"
+
+
+def test_base_from_json_complex():
+    class TestC2(Base):
+        attr1: str
+        attr2: int
+
+    class TestC(Base):
+        foo: int
+        bar: str
+        c2: TestC2
+
+    tc = TestC.from_json({"foo": 10, "bar": "bar", "c2": {"attr1": "a", "attr2": 20}})
+    assert tc.foo == 10
+    assert tc.bar == "bar"
+    assert tc.c2.attr1 == "a"
+    assert tc.c2.attr2 == 20
+

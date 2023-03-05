@@ -4,6 +4,9 @@ import datetime
 import inspect
 import json
 from types import prepare_class, resolve_bases
+import enum
+
+import datetime
 
 from typing import (
     Dict,
@@ -19,15 +22,18 @@ from typing import (
     Generic,
     GenericAlias,
     Tuple,
-    Type
+    Type,
+    Callable
 )
 
 import dataclasses
 
+from .exc import TractionFailedError
 
 Base = ForwardRef("Base")
 TList = ForwardRef("TList")
 TDict = ForwardRef("TDict")
+Traction = ForwardRef("Traction")
 
 
 class NoAnnotationError(TypeError):
@@ -137,7 +143,6 @@ class TypeNode:
             parent.children[parent_index] = node
         return post_order[-1][0].type_
 
-
     @staticmethod
     def __determine_op(ch1, ch2) -> str:
         op = "all"
@@ -233,7 +238,7 @@ class TypeNode:
         else:
             op = "any"
 
-        root_node = CMPNode(self, TypeNode(Union[int, str, bool, Base, TList, Dict, type(None)]), op, op)
+        root_node = CMPNode(self, TypeNode(Union[int, str, bool, Base, TList, TDict, type(None)]), op, op)
         stack = [root_node]
         post_order = []
         post_order.insert(0, root_node)
@@ -245,12 +250,12 @@ class TypeNode:
                         op = "all"
                     else:
                         op = "any"
-                    node = CMPNode(ch1, TypeNode(Union[int, str, Dict, bool, Base, TList, type(None), TypeVar("X")]), op, op)
+                    node = CMPNode(ch1, TypeNode(Union[int, str, bool, Base, TList, TDict, type(None), TypeVar("X")]), op, op)
                     stack.insert(0, node)
                     post_order.insert(0, node)
                     current_node.children.append(node)
             else:
-                for u in (int, str, TList, Dict, bool, Base, type(None), TypeVar("X")):
+                for u in (int, str, TList, TDict, bool, Base, type(None), TypeVar("X")):
                     node = CMPNode(current_node.n1, TypeNode(u), "any", "any")
                     post_order.insert(0, node)
                     current_node.children.append(node)
@@ -285,7 +290,7 @@ class TypeNode:
                 ch_eq &= issubclass(n1_type, n1_type)
 
             elif n1_type != Union and n2_type == Union:
-                ch_eq &= any([issubclass(n1_type, t) for t in [int, str, bool, type(None), Base, TList]])
+                ch_eq &= any([issubclass(n1_type, t) for t in [int, str, bool, type(None), Base, TList, TDict]])
             cmp_node.eq = ch_eq
 
         return root_node.eq
@@ -320,7 +325,8 @@ class BaseMeta(type):
         annotations = attrs.get('__annotations__', {})
         for attr, attrv in attrs.items():
             # skip annotation check for methods and functions
-            if inspect.ismethod(attrv) or inspect.isfunction(attrv):
+            print(attr, attrv)
+            if inspect.ismethod(attrv) or inspect.isfunction(attrv) or isinstance(attrv, classmethod) or isinstance(attrv, property):
                 continue
             # attr starting with _ is considered to be private, there no checks
             # are applied
@@ -359,7 +365,7 @@ class Base(metaclass=BaseMeta):
 
     def _validate_setattr_(self, name: str, value: Any) -> None:
 
-        if not name.startswith("_"): # do not check for private attrs
+        if not name.startswith("_"):  # do not check for private attrs
             if name not in self._fields and not self._config.allow_extra:
                 raise AttributeError(f"{self.__class__} doesn't have attribute name")
 
@@ -408,6 +414,59 @@ class Base(metaclass=BaseMeta):
 
         cls._generic_cache[f"{cls.__qualname__}[{_params}]"] = (ret, alias)
         return alias
+
+    def to_json(self) -> Dict[str, Any]:
+        pre_order: Dict[str, Any] = {}
+        stack: List[Tuple[Type[Base], Dict[str, Any], str]] = [(self, pre_order, "root")]
+        while stack:
+            current, current_parent, parent_key = stack.pop(0)
+            if not isinstance(current, (int, str, bool, type(None))):
+                current_parent[parent_key] = {}
+                for f in current._fields:
+                    stack.append((getattr(current, f), current_parent[parent_key], f))
+            else:
+                current_parent[parent_key] = current
+        print(stack)
+        print(pre_order)
+        return pre_order['root']
+
+    @classmethod
+    def from_json(cls, json_data) -> Base:
+        stack = []
+        post_order = []
+        print(json_data)
+
+        cls_args = {}
+        for key in json_data:
+            if key not in cls._fields:
+                raise TypeError(f"'{key}' doesn't exist in {cls.__qualname__}")
+            field_args = {}
+            stack.append((cls_args, key, json_data.get(key), cls._fields[key], field_args))
+            if  cls._fields[key] not in (int, str, bool, type(None)):
+                post_order.append((cls_args, key, cls._fields[key], field_args))
+
+        while stack:
+            parent_args, parent_key, data, type_, type_args = stack.pop(0)
+            print("DATA", data)
+            if type_ not in (int, str, bool):
+                for key in type_._fields:
+                    field_args = {}
+                    stack.append((type_args, key, data.get(key), type_._fields[key], field_args))
+                    if type_._fields[key] not in (int, str, bool, type(None)):
+                        post_order.append((type_args, field_args, key, type_._fields[key], field_args))
+            else:
+                parent_args[parent_key] = data
+            print("PARENT ARGS", parent_args)
+
+        print("--", post_order)
+        for (parent_args, parent_key, type_, type_args) in post_order:
+            print(type_args)
+            parent_args[parent_key]=type_(**type_args)
+            print("parent_args", parent_args)
+        print(cls_args)
+        return cls(**cls_args)
+
+
 
 
 T = TypeVar("T")
@@ -589,3 +648,159 @@ class TDict(Base, Generic[TK, TV]):
     def values(self):
         return self._dict.values()
 
+
+class In(Base, Generic[T]):
+    pass
+
+
+class Out(Base, Generic[T]):
+    pass
+
+
+class Res(Base, Generic[T]):
+    pass
+
+
+class Arg(Base, Generic[T]):
+    pass
+
+
+class TractionMeta(BaseMeta):
+    def __new__(cls, name, bases, attrs):
+        annotations = attrs.get('__annotations__', {})
+        # check if all attrs are in supported types
+        for attr, type_ in annotations.items():
+            # skip private attributes
+            if attr.startswith("_"):
+                continue
+            if attr not in ('uid', 'state', 'skip', 'skip_reason', 'errors', 'stats', 'details'):
+                if attr.startswith("i_"):
+                    if not TypeNode.from_type(type_) != TypeNode.from_type(In[Any]):
+                        raise TypeError(f"Attribute {attr} has to be type In[Any], but is {type_}")
+                elif attr.startswith("o_"):
+                    if not TypeNode.from_type(type_) != TypeNode.from_type(Out[Any]):
+                        raise TypeError(f"Attribute {attr} has to be type Out[Any], but is {type_}")
+                elif attr.startswith("a_"):
+                    if not TypeNode.from_type(type_) != TypeNode.from_type(Arg[Any]):
+                        raise TypeError(f"Attribute {attr} has to be type Arg[Any], but is {type_}")
+                elif attr.startswith("r_"):
+                    if not TypeNode.from_type(type_) != TypeNode.from_type(Res[Any]):
+                        raise TypeError(f"Attribute {attr} has to be type Res[Any], but is {type_}")
+                else:
+                    raise TypeError(f"Attribute {attr} has start with i_, o_, a_ or r_")
+
+        # record fields to private attribute
+        attrs["_attrs"] = attrs
+        attrs['_fields'] = {k: v for k, v in attrs.get('__annotations__', {}).items() if not k.startswith("_")}
+
+        ret = super().__new__(cls, name, bases, attrs)
+        ret = dataclasses.dataclass(ret, kw_only=True)
+        return ret
+
+
+def isodate_now() -> str:
+    """Return current datetime in iso8601 format."""
+    return "%s%s" % (datetime.datetime.utcnow().isoformat(), "Z")
+
+
+class TractionStats(Base):
+    started: str
+    finished: str
+    skipped: bool
+
+
+class TractionState(str, enum.Enum):
+    """Enum-like class to store step state."""
+
+    READY = "ready"
+    PREP = "prep"
+    RUNNING = "running"
+    FINISHED = "finished"
+    FAILED = "failed"
+    ERROR = "error"
+
+
+OnUpdateCallable = Callable[[Traction], None]
+OnErrorCallable = Callable[[Traction], None]
+
+
+class Traction(Base, metaclass=TractionMeta):
+    uid: str
+    state: str
+    skip: bool
+    skip_reason: Optional[str]
+    errors: TList[str]
+    stats: TractionStats
+    details: TList[str]
+
+    @property
+    def fullname(self) -> str:
+        """Full name of class instance."""
+        return f"{self.__class__.__qualname__}[{self.uid}]"
+
+    def run(
+        self,
+        on_update: Optional[OnUpdateCallable] = None,
+        on_error: Optional[OnErrorCallable] = None,
+    ) -> Traction:
+        _on_update: OnUpdateCallable = on_update or (lambda tr: None)
+        _on_error: OnErrorCallable = on_error or (lambda tr: None)
+        self._reset_stats()
+        if self.state == TractionState.READY:
+            self.stats.started = isodate_now()
+
+            self.state = TractionState.PREP
+            self._pre_run()
+            _on_update(self)  # type: ignore
+        try:
+            if self.state not in (TractionState.PREP, TractionState.ERROR):
+                return self
+            if not self.skip:
+                self.state = TractionState.RUNNING
+                _on_update(self)  # type: ignore
+                self._run(on_update=_on_update)
+        except TractionFailedError:
+            self.state = TractionState.FAILED
+        except Exception as e:
+            self.state = TractionState.ERROR
+            self.errors.errors["exception"] = str(e)
+            _on_error(self)
+            raise
+        else:
+            self.state = TractionState.FINISHED
+        finally:
+            self._finish_stats()
+            _on_update(self)  # type: ignore
+        return self
+
+    def _pre_run(self) -> None:
+        """Execute code needed before step run.
+
+        In this method, all neccesary preparation of data can be done.
+        It can be also used to determine if step should run or not by setting
+        self.skip to True and providing self.skip_reason string with explanation.
+        """
+        pass
+
+    def _reset_stats(self) -> None:
+        self.stats = TractionStats(
+            started=None,
+            finished=None,
+            skipped=False,
+        )
+
+    def _finish_stats(self) -> None:
+        self.stats.finished = isodate_now()
+        self.stats.skipped = self.skip
+
+    @abc.abstractmethod
+    def _run(self, on_update: OnUpdateCallable = None) -> None:  # pragma: no cover
+        """Run code of the step.
+
+        Method expects raise StepFailedError if step code fails due data error
+        (incorrect configuration or missing/wrong data). That ends with step
+        state set to failed.
+        If error occurs due to uncaught exception in this method, step state
+        will be set to error
+        """
+        raise NotImplementedError
