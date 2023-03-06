@@ -347,3 +347,20 @@ def test_base_from_json_complex():
     assert tc.c2.attr1 == "a"
     assert tc.c2.attr2 == 20
 
+
+def test_base_from_json_simple_fail1():
+    class TestC(Base):
+        foo: int
+        bar: str
+
+    with pytest.raises(TypeError):
+        tc = TestC.from_json({"foo": "a", "bar": "bar"})
+
+
+def test_base_from_json_simple_fail2():
+    class TestC(Base):
+        foo: int
+        bar: str
+
+    with pytest.raises(TypeError):
+        tc = TestC.from_json({"foo": 10, "bar": "bar", "extra": "arg"})
