@@ -20,7 +20,17 @@ class ANYMeta(abc.ABCMeta):
 
 
 class ANY(metaclass=ANYMeta):
-    pass
+    def __eq__(cls, other):
+        return True
+
+    def __ne__(cls, other):
+        return False
+
+    def __repr__(cls):
+        return "<ANY>"
+
+    def __hash__(cls):
+        return id(mcs)
 
 
 class OType:

@@ -30,6 +30,8 @@ import dataclasses
 
 from .exc import TractionFailedError
 
+from .utils import ANY
+
 Base = ForwardRef("Base")
 TList = ForwardRef("TList")
 TDict = ForwardRef("TDict")
@@ -223,9 +225,9 @@ class TypeNode:
             # check types only of both types are not union
             # otherwise equality was already decided by check above
 
-            print("EQ", n1_type, n2_type)
+            print("EQ", n1_type, n2_type, n1_type == n2_type)
             if n1_type != Union and n2_type != Union:
-                ch_eq &= n1_type == n2_type or issubclass(
+                ch_eq &= n1_type == n2_type or getattr(n1_type, "_orig_cls", False)  == getattr(n2_type, "_orig_cls", True) or issubclass(
                     n1_type, n2_type
                 )
             cmp_node.eq = ch_eq
@@ -359,6 +361,7 @@ class Base(metaclass=BaseMeta):
     _fields: ClassVar[Dict[str, Any]]
     _generic_cache: ClassVar[Dict[str, Type[Any]]] = {}
     _params: ClassVar[List[Any]] = []
+    _orig_cls: Type[Any] = None
 
     def _no_validate_setattr_(self, name: str, value: Any) -> None:
         return super().__setattr__(name, value)
@@ -367,7 +370,7 @@ class Base(metaclass=BaseMeta):
 
         if not name.startswith("_"):  # do not check for private attrs
             if name not in self._fields and not self._config.allow_extra:
-                raise AttributeError(f"{self.__class__} doesn't have attribute name")
+                raise AttributeError(f"{self.__class__} doesn't have attribute {name}")
 
             vtype = value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
             tt1 = TypeNode.from_type(vtype)
@@ -409,6 +412,7 @@ class Base(metaclass=BaseMeta):
             kwds["__annotations__"][attr] = new_type
 
         kwds["_params"] = _params
+        kwds["_orig_cls"] = cls
         ret = meta(f"{cls.__qualname__}[{param}]", tuple(bases), kwds)
         alias = GenericAlias(ret, param)
 
@@ -426,8 +430,6 @@ class Base(metaclass=BaseMeta):
                     stack.append((getattr(current, f), current_parent[parent_key], f))
             else:
                 current_parent[parent_key] = current
-        print(stack)
-        print(pre_order)
         return pre_order['root']
 
     @classmethod
@@ -649,11 +651,12 @@ class TDict(Base, Generic[TK, TV]):
         return self._dict.values()
 
 
-class In(Base, Generic[T]):
-    pass
 
 
 class Out(Base, Generic[T]):
+    data: T
+
+class In(Out[T], Generic[T]):
     pass
 
 
@@ -675,17 +678,17 @@ class TractionMeta(BaseMeta):
                 continue
             if attr not in ('uid', 'state', 'skip', 'skip_reason', 'errors', 'stats', 'details'):
                 if attr.startswith("i_"):
-                    if not TypeNode.from_type(type_) != TypeNode.from_type(In[Any]):
-                        raise TypeError(f"Attribute {attr} has to be type In[Any], but is {type_}")
+                    if TypeNode.from_type(type_) != TypeNode.from_type(In[ANY]):
+                        raise TypeError(f"Attribute {attr} has to be type In[ANY], but is {type_}")
                 elif attr.startswith("o_"):
-                    if not TypeNode.from_type(type_) != TypeNode.from_type(Out[Any]):
-                        raise TypeError(f"Attribute {attr} has to be type Out[Any], but is {type_}")
+                    if TypeNode.from_type(type_) != TypeNode.from_type(Out[ANY]):
+                        raise TypeError(f"Attribute {attr} has to be type Out[ANY], but is {type_}")
                 elif attr.startswith("a_"):
-                    if not TypeNode.from_type(type_) != TypeNode.from_type(Arg[Any]):
-                        raise TypeError(f"Attribute {attr} has to be type Arg[Any], but is {type_}")
+                    if TypeNode.from_type(type_) != TypeNode.from_type(Arg[ANY]):
+                        raise TypeError(f"Attribute {attr} has to be type Arg[ANY], but is {type_}")
                 elif attr.startswith("r_"):
-                    if not TypeNode.from_type(type_) != TypeNode.from_type(Res[Any]):
-                        raise TypeError(f"Attribute {attr} has to be type Res[Any], but is {type_}")
+                    if TypeNode.from_type(type_) != TypeNode.from_type(Res[ANY]):
+                        raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
                 else:
                     raise TypeError(f"Attribute {attr} has start with i_, o_, a_ or r_")
 
