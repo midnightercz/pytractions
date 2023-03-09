@@ -1,8 +1,8 @@
-from typing import List, Dict, Union, Optional, TypeVar, Generic
+from typing import List, Dict, Union, Optional, TypeVar, Generic, get_args
 
 import pytest
 
-from pytraction.base import Base, JSONIncompatibleError, TList, TDict
+from pytraction.base import Base, JSONIncompatibleError, TList, TDict, TypeNode
 
 # Jsonable test cases
 
@@ -23,6 +23,7 @@ def test_base_list_new_ok_generic():
     class TestC(Base, Generic[T]):
         l: TList[T]
 
+    print(id(T))
     tc = TestC[int](l=TList[int]([10]))
     assert tc.l._list == [10]
 

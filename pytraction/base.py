@@ -78,20 +78,29 @@ class TypeNode:
     def __str__(self):
         return "<TypeNode type=%s>" % self.type_
 
-    def __init__(self, type_):
+    def __init__(self, type_, subclass_check=True):
         self.type_ = type_
+        self.subclass_check = subclass_check
         self.children = []
 
     @classmethod
-    def from_type(cls, type_):
+    def from_type(cls, type_, subclass_check=True):
         """Create TypeNode from provided type)."""
 
-        root = cls(type_=type_)
+        root = cls(type_=type_, subclass_check=subclass_check)
         current = root
         stack = []
         while True:
+            #print("FROM TYPE", current, dir(current.type_))
             if hasattr(current.type_, "__args__"):
                 for arg in current.type_.__args__:
+                    #print("ARG", arg)
+                    n = cls(type_=arg)
+                    stack.append(n)
+                    current.children.append(n)
+            elif hasattr(current.type_, "_params"):
+                for arg in current.type_._params:
+                    #print("ARG", arg)
                     n = cls(type_=arg)
                     stack.append(n)
                     current.children.append(n)
@@ -100,16 +109,32 @@ class TypeNode:
             current = stack.pop()
         return root
 
-    def replace_params(self, params_map):
-        """Replace Typevars in TypeNode structure with values from provided mapping."""
-
+    def post_order(self):
         stack = [(self, 0, None)]
+        post_order = []
         while stack:
             current, parent_index, current_parent = stack.pop(0)
             for n, ch in enumerate(current.children):
                 stack.insert(0, (ch, n, current))
+            post_order.insert(0, (current, parent_index, current_parent))
+        return post_order
+
+    def replace_params(self, params_map):
+        """Replace Typevars in TypeNode structure with values from provided mapping."""
+
+        stack = [(self, 0, None)]
+        #print("REPLACE PARAMS", params_map)
+        #print([x[0].type_ for x in self.post_order()])
+        #print("--")
+        while stack:
+            current, parent_index, current_parent = stack.pop(0)
+            #print(current_parent, f"[{parent_index}]", current.type_)
+            #print(id(current.type_), [id(k) for k in params_map.keys()])
+            for n, ch in enumerate(current.children):
+                stack.insert(0, (ch, n, current))
             if type(current.type_) == TypeVar:
                 if current.type_ in params_map:
+                    #print("replacing", current.type_, "with", params_map[current.type_])
                     current.type_ = params_map[current.type_]
 
     def to_type(self, types_cache={}):
@@ -133,12 +158,13 @@ class TypeNode:
                     type_ = type(node.type_)
 
                 children_types = tuple([x.type_ for x in node.children])
+                children_type_ids = tuple([id(x.type_) for x in node.children])
 
-                if f"{type_.__qualname__}[{children_types}]" in types_cache:
-                    node.type_ = types_cache[f"{type_.__qualname__}[{children_types}]"][0]
+                if f"{type_.__qualname__}[{children_type_ids}]" in types_cache:
+                    node.type_ = types_cache[f"{type_.__qualname__}[{children_type_ids}]"][0]
                 else:
                     type_.__class_getitem__(tuple([x.type_ for x in node.children]))
-                    node.type_ = types_cache[f"{type_.__qualname__}[{children_types}]"][0]
+                    node.type_ = types_cache[f"{type_.__qualname__}[{children_type_ids}]"][0]
 
             if not parent:
                 continue
@@ -225,11 +251,16 @@ class TypeNode:
             # check types only of both types are not union
             # otherwise equality was already decided by check above
 
-            print("EQ", n1_type, n2_type, n1_type == n2_type)
+            orig_cls2 = getattr(n2_type, "_orig_cls", True)
+            orig_cls1 = getattr(n1_type, "_orig_cls", False)
+            #if orig_cls1 and orig_cls2:
+            #    #print("EQ SUBCLS", issubclass(orig_cls1, orig_cls2), issubclass(orig_cls2, orig_cls1))
+            print("EQ", n1_type, n2_type, orig_cls1, orig_cls2, id(orig_cls1), id(orig_cls2), n1_type == n2_type, orig_cls1 == orig_cls2)
             if n1_type != Union and n2_type != Union:
-                ch_eq &= n1_type == n2_type or getattr(n1_type, "_orig_cls", False)  == getattr(n2_type, "_orig_cls", True) or issubclass(
-                    n1_type, n2_type
-                )
+                ch_eq &= (n1_type == n2_type or \
+                          orig_cls1  == orig_cls2 or\
+                          (self.subclass_check and issubclass(n1_type, n2_type)) or \
+                          (self.subclass_check and orig_cls1 and orig_cls2 and issubclass(orig_cls1, orig_cls2)))
             cmp_node.eq = ch_eq
 
         return node.eq
@@ -301,6 +332,7 @@ class TypeNode:
 class BaseMeta(type):
     def __new__(cls, name, bases, attrs):
 
+        #print("BASE META", name)
         if '_config' in attrs:
             assert TypeNode.from_type(type(attrs["_config"])) == TypeNode(BaseConfig)
             config = attrs['_config']
@@ -327,7 +359,7 @@ class BaseMeta(type):
         annotations = attrs.get('__annotations__', {})
         for attr, attrv in attrs.items():
             # skip annotation check for methods and functions
-            print(attr, attrv)
+            #print(attr, attrv)
             if inspect.ismethod(attrv) or inspect.isfunction(attrv) or isinstance(attrv, classmethod) or isinstance(attrv, property):
                 continue
             # attr starting with _ is considered to be private, there no checks
@@ -349,16 +381,65 @@ class BaseMeta(type):
 
         # record fields to private attribute
         attrs["_attrs"] = attrs
-        attrs['_fields'] = {k: v for k, v in attrs.get('__annotations__', {}).items() if not k.startswith("_")}
+        fields = {}
+        all_annotations = {}
+        defaults = {}
+        for base in bases:
+            for f, ft in getattr(base, "_fields", {}).items():
+                fields[f] = ft
+
+        #print("----")
+        #print("attrs", attrs)
+        #print("----")
+        #print("fields", fields)
+        for base in bases:
+            #print(dir(base))
+            for f, ft in fields.items():
+                if hasattr(base, "__dataclass_fields__") and f in base.__dataclass_fields__:
+                    #print(base.__dataclass_fields__[f])
+                    if type(base.__dataclass_fields__[f].default) != dataclasses._MISSING_TYPE:
+                        #print("1 default")
+                        defaults[f] = dataclasses.field(default=base.__dataclass_fields__[f].default)
+                    elif type(base.__dataclass_fields__[f].default_factory) != dataclasses._MISSING_TYPE:
+                        #print("2 default")
+                        defaults[f] = dataclasses.field(default_factory=base.__dataclass_fields__[f].default_factory)
+
+            for f, ft in getattr(base, "__annotations__", {}).items():
+                if f in fields:
+                    all_annotations[f] = ft
+
+        fields.update({k: v for k, v in attrs.get('__annotations__', {}).items() if not k.startswith("_")})
+        all_annotations.update(annotations)
+        attrs["__annotations__"] = all_annotations
+
+        for default, defval in defaults.items():
+            if default not in attrs:
+                attrs[default] = defval
+        #print("----")
+        #for k,v in attrs.items():
+        #    #print(k," ",v)
+        #    #print("--")
+        #print("----")
+
+        #print("all annotations", all_annotations)
+        #print("attrs", attrs)
+        #print("---")
+        #print("defaults", defaults)
+
+        attrs['_fields'] = fields
+        #print("ATTRS", attrs)
 
         ret = super().__new__(cls, name, bases, attrs)
+        #print("META ret dir", dir(ret))
         ret = dataclasses.dataclass(ret, kw_only=True)
+        #print("META ret match_args", ret.__match_args__)
+        #print("META ret parameters", ret.__parameters__ if hasattr(ret, "__parameters__") else None)
         return ret
 
 
 class Base(metaclass=BaseMeta):
     _config: ClassVar[BaseConfig] = BaseConfig()
-    _fields: ClassVar[Dict[str, Any]]
+    _fields: ClassVar[Dict[str, Any]] = {}
     _generic_cache: ClassVar[Dict[str, Type[Any]]] = {}
     _params: ClassVar[List[Any]] = []
     _orig_cls: Type[Any] = None
@@ -367,6 +448,7 @@ class Base(metaclass=BaseMeta):
         return super().__setattr__(name, value)
 
     def _validate_setattr_(self, name: str, value: Any) -> None:
+        print("base validate setattr", name, value)
 
         if not name.startswith("_"):  # do not check for private attrs
             if name not in self._fields and not self._config.allow_extra:
@@ -380,10 +462,17 @@ class Base(metaclass=BaseMeta):
         return super().__setattr__(name, value)
 
     def __class_getitem__(cls, param):
+        #print("GET ITEM", cls, param)
         _params = param if isinstance(param, tuple) else (param,)
+
+        # param ids for caching as TypeVars are class instances
+        # therefore has to compare with id() to get good param replacement
+        #
+        _param_ids = tuple([id(p) for p in param]) if isinstance(param, tuple) else (id(param),)
         # Create new class to have its own parametrized fields
-        if f"{cls.__qualname__}[{_params}]" in cls._generic_cache:
-            ret, alias = cls._generic_cache[f"{cls.__qualname__}[{_params}]"]
+        if f"{cls.__qualname__}[{_param_ids}]" in cls._generic_cache:
+            ret, alias = cls._generic_cache[f"{cls.__qualname__}[{_param_ids}]"]
+            #print("CLASS ITEM CACHED", alias)
             return alias
         bases = [x for x in resolve_bases([cls] + list(cls.__bases__)) if x is not Generic]
         attrs = {k: v for k, v in cls._attrs.items() if k not in ("_attrs", "_fields")}
@@ -394,10 +483,14 @@ class Base(metaclass=BaseMeta):
         # Fields needs to be copied to specific subclass, otherwise
         # it's stays shared with base class
         new_fields = {}
+        #print("CLASS GET ITEM FIELDS")
         for attr, type_ in cls._fields.items():
+            print("FIELD", attr, type_)
             tn = TypeNode.from_type(type_)
             tn.replace_params(_params_map)
+            print("NEW TYPE")
             new_type = tn.to_type(types_cache=cls._generic_cache)
+            print(new_type)
             if hasattr(new_type, "_params"):
                 cache_key = f"{new_type.__qualname__}[{new_type._params}]"
             if new_type != type_:
@@ -409,14 +502,18 @@ class Base(metaclass=BaseMeta):
             if not tn.json_compatible():
                 raise JSONIncompatibleError(f"Attribute  {attr}: {new_type} is not json compatible")
             new_fields[attr] = new_type
+            #print("KWDS", kwds)
             kwds["__annotations__"][attr] = new_type
 
         kwds["_params"] = _params
         kwds["_orig_cls"] = cls
         ret = meta(f"{cls.__qualname__}[{param}]", tuple(bases), kwds)
+        #print("GETITEM DIR RET", dir(ret))
         alias = GenericAlias(ret, param)
+        #print("GETITEM DIR ALIAS", dir(alias))
 
-        cls._generic_cache[f"{cls.__qualname__}[{_params}]"] = (ret, alias)
+        cls._generic_cache[f"{cls.__qualname__}[{_param_ids}]"] = (ret, alias)
+        #print("CLASS ITEM", alias)
         return alias
 
     def to_json(self) -> Dict[str, Any]:
@@ -436,7 +533,7 @@ class Base(metaclass=BaseMeta):
     def from_json(cls, json_data) -> Base:
         stack = []
         post_order = []
-        print(json_data)
+        #print(json_data)
 
         cls_args = {}
         for key in json_data:
@@ -449,7 +546,7 @@ class Base(metaclass=BaseMeta):
 
         while stack:
             parent_args, parent_key, data, type_, type_args = stack.pop(0)
-            print("DATA", data)
+            #print("DATA", data)
             if type_ not in (int, str, bool):
                 for key in type_._fields:
                     field_args = {}
@@ -458,14 +555,14 @@ class Base(metaclass=BaseMeta):
                         post_order.append((type_args, field_args, key, type_._fields[key], field_args))
             else:
                 parent_args[parent_key] = data
-            print("PARENT ARGS", parent_args)
+            #print("PARENT ARGS", parent_args)
 
-        print("--", post_order)
+        #print("--", post_order)
         for (parent_args, parent_key, type_, type_args) in post_order:
-            print(type_args)
+            #print(type_args)
             parent_args[parent_key]=type_(**type_args)
-            print("parent_args", parent_args)
-        print(cls_args)
+            #print("parent_args", parent_args)
+        #print(cls_args)
         return cls(**cls_args)
 
 
@@ -479,7 +576,7 @@ TV = TypeVar("TV")
 class TList(Base, Generic[T]):
     _list: List[T]
 
-    def __init__(self, iterable):
+    def __init__(self, iterable=[]):
         self._list = []
         for item in iterable:
             if TypeNode.from_type(type(item)) != TypeNode.from_type(self._params[0]):
@@ -528,8 +625,10 @@ class TList(Base, Generic[T]):
         return self._list.count(value)
 
     def extend(self, iterable):
+        #print("--EQ--")
         if TypeNode.from_type(type(iterable)) != TypeNode.from_type(type(self)):
-            raise TypeError(f"Cannot extend list {type(self)} with {type(iterable)}")
+            #print(self.__class__.__name__)
+            raise TypeError(f"Cannot extend list {self.__class__.__name__} with {iterable.__class__.__name__}")
         self._list.extend(iterable._list)
 
     def index(self, value, start=0, stop=-1):
@@ -652,13 +751,16 @@ class TDict(Base, Generic[TK, TV]):
 
 
 
+class In(Base, Generic[T]):
+    _ref: Optional[T] = None
+    
 
-class Out(Base, Generic[T]):
+
+class Out(In, Generic[T]):
     data: T
 
-class In(Out[T], Generic[T]):
+class NoData(In, Generic[T]):
     pass
-
 
 class Res(Base, Generic[T]):
     pass
@@ -678,16 +780,16 @@ class TractionMeta(BaseMeta):
                 continue
             if attr not in ('uid', 'state', 'skip', 'skip_reason', 'errors', 'stats', 'details'):
                 if attr.startswith("i_"):
-                    if TypeNode.from_type(type_) != TypeNode.from_type(In[ANY]):
+                    if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(In[ANY]):
                         raise TypeError(f"Attribute {attr} has to be type In[ANY], but is {type_}")
                 elif attr.startswith("o_"):
-                    if TypeNode.from_type(type_) != TypeNode.from_type(Out[ANY]):
+                    if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(Out[ANY]):
                         raise TypeError(f"Attribute {attr} has to be type Out[ANY], but is {type_}")
                 elif attr.startswith("a_"):
-                    if TypeNode.from_type(type_) != TypeNode.from_type(Arg[ANY]):
+                    if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(Arg[ANY]):
                         raise TypeError(f"Attribute {attr} has to be type Arg[ANY], but is {type_}")
                 elif attr.startswith("r_"):
-                    if TypeNode.from_type(type_) != TypeNode.from_type(Res[ANY]):
+                    if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(Res[ANY]):
                         raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
                 else:
                     raise TypeError(f"Attribute {attr} has start with i_, o_, a_ or r_")
@@ -696,8 +798,16 @@ class TractionMeta(BaseMeta):
         attrs["_attrs"] = attrs
         attrs['_fields'] = {k: v for k, v in attrs.get('__annotations__', {}).items() if not k.startswith("_")}
 
+        for f, ftype in attrs["_fields"].items():
+            if not f.startswith("i_"):
+                continue
+            if f not in attrs:
+                attrs[f] = NoData[ftype._params]()
+
+        attrs['_fields'] = {k: v for k, v in attrs.get('__annotations__', {}).items() if not k.startswith("_")}
+
         ret = super().__new__(cls, name, bases, attrs)
-        ret = dataclasses.dataclass(ret, kw_only=True)
+        #ret = dataclasses.dataclass(ret, kw_only=True)
         return ret
 
 
@@ -707,9 +817,9 @@ def isodate_now() -> str:
 
 
 class TractionStats(Base):
-    started: str
-    finished: str
-    skipped: bool
+    started: str = ""
+    finished: str = ""
+    skipped: bool = False
 
 
 class TractionState(str, enum.Enum):
@@ -729,12 +839,55 @@ OnErrorCallable = Callable[[Traction], None]
 
 class Traction(Base, metaclass=TractionMeta):
     uid: str
-    state: str
-    skip: bool
-    skip_reason: Optional[str]
-    errors: TList[str]
-    stats: TractionStats
-    details: TList[str]
+    state: str = "ready"
+    skip: bool = False
+    skip_reason: Optional[str] = ""
+    errors: TList[str] = dataclasses.field(default_factory=TList[str])
+    stats: TractionStats = dataclasses.field(default_factory=TractionStats)
+    details: TList[str] = dataclasses.field(default_factory=TList[str])
+
+    def __getattribute_orig__(self, name: str) -> Any:
+        return super().__getattribute__(name)
+
+    def __getattribute__(self, name: str) -> Any:
+        if name.startswith("i_"):
+            if name not in super().__getattribute__("_fields"):
+                _class = super().__getattribute__("__class__")
+                raise AttributeError(f"{_class} doesn't have attribute {name}")
+            print("GET ATTR", name, super().__getattribute__(name))
+            if super().__getattribute__(name)._ref:
+                print("RETURN ref", super().__getattribute__(name)._ref)
+                return super().__getattribute__(name)._ref
+            else:
+                return NoData[super().__getattribute__(name)._params]()
+                #return super().__getattribute__(name)
+        return super().__getattribute__(name)
+            
+
+    def _validate_setattr_(self, name: str, value: Any) -> None:
+        #print("FIELDS", self._fields)
+        if not name.startswith("_"):  # do not check for private attrs
+            if name not in self._fields and not self._config.allow_extra:
+                raise AttributeError(f"{self.__class__} doesn't have attribute {name}")
+        if name.startswith("i_"):
+            vtype = value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
+            tt1 = TypeNode.from_type(vtype)
+            tt2 = TypeNode.from_type(self._fields[name])
+            if tt1 != tt2:
+                raise TypeError(f"Cannot set attribute {self.__class__}.{name} to type {vtype}, expected {self._fields[name]}")
+            print("---> set attr", type(getattr(self, name)))
+            #print("--- ", TypeNode.from_type(type(getattr(self, name)), subclass_check=False) == TypeNode.from_type(NoData[ANY]))
+            #print("--- ", TypeNode.from_type(type(getattr(self, name)), subclass_check=False) == TypeNode.from_type(NoData[ANY]))
+
+            if TypeNode.from_type(type(getattr(self, name)), subclass_check=False) != TypeNode.from_type(NoData[ANY]):
+                raise AttributeError(f"Input {name} is already connected")
+            self.__getattribute_orig__(name)._ref = value
+            print("-----")
+            print(">>>>>", getattr(self, name))
+            return
+
+        super().__setattr__(name, value)
+        print("-----")
 
     @property
     def fullname(self) -> str:
