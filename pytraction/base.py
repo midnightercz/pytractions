@@ -123,18 +123,12 @@ class TypeNode:
         """Replace Typevars in TypeNode structure with values from provided mapping."""
 
         stack = [(self, 0, None)]
-        #print("REPLACE PARAMS", params_map)
-        #print([x[0].type_ for x in self.post_order()])
-        #print("--")
         while stack:
             current, parent_index, current_parent = stack.pop(0)
-            #print(current_parent, f"[{parent_index}]", current.type_)
-            #print(id(current.type_), [id(k) for k in params_map.keys()])
             for n, ch in enumerate(current.children):
                 stack.insert(0, (ch, n, current))
             if type(current.type_) == TypeVar:
                 if current.type_ in params_map:
-                    #print("replacing", current.type_, "with", params_map[current.type_])
                     current.type_ = params_map[current.type_]
 
     def to_type(self, types_cache={}):
@@ -163,8 +157,12 @@ class TypeNode:
                 if f"{type_.__qualname__}[{children_type_ids}]" in types_cache:
                     node.type_ = types_cache[f"{type_.__qualname__}[{children_type_ids}]"][0]
                 else:
-                    type_.__class_getitem__(tuple([x.type_ for x in node.children]))
-                    node.type_ = types_cache[f"{type_.__qualname__}[{children_type_ids}]"][0]
+                    print("TYPE", type_)
+                    if type_ == Union:
+                        node.type_ = Union[tuple([x.type_ for x in node.children])]
+                    else:
+                        type_.__class_getitem__(tuple([x.type_ for x in node.children]))
+                        node.type_ = types_cache[f"{type_.__qualname__}[{children_type_ids}]"][0]
 
             if not parent:
                 continue
@@ -253,13 +251,10 @@ class TypeNode:
 
             orig_cls2 = getattr(n2_type, "_orig_cls", True)
             orig_cls1 = getattr(n1_type, "_orig_cls", False)
-            #if orig_cls1 and orig_cls2:
-            #    #print("EQ SUBCLS", issubclass(orig_cls1, orig_cls2), issubclass(orig_cls2, orig_cls1))
-            print("EQ", n1_type, n2_type, orig_cls1, orig_cls2, id(orig_cls1), id(orig_cls2), n1_type == n2_type, orig_cls1 == orig_cls2)
             if n1_type != Union and n2_type != Union:
-                ch_eq &= (n1_type == n2_type or \
-                          orig_cls1  == orig_cls2 or\
-                          (self.subclass_check and issubclass(n1_type, n2_type)) or \
+                ch_eq &= (n1_type == n2_type or
+                          orig_cls1 == orig_cls2 or
+                          (self.subclass_check and issubclass(n1_type, n2_type)) or
                           (self.subclass_check and orig_cls1 and orig_cls2 and issubclass(orig_cls1, orig_cls2)))
             cmp_node.eq = ch_eq
 
@@ -750,17 +745,18 @@ class TDict(Base, Generic[TK, TV]):
         return self._dict.values()
 
 
-
 class In(Base, Generic[T]):
     _ref: Optional[T] = None
-    
 
 
 class Out(In, Generic[T]):
-    data: T
+    data: Optional[T] = None
+    _owner: Optional[Traction] = dataclasses.field(repr=False, init=False, default=None)
+
 
 class NoData(In, Generic[T]):
     pass
+
 
 class Res(Base, Generic[T]):
     pass
@@ -795,16 +791,25 @@ class TractionMeta(BaseMeta):
                     raise TypeError(f"Attribute {attr} has start with i_, o_, a_ or r_")
 
         # record fields to private attribute
+        print(attrs)
         attrs["_attrs"] = attrs
         attrs['_fields'] = {k: v for k, v in attrs.get('__annotations__', {}).items() if not k.startswith("_")}
 
         for f, ftype in attrs["_fields"].items():
-            if not f.startswith("i_"):
-                continue
-            if f not in attrs:
+            #if not f.startswith("i_"):
+            #    continue
+            #if f not in attrs:
+            #    attrs[f] = NoData[ftype._params]()
+
+            # Do not include outputs in init
+            if f.startswith("o_") and f not in attrs:
+                attrs[f] = dataclasses.field(init=False, default_factory=Out[ftype._params])
+            # Set all inputs to NoData after as default
+            if f.startswith("i_") and f not in attrs:
                 attrs[f] = NoData[ftype._params]()
 
         attrs['_fields'] = {k: v for k, v in attrs.get('__annotations__', {}).items() if not k.startswith("_")}
+
 
         ret = super().__new__(cls, name, bases, attrs)
         #ret = dataclasses.dataclass(ret, kw_only=True)
@@ -860,12 +865,9 @@ class Traction(Base, metaclass=TractionMeta):
                 return super().__getattribute__(name)._ref
             else:
                 return NoData[super().__getattribute__(name)._params]()
-                #return super().__getattribute__(name)
         return super().__getattribute__(name)
-            
 
     def _validate_setattr_(self, name: str, value: Any) -> None:
-        #print("FIELDS", self._fields)
         if not name.startswith("_"):  # do not check for private attrs
             if name not in self._fields and not self._config.allow_extra:
                 raise AttributeError(f"{self.__class__} doesn't have attribute {name}")
@@ -875,19 +877,27 @@ class Traction(Base, metaclass=TractionMeta):
             tt2 = TypeNode.from_type(self._fields[name])
             if tt1 != tt2:
                 raise TypeError(f"Cannot set attribute {self.__class__}.{name} to type {vtype}, expected {self._fields[name]}")
-            print("---> set attr", type(getattr(self, name)))
+            #print("---> set attr", type(getattr(self, name)))
             #print("--- ", TypeNode.from_type(type(getattr(self, name)), subclass_check=False) == TypeNode.from_type(NoData[ANY]))
             #print("--- ", TypeNode.from_type(type(getattr(self, name)), subclass_check=False) == TypeNode.from_type(NoData[ANY]))
 
             if TypeNode.from_type(type(getattr(self, name)), subclass_check=False) != TypeNode.from_type(NoData[ANY]):
                 raise AttributeError(f"Input {name} is already connected")
             self.__getattribute_orig__(name)._ref = value
-            print("-----")
-            print(">>>>>", getattr(self, name))
             return
 
+        # elif name.startswith("o_"):
+        #     vtype = value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
+        #     tt1 = TypeNode.from_type(vtype)
+        #     tt2 = TypeNode.from_type(self._fields[name])
+        #     if tt1 != tt2:
+        #         raise TypeError(f"Cannot set attribute {self.__class__}.{name} to type {vtype}, expected {self._fields[name]}")
+        #
+        #     if TypeNode.from_type(type(getattr(self, name)), subclass_check=False) != TypeNode.from_type(NoData[ANY]):
+        #         raise AttributeError(f"Input {name} is already connected")
+        #     self.__getattribute_orig__(name)._ref = value
+
         super().__setattr__(name, value)
-        print("-----")
 
     @property
     def fullname(self) -> str:

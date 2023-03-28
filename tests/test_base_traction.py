@@ -2,13 +2,27 @@ from typing import List, Dict, Union, Optional, TypeVar, Generic
 
 import pytest
 
-from pytraction.base import Traction, JSONIncompatibleError, TList, TDict, Out, In, Arg, Res, ANY, Base, NoData, TypeNode
+from pytraction.base import (
+    Traction,
+    JSONIncompatibleError,
+    TList,
+    TDict,
+    Out,
+    In,
+    Arg,
+    Res,
+    ANY,
+    Base,
+    NoData,
+    TypeNode,
+)
 
 # Jsonable test cases
 
 T = TypeVar("T")
 
 from dataclasses import field
+
 
 def test_traction_ok_args_1():
     class TTest(Traction):
@@ -20,24 +34,28 @@ def test_traction_ok_args_1():
 
 def test_traction_wrong_args_1():
     with pytest.raises(TypeError):
+
         class TTest(Traction):
             i_in1: Out[int]
 
 
 def test_traction_wrong_args_2():
     with pytest.raises(TypeError):
+
         class TTest(Traction):
             o_out1: In[int]
 
 
 def test_traction_wrong_args_3():
     with pytest.raises(TypeError):
+
         class TTest(Traction):
             a_arg1: In[int]
 
 
 def test_traction_wrong_args_4():
     with pytest.raises(TypeError):
+
         class TTest(Traction):
             r_res1: In[int]
 
@@ -77,3 +95,27 @@ def test_traction_inputs_read_set():
     assert t.i_in1.data == 10
 
 
+def test_traction_to_json():
+    class TTest(Traction):
+        i_in1: In[int] = In[int]()
+
+    o: Out[int] = Out[int](data=10)
+    t = TTest(uid="1", i_in1=o)
+    assert t.to_json() == {
+        "details": {},
+        "errors": {},
+        "i_in1": {"data": 10},
+        "skip": False,
+        "skip_reason": "",
+        "state": "ready",
+        "stats": {"finished": "", "skipped": False, "started": ""},
+        "uid": '1',
+    }
+
+
+def test_traction_outputs_no_init():
+    class TTest(Traction):
+        o_out1: Out[int]
+
+    t = TTest(uid="1")
+    assert t.o_out1 == Out[int]()
