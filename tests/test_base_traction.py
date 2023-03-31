@@ -119,3 +119,68 @@ def test_traction_outputs_no_init():
 
     t = TTest(uid="1")
     assert t.o_out1 == Out[int]()
+
+
+def test_traction_outputs_no_init_custom_default():
+    class TTest(Traction):
+        o_out1: Out[int] = Out[int](data=10)
+
+    t = TTest(uid="1")
+    assert t.o_out1 == Out[int](data=10)
+
+
+
+def test_traction_outputs_no_init_custom_default():
+    class TTest(Traction):
+        o_out1: Out[int] = Out[int](data=10)
+
+    t = TTest(uid="1")
+    assert t.o_out1 == Out[int](data=10)
+
+
+def test_traction_chain():
+    class TTest1(Traction):
+        o_out1: Out[int]
+
+        def _run(self, on_update) -> None:  # pragma: no cover
+            self.o_out1.data = 20
+
+    class TTest2(Traction):
+        i_in1: In[int]
+        o_out1: Out[int]
+
+        def _run(self, on_update) -> None:  # pragma: no cover
+            self.o_out1.data = self.i_in1.data + 10
+
+    t1 = TTest1(uid="1")
+    t2 = TTest2(uid="1", i_in1=t1.o_out1)
+
+    t1.run()
+    t2.run()
+    assert t2.o_out1.data == 30
+
+
+def test_traction_chain_in_to_out():
+    class TTest1(Traction):
+        o_out1: Out[int]
+
+        def _run(self, on_update) -> None:  # pragma: no cover
+            self.o_out1.data = 20
+
+    class TTest2(Traction):
+        i_in1: In[int]
+        o_out1: Out[int]
+
+        def _run(self, on_update) -> None:  # pragma: no cover
+            self.o_out1 = self.i_in1
+
+    t1 = TTest1(uid="1")
+    t2 = TTest2(uid="1", i_in1=t1.o_out1)
+
+    t1.run()
+    t2.run()
+    assert t2.o_out1.data == 20
+    t1.o_out1.data = 30
+
+    assert t2.i_in1.data == 30
+

@@ -751,7 +751,7 @@ class In(Base, Generic[T]):
 
 class Out(In, Generic[T]):
     data: Optional[T] = None
-    _owner: Optional[Traction] = dataclasses.field(repr=False, init=False, default=None)
+    _owner: Optional[Traction] = dataclasses.field(repr=False, init=False, default=None, compare=False)
 
 
 class NoData(In, Generic[T]):
@@ -886,16 +886,22 @@ class Traction(Base, metaclass=TractionMeta):
             self.__getattribute_orig__(name)._ref = value
             return
 
-        # elif name.startswith("o_"):
-        #     vtype = value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
-        #     tt1 = TypeNode.from_type(vtype)
-        #     tt2 = TypeNode.from_type(self._fields[name])
-        #     if tt1 != tt2:
-        #         raise TypeError(f"Cannot set attribute {self.__class__}.{name} to type {vtype}, expected {self._fields[name]}")
-        #
-        #     if TypeNode.from_type(type(getattr(self, name)), subclass_check=False) != TypeNode.from_type(NoData[ANY]):
-        #         raise AttributeError(f"Input {name} is already connected")
-        #     self.__getattribute_orig__(name)._ref = value
+        elif name.startswith("o_"):
+            vtype = value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
+            tt1 = TypeNode.from_type(vtype)
+            tt2 = TypeNode.from_type(self._fields[name])
+            if tt1 != tt2:
+                raise TypeError(f"Cannot set attribute {self.__class__}.{name} to type {vtype}, expected {self._fields[name]}")
+
+            if not hasattr(self, name):
+                # output is set for the first time
+                super().__setattr__(name, value)
+
+            self.__getattribute_orig__(name)._owner = self
+            # Do not overwrite whole output container, rather just copy update data
+            self.__getattribute_orig__(name).data = value.data
+            return
+            
 
         super().__setattr__(name, value)
 
@@ -950,8 +956,8 @@ class Traction(Base, metaclass=TractionMeta):
 
     def _reset_stats(self) -> None:
         self.stats = TractionStats(
-            started=None,
-            finished=None,
+            started="",
+            finished="",
             skipped=False,
         )
 
