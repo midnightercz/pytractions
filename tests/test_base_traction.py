@@ -265,5 +265,4 @@ def test_tractor_members_order() -> None:
         if k.startswith("t_"):
             tractions.append(k)
 
-
     assert False

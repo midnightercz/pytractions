@@ -724,6 +724,10 @@ class Arg(Base, Generic[T]):
 class TractionMeta(BaseMeta):
 
     @classmethod
+    def _before_new(cls, attrs):
+        pass
+
+    @classmethod
     def _attribute_check(cls, attr, type_):
         if attr not in ('uid', 'state', 'skip', 'skip_reason', 'errors', 'stats', 'details'):
             if attr.startswith("i_"):
@@ -763,6 +767,8 @@ class TractionMeta(BaseMeta):
                 attrs[f] = dataclasses.field(default_factory=NoData[ftype._params])
 
         attrs['_fields'] = {k: v for k, v in attrs.get('__annotations__', {}).items() if not k.startswith("_")}
+
+        cls._before_new(attrs)
 
         ret = super().__new__(cls, name, bases, attrs)
         return ret
@@ -992,6 +998,28 @@ class TractorMeta(TractionMeta):
                     raise TypeError(f"Attribute {attr} has to be type Traction, but is {type_}")
             else:
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or t_")
+
+    @classmethod
+    def _before_new(cls, attrs):
+        outputs_map = []
+        for f in attrs['_fields']:
+            if not f.startswith("t_"):
+                continue
+
+            print("--", f)
+            traction = attrs[f]
+            for tf  in traction._fields:
+                tfo = getattr(traction, tf)
+                if tf.startswith("o_"):
+                    print(tf)
+                    outputs_map.append(id(tfo))
+                if tf.startswith("i_"):
+                    print(tf)
+                    if TypeNode.from_type(type(tfo), subclass_check=False) != TypeNode.from_type(NoData[ANY]):
+                        print("mapped")
+                        print(outputs_map)
+                        if id(getattr(traction, tf)) not in outputs_map:
+                            raise ValueError(f"Input {traction.__class__}[{traction.uid}]->{tf} is mapped to output which is not known yet")
 
 
 class Tractor(Traction, metaclass=TractorMeta):
