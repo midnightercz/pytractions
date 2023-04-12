@@ -1032,9 +1032,30 @@ class Tractor(Traction, metaclass=TractorMeta):
     details: TList[str] = dataclasses.field(default_factory=TList[str])
 
     def _after_init(self):
+        output_map = {}
+        for f in  self._fields:
+            if f.startswith("o_"):
+                output_map[id(getattr(self, f))] = getattr(self, f)
+
         for f in  self._fields:
             if f.startswith("t_"):
                 print("traction", f)
+                traction = getattr(self, f)
+                init_fields = {}
+                for ft in traction._fields:
+                    if ft.startswith("i_"):
+                        print(ft)
+                        init_fields[ft] = output_map[id(getattr(traction, ft))]
+                    elif ft.startswith("r_") or ft.startswith("a_") or ft == "uid" or ft.startswith("a_"):
+                        init_fields[ft] = getattr(traction, ft)
+
+                new_traction = traction.__class__(**init_fields)
+                for ft in new_traction._fields:
+                    if ft.startswith("o_"):
+                        output_map[id(getattr(traction, ft))] = getattr(new_traction, ft)
+
+                print("output map", output_map)
+
 
     def run(
         self,
