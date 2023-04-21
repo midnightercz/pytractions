@@ -304,7 +304,11 @@ def test_base_to_json_simple():
         bar: str
 
     tc = TestC(foo=10, bar="bar")
-    assert tc.to_json() == {"foo": 10, "bar": "bar"}
+    assert tc.to_json() == {
+        "$data": {"foo": 10, "bar": "bar"},
+        "$type": {"args": [],
+                  'type': 'test_base_to_json_simple.<locals>.TestC'}
+    }
 
 
 def test_base_to_json_complex():
@@ -316,9 +320,33 @@ def test_base_to_json_complex():
         c2: TestC2
         foo: int
         bar: str
+        intlist: TList[int]
 
-    tc = TestC(foo=10, bar="bar", c2=TestC2(attr1="a", attr2=10))
-    assert tc.to_json() == {"foo": 10, "bar": "bar", "c2":{"attr1": "a", "attr2": 10}}
+
+    tc = TestC(foo=10, bar="bar", c2=TestC2(attr1="a", attr2=10), intlist=TList[int]([20,40]))
+    assert tc.to_json() == {
+        "$data": {
+            "foo": 10,
+            "bar": "bar", 
+            "c2": {
+                "$data": {
+                    "attr1": "a", "attr2": 10
+                },
+                "$type": {
+                    "args": [],
+                    'type': 'test_base_to_json_complex.<locals>.TestC2'
+                }
+            },
+            "intlist": {
+                "$data": [20, 40],
+                "$type": {"args": [{"args": [], "type": "int"}], "type": "TList"}
+            }
+        },
+        "$type": {
+            "args": [],
+            'type': 'test_base_to_json_complex.<locals>.TestC'
+        }
+    }
 
 
 def test_base_from_json_simple():
@@ -364,3 +392,14 @@ def test_base_from_json_simple_fail2():
 
     with pytest.raises(TypeError):
         tc = TestC.from_json({"foo": 10, "bar": "bar", "extra": "arg"})
+        print(tc)
+
+
+def test_base_generic_nested():
+    class TestA(Base):
+        pass
+
+    class TestC(Base, Generic[T]):
+        a: T
+
+    TestC[TestA](a=TestA())

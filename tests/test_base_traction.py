@@ -5,6 +5,7 @@ import pytest
 from pytraction.base import (
     Traction,
     Tractor,
+    STMD,
     JSONIncompatibleError,
     TList,
     TDict,
@@ -16,7 +17,6 @@ from pytraction.base import (
     Base,
     NoData,
     TypeNode,
-    Connector
 )
 
 # Jsonable test cases
@@ -104,13 +104,20 @@ def test_traction_to_json():
     o: Out[int] = Out[int](data=10)
     t = TTest(uid="1", i_in1=o)
     assert t.to_json() == {
-        "details": {},
-        "errors": {},
-        "i_in1": {"data": 10},
+        "details": {"$data": [],
+                    "$type": {"args":[{"args": [], "type": "str"}], "type": "TList"}},
+        "errors": {"$data": [],
+                   "$type": {"args": [{"args": [],"type": "str"}], "type": "TList"}
+                   },
+        "i_in1": {"$data": {"data": 10},
+                  "$type": {"args": [{"args": [], "type": "int"}],
+                            "type": "Out"}
+                  },
         "skip": False,
         "skip_reason": "",
         "state": "ready",
-        "stats": {"finished": "", "skipped": False, "started": ""},
+        "stats": {"$data": {"finished": "", "skipped": False, "started": ""},
+                  "$type": {"args": [], "type":"TractionStats"}},
         "uid": '1',
     }
 
@@ -186,7 +193,7 @@ def test_traction_json(fixture_isodate_now):
             self.o_out1.data = 20
 
     class TTest2(Traction):
-        i_in1: In[int]
+        i_in1: In[Union[int, float]]
         o_out1: Out[int]
 
         def _run(self, on_update) -> None:  # pragma: no cover
@@ -198,31 +205,41 @@ def test_traction_json(fixture_isodate_now):
     t1.run()
     t2.run()
     assert t1.to_json() == {
-        'details': {},
-        'errors': {},
-        'o_out1': {'data': 20},
+        'details': {"$data": [], "$type": {"args": [{"args": [], "type": "str"}], "type": "TList"}},
+        'errors': {"$data": [],  "$type": {"args": [{"args": [], "type": "str"}], "type": "TList"}},
+        'o_out1': {'$data': {"data": 20}, "$type": {"args": [{"args": [], "type": "int"}], "type": "Out"}},
         'skip': False,
         'skip_reason': '',
         'state': 'finished',
         'stats': {
-            'finished': '1990-01-01T00:00:01.00000Z',
-            'skipped': False,
-            'started': '1990-01-01T00:00:00.00000Z'},
+            "$data": {
+                'finished': '1990-01-01T00:00:01.00000Z',
+                'skipped': False,
+                'started': '1990-01-01T00:00:00.00000Z'
+            },
+            "$type": {"args": [],
+                      "type": "TractionStats"}
+        },
         'uid': '1',
     } 
 
     assert t2.to_json() == {
-        'details': {},
-        'errors': {},
-        'i_in1': {'data': 20},
-        'o_out1': {'data': 30},
+        'details': {"$data": [], "$type": {"args": [{"args": [], "type": "str"}], "type": "TList"}},
+        'errors': {"$data": [],  "$type": {"args": [{"args": [], "type": "str"}], "type": "TList"}},
+        'i_in1': 'TTest1[1]',
+        'o_out1': {'$data': {"data": 30}, "$type": {"args": [{"args": [], "type": "int"}], "type": "Out"}},
         'skip': False,
         'skip_reason': '',
         'state': 'finished',
         'stats': {
-            'finished': '1990-01-01T00:00:03.00000Z',
-            'skipped': False,
-            'started': '1990-01-01T00:00:02.00000Z'},
+            "$data": {
+                'finished': '1990-01-01T00:00:03.00000Z',
+                'skipped': False,
+                'started': '1990-01-01T00:00:02.00000Z'
+            },
+            "$type": {"args": [],
+                      "type": "TractionStats"}
+        },
         'uid': '1',
     } 
 
@@ -253,8 +270,8 @@ def test_tractor_members_order() -> None:
         t_ttest2: TTest2 = TTest2(uid='2', a_reducer=a_reducer)
 
         t_ttest2.i_in1 = t_ttest1.o_out1
-        t_ttest3.i_in1 = t_ttest2.o_out1
-        t_ttest4.i_in1 = t_ttest4.o_out1
+        t_ttest3.i_in1 = t_ttest4.o_out1
+        t_ttest4.i_in1 = t_ttest1.o_out1
 
         o_out1: Out[float] = t_ttest4.o_out1
 
@@ -265,4 +282,373 @@ def test_tractor_members_order() -> None:
         if k.startswith("t_"):
             tractions.append(k)
 
-    assert False
+    assert tractions == ['t_ttest1', 't_ttest4', 't_ttest3', 't_ttest2']
+
+
+def test_tractor_members_invalid_order() -> None:
+    class TTest1(Traction):
+        o_out1: Out[float]
+        a_multiplier: Arg[float]
+
+        def _run(self, on_update) -> None:  # pragma: no cover
+            self.o_out1.data = 20 * self.a_multiplier.a
+
+    class TTest2(Traction):
+        i_in1: In[float]
+        o_out1: Out[float]
+        a_reducer: Arg[float]
+
+        def _run(self, on_update) -> None:  # pragma: no cover
+            self.o_out1.data = (self.i_in1.data + 10) / float(self.a_reducer.a)
+
+    with pytest.raises(ValueError):
+        class TestTractor(Tractor):
+            a_multiplier: Arg[float] = Arg[float](a=0.0)
+            a_reducer: Arg[float] = Arg[float](a=0.0)
+
+            t_ttest1: TTest1 = TTest1(uid='1', a_multiplier=a_multiplier)
+            t_ttest2: TTest2 = TTest2(uid='4', a_reducer=a_reducer)
+            t_ttest4: TTest2 = TTest2(uid='3', a_reducer=a_reducer)
+            t_ttest3: TTest2 = TTest2(uid='2', a_reducer=a_reducer)
+
+            t_ttest2.i_in1 = t_ttest1.o_out1
+            t_ttest4.i_in1 = t_ttest3.o_out1
+
+            o_out1: Out[float] = t_ttest4.o_out1
+
+
+def test_tractor_run() -> None:
+    class TTest1(Traction):
+        o_out1: Out[float]
+        a_multiplier: Arg[float]
+
+        def _run(self, on_update) -> None:  # pragma: no cover
+            self.o_out1.data = 1 * self.a_multiplier.a
+            print("TTEST1 out", self.uid, self.o_out1.data)
+
+    class TTest2(Traction):
+        i_in1: In[float]
+        o_out1: Out[float]
+        a_reducer: Arg[float]
+
+        def _run(self, on_update) -> None:  # pragma: no cover
+            print(f"TTEST2[{self.uid}] in", self.i_in1.data, id(self.i_in1))
+
+            self.o_out1.data = (self.i_in1.data + 1) / float(self.a_reducer.a)
+            print(f"TTEST2[{self.uid}] out", self.o_out1.data, id(self.o_out1))
+
+    class TestTractor(Tractor):
+        a_multiplier: Arg[float] = Arg[float](a=0.0)
+        a_reducer: Arg[float] = Arg[float](a=0.0)
+
+        i_in1: In[float] = In[float](data=1.0)
+
+        t_ttest1: TTest2 = TTest2(uid='1', a_reducer=a_reducer)
+        t_ttest2: TTest2 = TTest2(uid='2', a_reducer=a_reducer)
+        t_ttest3: TTest2 = TTest2(uid='3', a_reducer=a_reducer)
+        t_ttest4: TTest2 = TTest2(uid='4', a_reducer=a_reducer)
+
+        t_ttest1.i_in1 = i_in1
+        t_ttest2.i_in1 = t_ttest1.o_out1
+        t_ttest3.i_in1 = t_ttest2.o_out1
+        t_ttest4.i_in1 = t_ttest3.o_out1
+
+        o_out1: Out[float] = t_ttest4.o_out1
+
+    tt = TestTractor(
+        uid='tt1', 
+        a_multiplier=Arg[float](a=10.0),
+        a_reducer=Arg[float](a=2.0),
+        i_in1=In[float](data=10.0)
+    )
+    tt.run()
+    assert tt.o_out1.data == 1.5625
+
+
+class UselessResource(Base):
+    values_stack: TList[int]
+
+    def get_some_value(self) -> int:
+        return self.values_stack.pop(0)
+
+
+def test_tractor_run_resources() -> None:
+
+    class TTest2(Traction):
+        i_in1: In[float]
+        o_out1: Out[float]
+        a_reducer: Arg[float]
+        r_useless_res: Res[UselessResource]
+
+        def _run(self, on_update) -> None:  # pragma: no cover
+            useless_value = self.r_useless_res.r.get_some_value()
+            self.o_out1.data = (self.i_in1.data + useless_value) / float(self.a_reducer.a)
+
+    class TestTractor(Tractor):
+        a_multiplier: Arg[float] = Arg[float](a=0.0)
+        a_reducer: Arg[float] = Arg[float](a=0.0)
+
+        r_useless: Res[UselessResource] = Res[UselessResource](r=UselessResource(values_stack=TList[int](TList[int]([]))))
+
+        i_in1: In[float] = In[float](data=1.0)
+
+        t_ttest1: TTest2 = TTest2(uid='1', a_reducer=a_reducer, r_useless_res=r_useless)
+        t_ttest2: TTest2 = TTest2(uid='2', a_reducer=a_reducer, r_useless_res=r_useless)
+        t_ttest3: TTest2 = TTest2(uid='3', a_reducer=a_reducer, r_useless_res=r_useless)
+        t_ttest4: TTest2 = TTest2(uid='4', a_reducer=a_reducer, r_useless_res=r_useless)
+
+        t_ttest1.i_in1 = i_in1
+        t_ttest2.i_in1 = t_ttest1.o_out1
+        t_ttest3.i_in1 = t_ttest2.o_out1
+        t_ttest4.i_in1 = t_ttest3.o_out1
+
+        o_out1: Out[float] = t_ttest4.o_out1
+
+    tt = TestTractor(
+        uid='tt1', 
+        a_multiplier=Arg[float](a=10.0),
+        a_reducer=Arg[float](a=2.0),
+        i_in1=In[float](data=10.0),
+        r_useless = Res[UselessResource](r=UselessResource(values_stack=TList[int]([2,5,1,7,2])))
+    )
+
+    tt.run()
+    assert tt.o_out1.data == 5.125
+
+def test_tractor_to_json(fixture_isodate_now) -> None:
+    class TTest1(Traction):
+        o_out1: Out[float]
+        a_multiplier: Arg[float]
+
+        def _run(self, on_update) -> None:  # pragma: no cover
+            self.o_out1.data = 1 * self.a_multiplier.a
+            print("TTEST1 out", self.uid, self.o_out1.data)
+
+    class TTest2(Traction):
+        i_in1: In[float]
+        o_out1: Out[float]
+        a_reducer: Arg[float]
+
+        def _run(self, on_update) -> None:  # pragma: no cover
+            print(f"TTEST2[{self.uid}] in", self.i_in1.data, id(self.i_in1))
+
+            self.o_out1.data = (self.i_in1.data + 1) / float(self.a_reducer.a)
+            print(f"TTEST2[{self.uid}] out", self.o_out1.data, id(self.o_out1))
+
+    class TestTractor(Tractor):
+        a_multiplier: Arg[float] = Arg[float](a=0.0)
+        a_reducer: Arg[float] = Arg[float](a=0.0)
+
+        t_ttest1: TTest1 = TTest1(uid='1', a_multiplier=a_multiplier)
+        t_ttest2: TTest2 = TTest2(uid='2', a_reducer=a_reducer)
+        t_ttest3: TTest2 = TTest2(uid='3', a_reducer=a_reducer)
+        t_ttest4: TTest2 = TTest2(uid='4', a_reducer=a_reducer)
+
+        t_ttest2.i_in1 = t_ttest1.o_out1
+        t_ttest3.i_in1 = t_ttest2.o_out1
+        t_ttest4.i_in1 = t_ttest3.o_out1
+
+        o_out1: Out[float] = t_ttest4.o_out1
+
+    tt = TestTractor(uid='tt1', a_multiplier=Arg[float](a=10.0), a_reducer=Arg[float](a=2.0))
+    print("tt o_out", id(tt.o_out1))
+
+    tt.run()
+    assert tt.to_json() == {
+        'a_multiplier': {"$data": {'a': 10.0}, "$type": {'args': [{'args': [],'type': 'float'}], 'type': 'Arg'}},
+         'a_reducer': {"$data": {'a': 2.0}, "$type": {'args': [{'args': [],'type': 'float'}], 'type': 'Arg'}},
+         'details': {"$data": [], "$type": {'args': [{'args': [],'type': 'str'}], 'type': 'TList'}},
+         'errors': {"$data": [], "$type": {'args': [{'args': [],'type': 'str'}], 'type': 'TList'}},
+         'o_out1': {"$data": {'data': 2.125}, '$type': {'args': [{'args': [], 'type': 'float'}], 'type': 'Out'}},
+         'skip': False,
+         'skip_reason': '',
+         'state': 'finished',
+         'stats': {
+            "$data": {'finished': '1990-01-01T00:00:09.00000Z',
+                      'skipped': False,
+                      'started': '1990-01-01T00:00:00.00000Z'},
+            '$type': {'args': [],
+                      'type': 'TractionStats'}
+         },
+         't_ttest1': {
+            'a_multiplier': {"$data": {'a': 10.0}, "$type": {'args': [{'args': [],'type': 'float'}], 'type': 'Arg'}},
+            'details': {"$data": [], "$type": {'args': [{'args': [],'type': 'str'}], 'type': 'TList'}},
+            'errors': {"$data": [], "$type": {'args': [{'args': [],'type': 'str'}], 'type': 'TList'}},
+            'o_out1': {"$data": {'data': 10.0}, '$type': {'args': [{'args': [], 'type': 'float'}], 'type': 'Out'}},
+            'skip': False,
+            'skip_reason': '',
+            'state': 'finished',
+            'stats': {
+                "$data": {'finished': '1990-01-01T00:00:02.00000Z',
+                          'skipped': False,
+                          'started': '1990-01-01T00:00:01.00000Z'},
+                '$type': {'args': [],
+                          'type': 'TractionStats'}
+            },
+            'uid': '1'},
+        't_ttest2': {
+            'a_reducer': {"$data": {'a': 2.0}, "$type": {'args': [{'args': [],'type': 'float'}], 'type': 'Arg'}},
+            'details': {"$data": [], "$type": {'args': [{'args': [],'type': 'str'}], 'type': 'TList'}},
+            'errors': {"$data": [], "$type": {'args': [{'args': [],'type': 'str'}], 'type': 'TList'}},
+            'i_in1': 'TTest1[1]',
+            'o_out1': {"$data": {'data': 5.5}, '$type': {'args': [{'args': [], 'type': 'float'}], 'type': 'Out'}},
+            'skip': False,
+            'skip_reason': '',
+            'state': 'finished',
+            'stats': {
+                "$data": {'finished': '1990-01-01T00:00:04.00000Z',
+                          'skipped': False,
+                          'started': '1990-01-01T00:00:03.00000Z'},
+                '$type': {'args': [],
+                          'type': 'TractionStats'}
+            },
+            'uid': '2'},
+        't_ttest3': {
+            'a_reducer': {"$data": {'a': 2.0}, "$type": {'args': [{'args': [],'type': 'float'}], 'type': 'Arg'}},
+            'details': {"$data": [], "$type": {'args': [{'args': [],'type': 'str'}], 'type': 'TList'}},
+            'errors': {"$data": [], "$type": {'args': [{'args': [],'type': 'str'}], 'type': 'TList'}},
+            'i_in1': 'TTest2[2]',
+            'o_out1': {"$data": {'data': 3.25}, '$type': {'args': [{'args': [], 'type': 'float'}], 'type': 'Out'}},
+            'skip': False,
+            'skip_reason': '',
+            'state': 'finished',
+            'stats': {
+                "$data": {'finished': '1990-01-01T00:00:06.00000Z',
+                          'skipped': False,
+                          'started': '1990-01-01T00:00:05.00000Z'},
+                '$type': {'args': [],
+                          'type': 'TractionStats'}
+            },
+            'uid': '3'},
+        't_ttest4': {
+            'a_reducer': {"$data": {'a': 2.0}, "$type": {'args': [{'args': [],'type': 'float'}], 'type': 'Arg'}},
+            'details': {"$data": [], "$type": {'args': [{'args': [],'type': 'str'}], 'type': 'TList'}},
+            'errors': {"$data": [], "$type": {'args': [{'args': [],'type': 'str'}], 'type': 'TList'}},
+            'i_in1': 'TTest2[3]',
+            'o_out1': {"$data": {'data': 2.125}, '$type': {'args': [{'args': [], 'type': 'float'}], 'type': 'Out'}},
+            'skip': False,
+            'skip_reason': '',
+            'state': 'finished',
+            'stats': {
+                "$data": {'finished': '1990-01-01T00:00:08.00000Z',
+                          'skipped': False,
+                          'started': '1990-01-01T00:00:07.00000Z'},
+                '$type': {'args': [],
+                          'type': 'TractionStats'}
+            },
+            'uid': '4'},
+        'tractions': {'$data': [
+            {'$data': {'a_multiplier': {'$data': {'a': 10.0},
+                                        '$type': {'args': [{'args': [], 'type': 'float'}],
+                                                  'type': 'Arg'}},
+                       'details': {'$data': {}, '$type': {'args': [{'args': [], 'type': 'str'}], 'type': 'TList'}},
+                       'errors': {'$data': {}, '$type': {'args': [{'args': [], 'type': 'str'}], 'type': 'TList'}},
+                       'o_out1': {'$data': {'data': 10.0}, '$type': {'args': [{'args': [], 'type': 'float'}], 'type': 'Out'}},
+                       'skip': False,
+                       'skip_reason': '',
+                       'state': 'finished',
+                       'stats': {'$data': {'finished': '1990-01-01T00:00:02.00000Z',
+                                           'skipped': False,
+                                           'started': '1990-01-01T00:00:01.00000Z'},
+                                 '$type': {'args': [],
+                                           'type': 'TractionStats'}},
+                        'uid': '1'},
+             '$type': {'args': [],
+                       'type': 'test_tractor_to_json.<locals>.TTest1'}},
+            {'$data': {'a_reducer': {'$data': {'a': 2.0},
+                                     '$type': {'args': [{'args': [], 'type': 'float'}],
+                                               'type': 'Arg'}},
+                       'details': {'$data': {}, '$type': {'args': [{'args': [], 'type': 'str'}], 'type': 'TList'}},
+                       'errors': {'$data': {}, '$type': {'args': [{'args': [], 'type': 'str'}], 'type': 'TList'}},
+                       'o_out1': {'$data': {'data': 5.5}, '$type': {'args': [{'args': [], 'type': 'float'}], 'type': 'Out'}},
+                       'i_in1': {'$data': {'data': 10.0}, '$type': {'args': [{'args': [], 'type': 'float'}], 'type': 'Out'}},
+                       'skip': False,
+                       'skip_reason': '',
+                       'state': 'finished',
+                       'stats': {'$data': {'finished': '1990-01-01T00:00:04.00000Z',
+                                           'skipped': False,
+                                           'started': '1990-01-01T00:00:03.00000Z'},
+                                 '$type': {'args': [],
+                                           'type': 'TractionStats'}},
+                        'uid': '2'},
+             '$type': {'args': [], 
+                       'type': 'test_tractor_to_json.<locals>.TTest2'}},
+            {'$data': {'a_reducer': {'$data': {'a': 2.0},
+                                     '$type': {'args': [{'args': [], 'type': 'float'}],
+                                               'type': 'Arg'}},
+                       'details': {'$data': {}, '$type': {'args': [{'args': [], 'type': 'str'}], 'type': 'TList'}},
+                       'errors': {'$data': {}, '$type': {'args': [{'args': [], 'type': 'str'}], 'type': 'TList'}},
+                       'i_in1': {'$data': {'data': 5.5}, '$type': {'args': [{'args': [], 'type': 'float'}], 'type': 'Out'}},
+                       'o_out1': {'$data': {'data': 3.25}, '$type': {'args': [{'args': [], 'type': 'float'}], 'type': 'Out'}},
+                       'skip': False,
+                       'skip_reason': '',
+                       'state': 'finished',
+                       'stats': {'$data': {'finished': '1990-01-01T00:00:06.00000Z',
+                                           'skipped': False,
+                                           'started': '1990-01-01T00:00:05.00000Z'},
+                                 '$type': {'args': [],
+                                           'type': 'TractionStats'}},
+                        'uid': '3'},
+             '$type': {'args': [], 
+                       'type': 'test_tractor_to_json.<locals>.TTest2'}},
+            {'$data': {'a_reducer': {'$data': {'a': 2.0},
+                                     '$type': {'args': [{'args': [], 'type': 'float'}],
+                                               'type': 'Arg'}},
+                       'details': {'$data': {}, '$type': {'args': [{'args': [], 'type': 'str'}], 'type': 'TList'}},
+                       'errors': {'$data': {}, '$type': {'args': [{'args': [], 'type': 'str'}], 'type': 'TList'}},
+                       'i_in1': {'$data': {'data': 3.25}, '$type': {'args': [{'args': [], 'type': 'float'}], 'type': 'Out'}},
+                       'o_out1': {'$data': {'data': 2.125}, '$type': {'args': [{'args': [], 'type': 'float'}], 'type': 'Out'}},
+                       'skip': False,
+                       'skip_reason': '',
+                       'state': 'finished',
+                       'stats': {'$data': {'finished': '1990-01-01T00:00:08.00000Z',
+                                           'skipped': False,
+                                           'started': '1990-01-01T00:00:07.00000Z'},
+                                 '$type': {'args': [],
+                                           'type': 'TractionStats'}},
+                        'uid': '4'},
+             '$type': {'args': [], 
+                       'type': 'test_tractor_to_json.<locals>.TTest2'}},
+        ],
+        '$type': {'args': [{'args': [],
+                            'type': 'Traction'}],
+                  'type': 'TList'},
+        },
+        'uid': 'tt1',
+    }
+
+class G_TTest1(Traction):
+    o_out1: Out[float]
+    i_in1: In[Union[float, int]]
+    a_multiplier: Arg[float]
+
+    def _run(self, on_update) -> None:  # pragma: no cover
+        print("GTEST RUN", self.i_in1.data, self.a_multiplier.a)
+        self.o_out1.data = self.i_in1.data * self.a_multiplier.a
+
+
+def test_stmd(fixture_isodate_now) -> None:
+
+    class TestSTMD(STMD):
+        a_multiplier: Arg[float] = Arg[float](a=0.0)
+        a_reducer: Arg[float] = Arg[float](a=0.0)
+
+        traction: G_TTest1 = G_TTest1(uid='1', a_multiplier=a_multiplier)
+
+        o_out1: Out[TList[Out[float]]] = Out[TList[Out[float]]](data=TList[Out[float]]([]))
+        i_in1: In[TList[In[float]]]
+
+    stmd_in1 = In[TList[In[float]]](data=TList[In[float]]([
+        In[Union[float, int]](data=1.0),
+        In[Union[float, int]](data=2.0),
+        In[Union[float, int]](data=3.0),
+        In[Union[float, int]](data=4.0),
+        In[Union[float, int]](data=5.0)
+    ]))
+    stmd1 = TestSTMD(uid='tt1', a_pool_size=Arg[int](a=1), a_multiplier=Arg[float](a=10.0), a_reducer=Arg[float](a=2.0), i_in1=stmd_in1)
+    stmd1.run()
+    assert stmd1.o_out1.data[0].data == 10
+    assert stmd1.o_out1.data[1].data == 20
+    assert stmd1.o_out1.data[2].data == 30
+    assert stmd1.o_out1.data[3].data == 40
+    assert stmd1.o_out1.data[4].data == 50
