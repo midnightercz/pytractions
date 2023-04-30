@@ -5,6 +5,7 @@ import inspect
 import json
 from types import prepare_class, resolve_bases
 import enum
+import sys
 
 from typing import (
     Dict,
@@ -19,6 +20,7 @@ from typing import (
     Generic,
     GenericAlias,
     Tuple,
+    Type,
     Type,
     Callable,
     get_args
@@ -49,6 +51,8 @@ def find_attr(objects, attr_name):
     for o in objects:
         if hasattr(o, attr_name):
             return getattr(o, attr_name)
+
+JSON_COMPATBIBLE = Union[int, float, str, bool, _Base, type(None), TypeVar("X")]
 
 
 @dataclasses.dataclass
@@ -102,6 +106,9 @@ class TypeNode:
                     current.children.append(n)
             if not stack:
                 break
+            if get_origin(current.type_):
+                #print("TypeNode origin", get_origin(current.type_))
+                current.type_ = get_origin(current.type_)
             current = stack.pop()
         return root
 
@@ -142,10 +149,13 @@ class TypeNode:
             node, parent_index, parent = item
 
             if node.children:
-                if hasattr(node.type_, "__origin__"):
-                    type_ = node.type_.__origin__
-                else:
-                    type_ = type(node.type_)
+                #print("NODE TO TYPE", node.type_)
+                #if get_origin(node.type_):
+                #    type_ = get_origin(node.type_)
+                #else:
+                #    type_ = type(node.type_)
+                type_ = node.type_
+                #print("TO TYPE", type_)
 
                 children_types = tuple([x.type_ for x in node.children])
                 children_type_ids = tuple([id(x.type_) for x in node.children])
@@ -167,12 +177,12 @@ class TypeNode:
     @staticmethod
     def __determine_op(ch1, ch2) -> str:
         op = "all"
-        if (get_origin(ch1.type_) == Union and get_origin(ch2.type_) == Union) or (
-            get_origin(ch1.type_) != Union and get_origin(ch2.type_) != Union
+        if (ch1.type_ == Union and ch2.type_ == Union) or (
+            ch1.type_ != Union and ch2.type_ != Union
         ):
             op = "all"
-        elif (get_origin(ch1.type_) != Union and get_origin(ch2.type_) == Union) or (
-            get_origin(ch1.type_) == Union and get_origin(ch2.type_) != Union
+        elif (ch1.type_ != Union and ch2.type_ == Union) or (
+            ch1.type_ == Union and ch2.type_ != Union
         ):
             op = "any"
         return op
@@ -183,14 +193,16 @@ class TypeNode:
         post_order.insert(0, root_node)
         while stack:
             current_node = stack.pop()
-            if get_origin(current_node.n1.type_) == Union and get_origin(current_node.n2.type_) != Union:
+            #print("ORDER", current_node.n1.type_, current_node.n2.type_)
+                
+            if current_node.n1.type_ == Union and current_node.n2.type_ != Union:
                 for ch1 in current_node.n1.children:
                     node = CMPNode(ch1, current_node.n2, "all", "all")
                     stack.insert(0, node)
                     post_order.insert(0, node)
                     current_node.children.append(node)
 
-            elif get_origin(current_node.n1.type_) != Union and get_origin(current_node.n2.type_) == Union:
+            elif current_node.n1.type_ != Union and current_node.n2.type_ == Union:
                 for ch2 in current_node.n2.children:
                     node = CMPNode(current_node.n1, ch2, "all", "all")
                     stack.insert(0, node)
@@ -229,6 +241,7 @@ class TypeNode:
         node = CMPNode(self, other, op, op)
         post_order = self.__eq_post_order(node)
 
+        #print(post_order)
         for cmp_node in post_order:
             if cmp_node.op == "any":
                 if cmp_node.children:
@@ -246,12 +259,21 @@ class TypeNode:
 
             orig_cls2 = getattr(n2_type, "_orig_cls", True)
             orig_cls1 = getattr(n1_type, "_orig_cls", False)
-            #print(n1_type, n2_type, orig_cls1, orig_cls2)
+
+            #print("TYPE NODE EQ 1", n1_type, orig_cls1)
+            #print("TYPE NODE EQ 2", n2_type, orig_cls2)
+            #print("TYPE NODE EQ t1 == t2", n1_type == n2_type, id(n1_type), id(n2_type))
+            #print("TYPE NODE EQ orig_cls1 == orig_cls2", orig_cls1 == orig_cls2, id(orig_cls1), id(orig_cls2))
+
             if n1_type != Union and n2_type != Union:
                 ch_eq &= (n1_type == n2_type or
                           orig_cls1 == orig_cls2 or
+                          orig_cls1 == n2_type or
+                          orig_cls2 == n1_type or
                           (self.subclass_check and (inspect.isclass(n1_type) and inspect.isclass(n2_type) and issubclass(n1_type, n2_type))) or
+                          (self.subclass_check and (inspect.isclass(n1_type) and inspect.isclass(orig_cls2) and issubclass(n1_type, orig_cls2))) or
                           bool(self.subclass_check and inspect.isclass(orig_cls1) and inspect.isclass(orig_cls2) and issubclass(orig_cls1, orig_cls2)))
+            #print("TYPE NODE QE CH_EQ", ch_eq)
             cmp_node.eq = ch_eq
 
         return node.eq
@@ -262,7 +284,7 @@ class TypeNode:
         else:
             op = "any"
 
-        root_node = CMPNode(self, TypeNode(Union[int, float, str, bool, float, Base, type(None)]), op, op)
+        root_node = CMPNode(self, TypeNode(JSON_COMPATBIBLE), op, op)
         stack = [root_node]
         post_order = []
         post_order.insert(0, root_node)
@@ -274,7 +296,7 @@ class TypeNode:
                         op = "all"
                     else:
                         op = "any"
-                    node = CMPNode(ch1, TypeNode(Union[int, float, str, bool, Base, type(None), TypeVar("X")]), op, op)
+                    node = CMPNode(ch1, TypeNode(JSON_COMPATBIBLE), op, op)
                     stack.insert(0, node)
                     post_order.insert(0, node)
                     current_node.children.append(node)
@@ -325,11 +347,54 @@ class TypeNode:
         stack: List[Tuple[Base, Dict[str, Any], str]] = [(self, pre_order, "root")]
         while stack:
             current, current_parent, parent_key = stack.pop(0)
+            #print("TYPE TO JSON", current, current_parent, parent_key)
             type_name = current.type_.__qualname__ if hasattr(current.type_, "__qualname__") else current.type_.__name__
-            current_parent[parent_key] = {"type": type_name, "args": [None,] * len(current.children)}
+            module = current.type_.__module__
+            current_parent[parent_key] = {"type": type_name,
+                                          "args": [None,] * len(current.children),
+                                          "module": module}
             for n, arg in enumerate(current.children):
+                #print("STACK APPEND", (arg, current_parent[parent_key]['args'], n))
                 stack.append((arg, current_parent[parent_key]['args'], n))
         return pre_order['root']
+
+    @classmethod
+    def from_json(cls, json_data) -> Self:
+        root_parent = cls(None)
+        root_parent.children = [None]
+
+        stack: List[Tuple[TypeNode, str|int , str, str, Dict[str, Any]]] = [(root_parent, 0, json_data['type'], json_data['module'], json_data['args'])]
+        pre_order = []
+
+        while stack:
+            parent, parent_key, _type, _type_mod, _args = stack.pop(0)
+            #print("TYPE FROM JSON", parent, parent_key, _type, _type_mod, _args)
+            mod = sys.modules[_type_mod]
+            _type_path = _type.split(".")
+            _type_o = mod
+            for path_part in _type_path:
+                if path_part == "<locals>":
+                    _type_o = _type_o.__code__.co_consts
+                else:
+                    #print(path_part, path_part == 'NoneType')
+                    if path_part != 'NoneType':
+                        _type_o = getattr(_type_o, path_part)
+                    else:
+                        _type_o = None
+
+            type_node = cls(_type_o)
+            type_node.children = [(None,) * len(_args)]
+            if type_node.children == [()]:
+                type_node.children = []
+            pre_order.insert(0, (parent, parent_key, type_node))
+            for n, arg in enumerate(_args):
+                stack.insert(0, (type_node, n, arg['type'], arg['module'], arg['args']))
+
+        for po_entry in pre_order:
+            parent, parent_key, type_node = po_entry
+            parent.children[parent_key] = type_node
+
+        return root_parent.children[0]
 
 
 class BaseMeta(type):
@@ -382,7 +447,7 @@ class BaseMeta(type):
                 continue
             # Check if type of attribute is json-compatible
             if not TypeNode.from_type(annotations[attr]).json_compatible():
-                raise JSONIncompatibleError(f"Attribute {attr} is not json compatible")
+                raise JSONIncompatibleError(f"Attribute {attr} is not json compatible {annotations[attr]}")
 
         # record fields to private attribute
         attrs["_attrs"] = attrs
@@ -433,16 +498,13 @@ class Base(metaclass=BaseMeta):
     def __post_init__(self):
         pass
 
-    def __getstate__(self,):
-        #print("get state")
+    def __getstate__(self):
         return self.to_json()
 
     def __setstate__(self, state):
-        #print("set state")
         new = self.from_json(state)
         for f in self._fields:
             setattr(self, f, getattr(new, f))
-
 
     def _no_validate_setattr_(self, name: str, value: Any) -> None:
         return super().__setattr__(name, value)
@@ -514,7 +576,7 @@ class Base(metaclass=BaseMeta):
                 current_parent[parent_key] = {"$type": TypeNode.from_type(current.__class__).to_json(), "$data": {}}
                 for f in current._fields:
                     stack.append((getattr(current, f), current_parent[parent_key]['$data'], f))
-            elif isinstance(current, TList):
+            elif isinstance(current, (TList, TDict)):
                 current_parent[parent_key] = current.to_json()
             else:
                 current_parent[parent_key] = current
@@ -529,13 +591,13 @@ class Base(metaclass=BaseMeta):
 
         while stack:
             parent_args, parent_key, data, type_, type_args = stack.pop(0)
-            if hasattr(type_, "__qualname__") and type_.__qualname__ == "Optional":
+            if hasattr(type_, "__qualname__") and type_.__qualname__ in ("Optional", "Union"):
                 if isinstance(data, dict):
                     data_type = data.get("$type", None)
                 else:
                     data_type = TypeNode.from_type(data.__class__).to_json()
                 for uarg in get_args(type_):
-                    if TypeNode.from_type(uarg).to_json() == data_type:
+                    if TypeNode.from_type(uarg) == TypeNode.from_json(data_type):
                         stack.append((parent_args, parent_key, data, uarg, type_args))
                         break
                 else:
@@ -547,10 +609,10 @@ class Base(metaclass=BaseMeta):
                 else:
                     data_type = TypeNode.from_type(data.__class__).to_json()
                 for uarg in get_args(type_):
-                    if TypeNode.from_type(uarg).to_json() == data_type:
+                    if TypeNode.from_type(uarg).to_json() == TypeNode.from_json(data_type).to_json():
                         stack.append((parent_args, parent_key, data, uarg, type_args))
                         break
-            elif type_ == TList[ANY]:
+            elif TypeNode.from_type(type_) == TypeNode.from_type(TList[ANY]):
                 parent_args[parent_key] = type_.from_json(data)
             elif type_ not in (int, str, bool, float, type(None)):
                 for key in type_._fields:
@@ -559,6 +621,12 @@ class Base(metaclass=BaseMeta):
                         stack.append((type_args, key, data['$data'].get(key), type_._fields[key], field_args))
                     else:
                         stack.append((type_args, key, data.get(key), type_._fields[key], field_args))
+                if '$data' in data:
+                    extra = data.get('$data', {}).keys() - type_._fields.keys()
+                else:
+                    extra = data.keys() - type_._fields.keys()
+                if extra:
+                    raise ValueError(f"There are extra attributes uknown to type {type_}: {extra}")
 
                 post_order.insert(0, (parent_args, parent_key, type_, type_args))
             else:
@@ -672,41 +740,55 @@ class TList(Base, Generic[T]):
             stack.append((item, pre_order['root']["$data"], n))
         while stack:
             current, current_parent, parent_key = stack.pop(0)
-            if not isinstance(current, (int, str, bool, float, type(None))):
+            if not isinstance(current, (int, str, bool, float, type(None), TList, TDict)):
                 current_parent[parent_key] = {"$type": TypeNode.from_type(current.__class__).to_json(), "$data": {}}
                 for f in current._fields:
                     stack.append((getattr(current, f), current_parent[parent_key]['$data'], f))
+            elif isinstance(current, (TList, TDict)):
+                current_parent[parent_key] = current.to_json()
             else:
                 current_parent[parent_key] = current
         return pre_order['root']
 
     @classmethod
     def from_json(cls, json_data) -> Self:
+
         stack = []
         post_order = []
         root_args: Dict[str, Any] = {"root": None}
-        self_type_json = TypeNode.from_type(cls).to_json()
-        if json_data['$type'] != self_type_json:
+        if TypeNode.from_json(json_data['$type']) != TypeNode.from_type(cls):
             raise ValueError(f"Cannot load {json_data['$type']} to {self_type_json}")
 
-        type_args={"iterable":[]}
-        post_order.insert(0, (root_args, 'root', cls, type_args))
+        root_type_args={"iterable":[]}
         for n, item in enumerate(json_data['$data']):
-            type_args['iterable'].append(None)
-            stack.append((type_args["iterable"], n, item, cls._params[0], {}))
+            root_type_args['iterable'].append(None)
+            if not isinstance(item, (int, str, bool, float, type(None))):
+                item_type = TypeNode.from_json(item['$type']).to_type(types_cache=cls._generic_cache)
+            else:
+                item_type = cls._params[0]
+            stack.append((root_type_args["iterable"], n, item, item_type, {}))
 
         while stack:
             parent_args, parent_key, data, type_, type_args = stack.pop(0)
-            if hasattr(type_, "__qualname__") and type_.__qualname__ == "Optional":
+            if hasattr(type_, "__qualname__") and type_.__qualname__ in ("Optional", "Union"):
                 if isinstance(data, dict):
                     data_type = data.get("$type", None)
                 else:
                     data_type = TypeNode.from_type(data.__class__).to_json()
+                #print("UARG DATA TYPE", data_type)
                 for uarg in get_args(type_):
-                    if TypeNode.from_type(uarg).to_json() == data_type:
+                    #print("UARG", uarg)
+                    #print("UARG", TypeNode.from_type(uarg).to_json())
+                    if TypeNode.from_json(data_type) == TypeNode.from_type(uarg):
+                        #print("UARG MATCH")
+                        stack.append((parent_args, parent_key, data, uarg, type_args))
+                        break
+                    if data_type == TypeNode.from_type(uarg).to_json():
+                        #print("UARG MATCH")
                         stack.append((parent_args, parent_key, data, uarg, type_args))
                         break
                 else:
+                    #print("UARG NO! MATCH")
                     stack.append((parent_args, parent_key, data, type(None), type_args))
 
             elif hasattr(type_, "__qualname__") and type_.__qualname__ == "Union":
@@ -718,7 +800,8 @@ class TList(Base, Generic[T]):
                     if TypeNode.from_type(uarg).to_json() == data_type:
                         stack.append((parent_args, parent_key, data, uarg, type_args))
                         break
-
+            elif TypeNode.from_type(type_) == TypeNode.from_type(TList[ANY]):
+                parent_args[parent_key] = type_.from_json(data)
             elif type_ not in (int, str, bool, float, type(None)):
                 for key in type_._fields:
                     field_args = {}
@@ -729,6 +812,7 @@ class TList(Base, Generic[T]):
 
                 post_order.insert(0, (parent_args, parent_key, type_, type_args))
             else:
+                #print("SIMPLE", type_, data)
                 parent_args[parent_key] = data
 
         for (parent_args, parent_key, type_, type_args) in post_order:
@@ -736,11 +820,14 @@ class TList(Base, Generic[T]):
             for k, v in type_args.items():
                 if type_.__dataclass_fields__[k].init:
                     init_fields[k] = v
+            #print("LIST FROM JSON 1", parent_args)
+            #print("LIST FROM JSON 2", type_, init_fields)
             parent_args[parent_key] = type_(**init_fields)
             for k, v in type_args.items():
                 if not type_.__dataclass_fields__[k].init:
                     setattr(parent_args[parent_key], k, v)
 
+        root_args['root'] = cls(root_type_args['iterable'])
         return root_args['root']
 
 
@@ -773,7 +860,7 @@ class TDict(Base, Generic[TK, TV]):
             raise TypeError(f"Cannot get item by key {key} of type {type(key)} in dict of type {Dict[_tk, _tv]}")
         return self._dict.__getitem__(key)
 
-    def __init__(self, d):
+    def __init__(self, d={}):
         self._dict = {}
         for k, v in d.items():
             self.__setitem__(k, v)
@@ -845,6 +932,24 @@ class TDict(Base, Generic[TK, TV]):
 
     def values(self):
         return self._dict.values()
+    def to_json(self) -> Dict[str, Any]:
+        pre_order: Dict[str, Any] = {}
+        pre_order['root'] = {"$type": TypeNode.from_type(self.__class__).to_json(), "$data": {}}
+        stack: List[Tuple[Base, Dict[str, Any], str]] = []
+        for k, v in self._dict.items():
+            pre_order['root']["$data"][k] = None
+            stack.append((v, pre_order['root']["$data"], k))
+        while stack:
+            current, current_parent, parent_key = stack.pop(0)
+            if not isinstance(current, (int, str, bool, float, type(None))):
+                current_parent[parent_key] = {"$type": TypeNode.from_type(current.__class__).to_json(), "$data": {}}
+                for f in current._fields:
+                    stack.append((getattr(current, f), current_parent[parent_key]['$data'], f))
+            elif isinstance(current, (TList, TDict)):
+                current_parent[parent_key] = current.to_json()
+            else:
+                current_parent[parent_key] = current
+        return pre_order['root']
 
 
 class In(Base, Generic[T]):
@@ -853,9 +958,17 @@ class In(Base, Generic[T]):
     # it's just to deceive mypy
     data: Optional[T] = None
 
-
 class Out(In, Generic[T]):
     _owner: Optional[_Traction] = dataclasses.field(repr=False, init=False, default=None, compare=False)
+    _name: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
+
+@dataclasses.dataclass
+class DefaultOut:
+    type_: JSON_COMPATBIBLE
+    params: List
+
+    def __call__(self):
+        return Out[self.params](data=self.type_())
 
 
 class NoData(In, Generic[T]):
@@ -907,7 +1020,10 @@ class TractionMeta(BaseMeta):
         for f, ftype in attrs["_fields"].items():
             # Do not include outputs in init
             if f.startswith("o_") and f not in attrs:
-                attrs[f] = dataclasses.field(init=False, default_factory=Out[ftype._params])
+                attrs[f] = dataclasses.field(
+                    init=False,
+                    default_factory=DefaultOut(type_=ftype._params[0],
+                                               params=(ftype._params)))
             # Set all inputs to NoData after as default
             if f.startswith("i_") and f not in attrs:
                 attrs[f] = dataclasses.field(default_factory=NoData[ftype._params])
@@ -983,11 +1099,19 @@ class Traction(Base, metaclass=TractionMeta):
 
         if name.startswith("i_"):
             # Need to check with hasattr first to make sure inputs can be initialized
-            if hasattr(self, name) and TypeNode.from_type(type(getattr(self, name)), subclass_check=False) != TypeNode.from_type(NoData[ANY]):
-                raise AttributeError(f"Input {name} is already connected")
+            if hasattr(self, name):
+                connected = (
+                    TypeNode.from_type(type(getattr(self, name)), subclass_check=False) != TypeNode.from_type(NoData[ANY]) and
+                    TypeNode.from_type(type(getattr(self, name)), subclass_check=False) != TypeNode.from_type(In[ANY])
+                )
+                if connected:
+                    raise AttributeError(f"Input {name} is already connected")
+
+            #if hasattr(self, name) and self.__getattribute_orig__(name)._ref: # TypeNode.from_type(type(getattr(self, name)), subclass_check=False) == TypeNode.from_type(Out[ANY]):
+            #    raise AttributeError(f"Input {name} is already connected")
             # in the case input is not set, initialize it
             elif not hasattr(self, name):
-                super().__setattr__(name, value) 
+                super().__setattr__(name, value)
             self.__getattribute_orig__(name)._ref = value
             return
 
@@ -997,6 +1121,7 @@ class Traction(Base, metaclass=TractionMeta):
                 super().__setattr__(name, value)
 
             self.__getattribute_orig__(name)._owner = self
+            self.__getattribute_orig__(name)._name = name
             # Do not overwrite whole output container, rather just copy update data
             self.__getattribute_orig__(name).data = value.data
             return
@@ -1015,21 +1140,22 @@ class Traction(Base, metaclass=TractionMeta):
     def fullname(self) -> str:
         """Full name of class instance."""
         return f"{self.__class__.__name__}[{self.uid}]"
-    
 
     def to_json(self) -> Dict[str, Any]:
         ret = {}
         for f in self._fields:
             if f.startswith("i_"):
                 if hasattr(getattr(self, f), "_owner") and getattr(self, f)._owner:
-                    ret[f] = getattr(self, f)._owner.fullname
+                    ret[f] = getattr(self, f)._owner.fullname + "#" + getattr(self, f)._name
                 else:
-                    ret[f] = getattr(self, f).to_json()
+                    i_json = getattr(self, f).to_json()
+                    ret[f] = i_json 
             elif isinstance(getattr(self, f), (int, str, bool, float, type(None))):
                 ret[f] = getattr(self, f)
             else:
                 ret[f] = getattr(self, f).to_json()
         return ret
+
 
     def run(
         self,
@@ -1096,7 +1222,30 @@ class Traction(Base, metaclass=TractionMeta):
         If error occurs due to uncaught exception in this method, step state
         will be set to error
         """
+        #print("_RUN", self.__class__)
         raise NotImplementedError
+
+    @classmethod
+    def from_json(cls, json_data) -> Self:
+        #print("-> FROM JSON", cls, json_data)
+        args = {}
+        outs = {}
+        for f, ftype in cls._fields.items():
+            if f.startswith("i_") and isinstance(json_data[f], str):
+                continue
+            elif f.startswith("a_") or f.startswith("i_") or f.startswith("r_") or f in ("errors", "stats", "details"):
+                args[f] = ftype.from_json(json_data[f])
+            elif f.startswith("i_"):
+                #print("FROM JSON TRACTION INPUT", f)
+                args[f] = ftype.from_json(json_data[f])
+            elif f.startswith("o_"):
+                outs[f] = ftype.from_json(json_data[f])
+            else:
+                args[f] = json_data[f]
+        ret = cls(**args)
+        for o, oval in outs.items():
+            setattr(ret, o, oval)
+        return ret
 
 
 class TractorMeta(TractionMeta):
@@ -1123,31 +1272,50 @@ class TractorMeta(TractionMeta):
 
     @classmethod
     def _before_new(cls, attrs):
-        outputs_map = []
-        inputs_map = {}
+        #mapping which holds tractor inputs + tractions outputs
+        outputs_map = {}
+        # inputs map to map (traction, input_name) -> (traction/tractor, output_name)
+        io_map = {}
+        outputs_all = []
+        resources = {}
         resources_map = {}
-        for f, fo  in attrs.items():
+        # map for tractor outputs o -> (traction, o_name)
+        t_outputs_map = {}
+
+        for f, fo in attrs.items():
             if f.startswith("i_"):
-                inputs_map[f]= id(fo)
-                outputs_map.append(id(fo))
+                outputs_map[id(fo)] = ("#", f)
+                outputs_all.append(id(fo))
+            if f.startswith("o_"):
+                outputs_all.append(id(fo))
             if f.startswith("r_"):
-                resources_map[f] = id(fo)
+                resources[id(fo)] = f
 
-        attrs['_inputs_map'] = inputs_map
-        attrs['_resources_map'] = resources_map
-
-        for f in attrs['_fields']:
-            if not f.startswith("t_"):
+        for t in attrs['_fields']:
+            if not t.startswith("t_"):
                 continue
-            traction = attrs[f]
+            traction = attrs[t]
             for tf in traction._fields:
                 tfo = getattr(traction, tf)
                 if tf.startswith("o_"):
-                    outputs_map.append(id(tfo))
-                if tf.startswith("i_"):
+                    outputs_all.append(id(tfo))
+                    outputs_map[id(tfo)] = (t, tf)
+                elif tf.startswith("i_"):
                     if TypeNode.from_type(type(tfo), subclass_check=False) != TypeNode.from_type(NoData[ANY]):
-                        if id(getattr(traction, tf)) not in outputs_map:
+                        if id(getattr(traction, tf)) not in outputs_all:
                             raise ValueError(f"Input {traction.__class__}[{traction.uid}]->{tf} is mapped to output which is not known yet")
+                    if id(tfo) in outputs_map:
+                        io_map[(t, tf)] = outputs_map[id(tfo)]
+                elif tf.startswith("r_"):
+                    resources_map[(t, tf)] = resources[id(tfo)]
+
+        for f, fo in attrs.items():
+            if f.startswith("o_"):
+                t_outputs_map[f] = outputs_map[id(fo)]
+
+        attrs['_outputs_map'] = t_outputs_map
+        attrs['_resources_map'] = resources_map
+        attrs['_io_map'] = io_map
 
 
 class Tractor(Traction, metaclass=TractorMeta):
@@ -1164,24 +1332,31 @@ class Tractor(Traction, metaclass=TractorMeta):
         """ After tractor is created, all tractions needs to be copied so it's
             possible to use same Tractor class multiple times
         """
-        output_map = {}
-        resources_map = {}
-
         # record all outputs of the tractor
-        for f in self._fields:
-            if f.startswith("o_"):
-                output_map[id(getattr(self, f))] = getattr(self, f)
+        #for f in self._fields:
+        #    if f.startswith("o_"):
+        #        output_map[id(getattr(self, f))] = getattr(self, f)
 
         # In the case inputs are overwritten by user provided to __init__
-        for f in self._inputs_map:
-            if f.startswith("i_"):
-                output_map[self._inputs_map[f]] = getattr(self, f)
+        #for f in self._outputs_map:
+        #    output_map[self._inputs_map[f]] = getattr(self, f)
+
+        #print("_OUTPUTS MAP", self._outputs_map)
+        #print("INPUTS MAP", self._inputs_map)
+        #print("OUTPUTS MAP", output_map)
 
         # In the case resources are overwritten by user provided to __init__
-        for f in self._resources_map:
-            if f.startswith("r_"):
-                resources_map[self._resources_map[f]] = getattr(self, f)
+        #for f in self._resources_map:
+        #    if f.startswith("r_"):
+        #        resources_map[self._resources_map[f]] = getattr(self, f)
 
+        #print("__post_init__")
+        #for t in self.tractions:
+        #    print("__post_init__ tractions 1", t)
+
+
+        _tractions = {}
+        self.tractions.clear()
         for f in self._fields:
             # Copy all tractions
             if f.startswith("t_"):
@@ -1191,10 +1366,15 @@ class Tractor(Traction, metaclass=TractorMeta):
                     # set all inputs for the traction to outputs of traction copy
                     # created bellow
                     if ft.startswith("i_"):
-                        init_fields[ft] = output_map[id(getattr(traction, ft))]
-
+                        if (f, ft) in self._io_map:
+                            source, o_name = self._io_map[(f, ft)]
+                            if source == "#":
+                                init_fields[ft] = getattr(self, o_name)
+                            else:
+                                init_fields[ft] = getattr(_tractions[source], o_name)
                     elif ft.startswith("r_"):
-                        init_fields[ft] = resources_map[id(getattr(traction, ft))]
+                        self_field = self._resources_map[(f, ft)]
+                        init_fields[ft] = getattr(self, self_field)
 
                     # if field doesn't start with _ include it in init_fields to
                     # initialize the traction copy
@@ -1205,24 +1385,24 @@ class Tractor(Traction, metaclass=TractorMeta):
 
                 # create copy of existing traction
                 new_traction = traction.__class__(**init_fields)
+                _tractions[f] = new_traction
 
                 # also put new traction in tractions list used in run
                 self.tractions.append(new_traction)
 
                 # map outputs of traction copy to outputs of original
-                for ft in new_traction._fields:
-                    if ft.startswith("o_"):
-                        output_map[id(getattr(traction, ft))] = getattr(new_traction, ft)
-                setattr(self, f, new_traction)
 
-        # update all Tractor outputs to outputs of copies of original tractions
-        for f in  self._fields:
+        #print("__post_init__ tractions", self.tractions)
+
+        for f in self._fields:
             if f.startswith("o_"):
-                # regular __setattr__ don't overwrite whole output model but just 
-                # data in it to keep connection, so need to use _no_validate_setattr_
-                self._no_validate_setattr_(f, output_map[id(getattr(self, f))])
+                # regular __setattr__ don't overwrite whole output model but just
+                # data in it to keep connection, so need to use _no_validate_setattr
+                t, tf = self._outputs_map[f]
+                self._no_validate_setattr_(f, getattr(_tractions[t], tf))
 
     def _run(self, on_update: Optional[OnUpdateCallable] = None) -> Self:  # pragma: no cover
+
         for traction in self.tractions:
             traction.run(on_update=on_update)
             if on_update:
@@ -1270,6 +1450,41 @@ class Tractor(Traction, metaclass=TractorMeta):
             _on_update(self)  # type: ignore
         return self
 
+    @classmethod
+    def from_json(cls, json_data) -> Self:
+        args = {}
+        outs = {}
+        tractions = {}
+        traction_outputs = {}
+        #print(json_data)
+        for f, ftype in cls._fields.items():
+            if f.startswith("i_") and isinstance(json_data[f], str):
+                continue
+            elif f.startswith("t_"):
+                #print("TRACTOR FROM JSON F", f, ftype)
+                args[f] = ftype.from_json(json_data[f])
+                tractions[f] = args[f]
+                for tf in tractions[f]._fields:
+                    if tf.startswith("o_"):
+                        traction_outputs.setdefault(tractions[f].fullname,{})[tf] = getattr(tractions[f], tf)
+                for tf, tfval in json_data[f].items():
+                    if tf.startswith("i_") and isinstance(tfval, str):
+                        traction_name, o_name = tfval.split("#")
+                        setattr(tractions[f], tf, traction_outputs[traction_name][o_name])
+            elif f.startswith("a_") or f.startswith("i_") or f.startswith("r_") or f in ("errors", "stats", "details", "tractions"):
+                # skip if there are no data to load
+                if json_data[f].get("$data"):
+                    #print("TRACTOR LOAD F", f, json_data[f].get("$data"))
+                    args[f] = ftype.from_json(json_data[f])
+            elif f.startswith("o_"):
+                outs[f] = ftype.from_json(json_data[f])
+            else:
+                args[f] = json_data[f]
+        ret = cls(**args)
+        for o, oval in outs.items():
+            getattr(ret, o).data = oval.data
+        return ret
+
 
 class STMDMeta(TractionMeta):
     @classmethod
@@ -1290,6 +1505,10 @@ class STMDMeta(TractionMeta):
             else:
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_ or r_")
 
+    @classmethod
+    def _default_out_list(cls, type_):
+        return Out[TList[Out[type_]]](data=TList[Out[type_]]([]))
+
     def __new__(cls, name, bases, attrs):
         annotations = attrs.get('__annotations__', {})
         # check if all attrs are in supported types
@@ -1298,10 +1517,14 @@ class STMDMeta(TractionMeta):
             if attr.startswith("_"):
                 continue
             cls._attribute_check(attr, type_)
-            if attr.startswith("i_") and attr not in attrs['traction']._fields:
-                raise ValueError("STMD {cls}{name} has attribute {attr} but traction doesn't have input with the same name")
-            if attr.startswith("o_") and attr not in attrs['traction']._fields:
-                raise ValueError("STMD {cls}{name} has attribute {attr} but traction doesn't have input with the same name")
+            if attr.startswith("i_") and attr not in attrs['_traction']._fields:
+                raise ValueError(f"STMD {cls}{name} has attribute {attr} but traction doesn't have input with the same name")
+            if attr.startswith("o_") and attr not in attrs['_traction']._fields:
+                raise ValueError(f"STMD {cls}{name} has attribute {attr} but traction doesn't have input with the same name")
+            if attr.startswith("r_") and attr not in attrs['_traction']._fields:
+                raise ValueError(f"STMD {cls}{name} has attribute {attr} but traction doesn't have resource with the same name")
+            if attr.startswith("a_") and attr not in ("a_pool_size", "a_use_processes") and attr not in attrs['_traction']._fields:
+                raise ValueError(f"STMD {cls}{name} has attribute {attr} but traction doesn't have argument with the same name")
 
         # record fields to private attribute
         attrs["_attrs"] = attrs
@@ -1310,7 +1533,11 @@ class STMDMeta(TractionMeta):
         for f, ftype in attrs["_fields"].items():
             # Do not include outputs in init
             if f.startswith("o_") and f not in attrs:
-                attrs[f] = dataclasses.field(init=False, default_factory=Out[TList[Out[ftype._params]]])
+                attrs[f] = dataclasses.field(
+                    init=False,
+                    default_factory=DefaultOut(type_=ftype._params[0],
+                                               params=(ftype._params)))
+
             # Set all inputs to NoData after as default
             if f.startswith("i_") and f not in attrs:
                 attrs[f] = dataclasses.field(default_factory=In[TList[In[ftype._params]]])
@@ -1327,15 +1554,19 @@ class STMDMeta(TractionMeta):
         outputs_map = []
         inputs_map = {}
         resources_map = {}
+        args_map = {}
         for f, fo  in attrs.items():
             if f.startswith("i_"):
                 inputs_map[f]= id(fo)
                 outputs_map.append(id(fo))
             if f.startswith("r_"):
                 resources_map[f] = id(fo)
+            if f.startswith("a_"):
+                args_map[f] = id(fo)
 
         attrs['_inputs_map'] = inputs_map
         attrs['_resources_map'] = resources_map
+        attrs['_args_map'] = args_map
 
 
 class STMD(Traction, metaclass=STMDMeta):
@@ -1346,7 +1577,7 @@ class STMD(Traction, metaclass=STMDMeta):
     errors: TList[str] = dataclasses.field(default_factory=TList[str])
     stats: TractionStats = dataclasses.field(default_factory=TractionStats)
     details: TList[str] = dataclasses.field(default_factory=TList[str])
-    traction: Traction
+    _traction: Type[Traction] = Traction
     a_pool_size: Arg[int]
     a_use_processes: Arg[bool] = Arg[bool](a=False)
     tractions: TList[Traction] = TList[Traction]([])
@@ -1355,38 +1586,47 @@ class STMD(Traction, metaclass=STMDMeta):
         """ After tractor is created, all tractions needs to be copied so it's
             possible to use same Tractor class multiple times
         """
-        #resources_map = {}
-        # In the case resources are overwritten by user provided to __init__
-        for f in self._resources_map:
-            if f.startswith("r_"):
-                resources_map[self._resources_map[f]] = getattr(self, f)
+        # resources_map = {}
+        # args_map = {}
 
-        traction = self.traction
+        # In the case resources are overwritten by user provided to __init__
+        # for f in self._resources_map:
+        #     if f.startswith("r_"):
+        #         resources_map[self._resources_map[f]] = getattr(self, f)
+        #
+        # for f in self._args_map:
+        #     if f.startswith("a_"):
+        #         args_map[self._args_map[f]] = getattr(self, f)
+
+        traction = self._traction
         init_fields = {}
         for ft, field in traction.__dataclass_fields__.items():
             # set all inputs for the traction to outputs of traction copy
             # created bellow
+
             if ft.startswith("i_"):
                 init_fields[ft] = getattr(self, ft).data[index]
 
             elif ft.startswith("r_"):
-                init_fields[ft] = resources_map[id(getattr(traction, ft))]
+                init_fields[ft] = getattr(self, ft)
+
+            elif ft.startswith("a_"):
+                init_fields[ft] = getattr(self, ft)
 
             # if field doesn't start with _ include it in init_fields to
             # initialize the traction copy
-            elif field.init:
-                if ft.startswith("_"):
-                    continue
-                init_fields[ft] = getattr(traction, ft)
+            #elif field.init and not :
+            #    if ft.startswith("_"):
+            #        continue
+            #    init_fields[ft] = getattr(traction, ft)
 
         init_fields['uid'] = "%s:%d" % (self.uid, index)
         # create copy of existing traction
-        ret = traction.__class__(**init_fields)
+        ret = traction(**init_fields)
 
         for ft in traction._fields:
             if ft.startswith("o_"):
-                getattr(self, ft).data.append(getattr(traction, ft))
-
+                getattr(self, ft).data.append(getattr(ret, ft))
 
         return ret
 
@@ -1409,6 +1649,11 @@ class STMD(Traction, metaclass=STMDMeta):
         for f in self._fields:
             if f.startswith("i_"):
                 inputs[f] = getattr(self, f)
+        outputs = {}
+        for f in self._fields:
+            if f.startswith("o_"):
+                outputs[f] = getattr(self, f)
+
 
         first_in = inputs[list(inputs.keys())[0]]
         for key in inputs:
@@ -1418,22 +1663,21 @@ class STMD(Traction, metaclass=STMDMeta):
         with executor_class(max_workers=self.a_pool_size.a) as executor:
             ft_results = {}
             for i in range(0, len(list(inputs.values())[0].data)):
-                print("RUN", i)
                 t = self._copy_traction(i)
+
                 self.tractions.append(t)
                 res = executor.submit(t.run, on_update=on_update)
                 ft_results[res] = (t, i)
-                #self.results.data.append(self.TractorType.__fields__["results"].type_())
+                for o in outputs:
+                    getattr(self, o).data[i].data = getattr(t, o).data
             _on_update(self)
             for ft in as_completed(ft_results):
                 (_, i) = ft_results[ft]
                 nt = ft.result()
-                print("T", nt)
                 self.tractions[i] = nt
-                #self.results.data[i] = nt.results
-                #self.details.data[i] = nt.details
-                _on_update(self)
-            print(self)
+                for o in outputs:
+                    getattr(self, o).data[i].data = getattr(nt, o).data
+            _on_update(self)
 
         self.state = TractionState.FINISHED
         return self

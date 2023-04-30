@@ -225,7 +225,9 @@ def test_base_setattr_optional_fail():
         s: Optional[str]
 
     t = TestC(s="a")
+    print("---")
     t.s = None
+    print("---")
     with pytest.raises(TypeError):
         t.s = 100
 
@@ -307,7 +309,9 @@ def test_base_to_json_simple():
     assert tc.to_json() == {
         "$data": {"foo": 10, "bar": "bar"},
         "$type": {"args": [],
-                  'type': 'test_base_to_json_simple.<locals>.TestC'}
+                  'type': 'test_base_to_json_simple.<locals>.TestC',
+                  'module': 'tests.test_base',
+        }
     }
 
 
@@ -334,19 +338,38 @@ def test_base_to_json_complex():
                 },
                 "$type": {
                     "args": [],
-                    'type': 'test_base_to_json_complex.<locals>.TestC2'
+                    'type': 'test_base_to_json_complex.<locals>.TestC2',
+                    'module': 'tests.test_base'
                 }
             },
             "intlist": {
                 "$data": [20, 40],
-                "$type": {"args": [{"args": [], "type": "int"}], "type": "TList"}
+                "$type": {"args": [{"args": [], "type": "int", 'module':'builtins'}], "type": "TList", "module": "pytraction.base"}
             }
         },
         "$type": {
             "args": [],
-            'type': 'test_base_to_json_complex.<locals>.TestC'
+            'type': 'test_base_to_json_complex.<locals>.TestC',
+            'module': "tests.test_base",
         }
     }
+
+def test_base_to_from_json_complex():
+    class TestC2(Base):
+        attr1: str
+        attr2: int
+
+    class TestC(Base):
+        c2: TestC2
+        foo: int
+        bar: str
+        intlist: TList[int]
+        complex_list: TList[TestC2]
+
+
+    tc = TestC(foo=10, bar="bar", c2=TestC2(attr1="a", attr2=10), intlist=TList[int]([20,40]), complex_list=TList[TestC2]([]))
+    tc2 = TestC.from_json(tc.to_json())
+    assert tc == tc2
 
 
 def test_base_from_json_simple():
@@ -390,7 +413,7 @@ def test_base_from_json_simple_fail2():
         foo: int
         bar: str
 
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError):
         tc = TestC.from_json({"foo": 10, "bar": "bar", "extra": "arg"})
         print(tc)
 
@@ -403,3 +426,4 @@ def test_base_generic_nested():
         a: T
 
     TestC[TestA](a=TestA())
+
