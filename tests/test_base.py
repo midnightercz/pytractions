@@ -2,7 +2,7 @@ from typing import List, Dict, Union, Optional, TypeVar, Generic
 
 import pytest
 
-from pytraction.base import Base, JSONIncompatibleError, TList, TDict
+from pytraction.base import Base, JSONIncompatibleError, TList, TDict, JSON_COMPATIBLE, TypeNode
 
 # Jsonable test cases
 
@@ -427,3 +427,10 @@ def test_base_generic_nested():
 
     TestC[TestA](a=TestA())
 
+
+def test_type_json():
+    t = TypeNode.from_type(TList[JSON_COMPATIBLE])
+    tjson = t.to_json()
+    print(tjson)
+    t2 =TypeNode.from_json(tjson)
+    assert t == t2

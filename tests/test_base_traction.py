@@ -126,7 +126,9 @@ def test_traction_inlist_to_json():
     class TTest(Traction):
         i_in1: In[TList[int]]
 
-    o: Out[int] = Out[int](data=10)
+    print(TTest._fields)
+
+    #o: Out[int] = Out[int](data=10)
     t = TTest(uid="1")#, i_in1=o)
     assert t.to_json() == {
         "details": {"$data": [],
