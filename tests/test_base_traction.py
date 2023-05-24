@@ -286,7 +286,7 @@ def test_traction_json(fixture_isodate_now):
                       "type": "TractionStats"}
         },
         'uid': '1',
-    } 
+    }
 
 
 def test_tractor_members_order() -> None:
@@ -516,7 +516,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                       'type': 'TractionStats'}
          },
          't_ttest1': {
-            'a_multiplier': {"$data": {'a': 10.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
+            'a_multiplier': {"$data": {'a': 0.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
             'details': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
             'errors': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
             'o_out1': {"$data": {'data': 0.0}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
@@ -533,7 +533,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
             },
             'uid': '1'},
         't_ttest2': {
-            'a_reducer': {"$data": {'a': 2.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
+            'a_reducer': {"$data": {'a': 0.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
             'details': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
             'errors': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
             'i_in1': 'TTest1[1]#o_out1',
@@ -551,7 +551,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
             },
             'uid': '2'},
         't_ttest3': {
-            'a_reducer': {"$data": {'a': 2.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
+            'a_reducer': {"$data": {'a': 0.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
             'details': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
             'errors': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
             'i_in1': 'TTest2[2]#o_out1',
@@ -569,7 +569,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
             },
             'uid': '3'},
         't_ttest4': {
-            'a_reducer': {"$data": {'a': 2.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
+            'a_reducer': {"$data": {'a': 0.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
             'details': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
             'errors': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
             'i_in1': 'TTest2[3]#o_out1',
@@ -591,8 +591,8 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                                         '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}],
                                                   'module': 'pytraction.base',
                                                   'type': 'Arg'}},
-                       'details': {'$data': {}, '$type': {'args': [{'args': [], 'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
-                       'errors': {'$data': {}, '$type': {'args': [{'args': [], 'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
+                       'details': {'$data': [], '$type': {'args': [{'args': [], 'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
+                       'errors': {'$data': [], '$type': {'args': [{'args': [], 'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
                        'o_out1': {'$data': {'data': 10.0}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
                        'skip': False,
                        'skip_reason': '',
@@ -611,8 +611,8 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                                      '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}],
                                                'module': 'pytraction.base',
                                                'type': 'Arg'}},
-                       'details': {'$data': {}, '$type': {'args': [{'args': [], 'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
-                       'errors': {'$data': {}, '$type': {'args': [{'args': [], 'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
+                       'details': {'$data': [], '$type': {'args': [{'args': [], 'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
+                       'errors': {'$data': [], '$type': {'args': [{'args': [], 'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
                        'o_out1': {'$data': {'data': 5.5}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
                        'i_in1': {'$data': {'data': 10.0}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
                        'skip': False,
@@ -632,8 +632,8 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                                      '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}],
                                                'module': 'pytraction.base',
                                                'type': 'Arg'}},
-                       'details': {'$data': {}, '$type': {'args': [{'args': [], 'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
-                       'errors': {'$data': {}, '$type': {'args': [{'args': [], 'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
+                       'details': {'$data': [], '$type': {'args': [{'args': [], 'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
+                       'errors': {'$data': [], '$type': {'args': [{'args': [], 'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
                        'i_in1': {'$data': {'data': 5.5}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
                        'o_out1': {'$data': {'data': 3.25}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
                        'skip': False,
@@ -653,8 +653,8 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                                      '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}],
                                                'module': 'pytraction.base',
                                                'type': 'Arg'}},
-                       'details': {'$data': {}, '$type': {'args': [{'args': [], 'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
-                       'errors': {'$data': {}, '$type': {'args': [{'args': [], 'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
+                       'details': {'$data': [], '$type': {'args': [{'args': [], 'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
+                       'errors': {'$data': [], '$type': {'args': [{'args': [], 'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
                        'i_in1': {'$data': {'data': 3.25}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
                        'o_out1': {'$data': {'data': 2.125}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
                        'skip': False,
@@ -715,6 +715,40 @@ def test_stmd(fixture_isodate_now) -> None:
     assert stmd1.o_out1.data[2].data == 30.0
     assert stmd1.o_out1.data[3].data == 40.0
     assert stmd1.o_out1.data[4].data == 50.0
+
+class G_TestTractor(Tractor):
+    i_in1: In[Union[float, int]] = In[Union[float, int]](data=20.0)
+    a_multiplier: Arg[float] = Arg[float](a=1.0)
+
+    t_traction_1: G_TTest1 = G_TTest1(uid="1", i_in1=i_in1, a_multiplier=a_multiplier)
+    t_traction_2: G_TTest1 = G_TTest1(uid="1", i_in1=t_traction_1.o_out1, a_multiplier=a_multiplier)
+
+    o_out1: Out[float] = t_traction_2.o_out1
+
+def test_stmd_tractor(fixture_isodate_now) -> None:
+    class TestSTMD(STMD):
+        a_multiplier: Arg[float] = Arg[float](a=0.0)
+        i_in1: In[TList[In[Union[float, int]]]] = In[TList[In[Union[float, int]]]](data=TList[In[Union[float, int]]]([]))
+
+        _traction: Type[Traction] = G_TestTractor
+
+        o_out1: Out[TList[Out[float]]] = Out[TList[Out[float]]](data=TList[Out[float]]([]))
+
+    stmd_in1 = In[TList[In[float]]](data=TList[In[float]]([
+        In[Union[float, int]](data=1.0),
+        In[Union[float, int]](data=2.0),
+        In[Union[float, int]](data=3.0),
+        In[Union[float, int]](data=4.0),
+        In[Union[float, int]](data=5.0)
+    ]))
+    stmd1 = TestSTMD(uid='tt1', a_pool_size=Arg[int](a=1), a_multiplier=Arg[float](a=10.0), i_in1=stmd_in1)
+    stmd1.run()
+    print(stmd1.o_out1)
+    assert stmd1.o_out1.data[0].data == 100.0
+    assert stmd1.o_out1.data[1].data == 200.0
+    assert stmd1.o_out1.data[2].data == 300.0
+    assert stmd1.o_out1.data[3].data == 400.0
+    assert stmd1.o_out1.data[4].data == 500.0
 
 
 def test_type_from_to_json():

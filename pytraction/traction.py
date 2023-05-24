@@ -46,7 +46,6 @@ from .exc import (
     MissingSecretError,
     DuplicateStepError,
     DuplicateTractorError,
-    StepFailedError,
 )
 
 from .utils import (
