@@ -354,20 +354,23 @@ def test_base_to_json_complex():
         }
     }
 
+
+class TestC2(Base):
+    attr1: str
+    attr2: int
+
+
+class TestC(Base):
+    c2: TestC2
+    foo: int
+    bar: str
+    intlist: TList[int]
+    complex_list: TList[TestC2]
+
+
 def test_base_to_from_json_complex():
-    class TestC2(Base):
-        attr1: str
-        attr2: int
 
-    class TestC(Base):
-        c2: TestC2
-        foo: int
-        bar: str
-        intlist: TList[int]
-        complex_list: TList[TestC2]
-
-
-    tc = TestC(foo=10, bar="bar", c2=TestC2(attr1="a", attr2=10), intlist=TList[int]([20,40]), complex_list=TList[TestC2]([]))
+    tc = TestC(foo=10, bar="bar", c2=TestC2(attr1="a", attr2=10), intlist=TList[int]([20, 40]), complex_list=TList[TestC2]([]))
     tc2 = TestC.from_json(tc.to_json())
     assert tc == tc2
 

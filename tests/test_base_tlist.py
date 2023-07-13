@@ -23,7 +23,6 @@ def test_base_list_new_ok_generic():
     class TestC(Base, Generic[T]):
         l: TList[T]
 
-    print(id(T))
     tc = TestC[int](l=TList[int]([10]))
     assert tc.l._list == [10]
 

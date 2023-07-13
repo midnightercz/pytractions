@@ -1,29 +1,26 @@
-from typing import List, Dict, Union, Optional, TypeVar, Generic, ClassVar, Type
+from typing import List, Dict, Union, Optional, TypeVar, Generic, Type
+from dataclasses import field
 
 import pytest
 
 from pytraction.base import (
     Traction,
-    Tractor,
     STMD,
-    JSONIncompatibleError,
     TList,
-    TDict,
     Out,
     In,
     Arg,
     Res,
-    ANY,
     Base,
     NoData,
     TypeNode,
 )
 
-# Jsonable test cases
+
+from pytraction.tractor import Tractor
 
 T = TypeVar("T")
 
-from dataclasses import field
 
 
 def test_traction_ok_args_1():
@@ -128,19 +125,28 @@ def test_traction_inlist_to_json():
 
     print(TTest._fields)
 
-    #o: Out[int] = Out[int](data=10)
-    t = TTest(uid="1")#, i_in1=o)
+    o: Out[TList[int]] = Out[TList[int]](data=TList[int]([10]))
+    t = TTest(uid="1", i_in1=o)
     assert t.to_json() == {
         "details": {"$data": [],
                     "$type": {"args":[{"args": [], "type": "str", 'module': 'builtins'}], "type": "TList", "module":"pytraction.base"}},
         "errors": {"$data": [],
                    "$type": {"args": [{"args": [],"type": "str", 'module': 'builtins'}], "type": "TList", "module":"pytraction.base"}
                    },
-        "i_in1": {"$data": {"data": 10},
-                  "$type": {"args": [{"args": [], "type": "int", "module":"builtins"}],
-                            "type": "Out",
-                            'module': "pytraction.base"}
-                  },
+
+        'i_in1': {'$data': {'data': {'$data': [10],
+                                     '$type': {'args': [{'args': [],
+                                                         'module': 'builtins',
+                                                         'type': 'int'}],
+                                               'module': 'pytraction.base',
+                                               'type': 'TList'}}},
+                  '$type': {'args': [{'args': [{'args': [],
+                                                'module': 'builtins',
+                                                'type': 'int'}],
+                                      'module': 'pytraction.base',
+                                      'type': 'TList'}],
+                  'module': 'pytraction.base',
+                  'type': 'Out'}},
         "skip": False,
         "skip_reason": "",
         "state": "ready",
@@ -157,11 +163,15 @@ def test_traction_to_from_json():
 
     o: Out[int] = Out[int](data=10)
     t = TTest(uid="1", i_in1=o)
-    print(" --- T2 --- ")
+    print(" --- T --- ")
     print(t.to_json())
     #print(TTest, TTest.i_in1)
-    print(" --- ---")
+    print(" --- T2 --- ")
     t2 = TTest.from_json(t.to_json())
+    print(t2)
+    print(t2.to_json())
+    t2.i_in1 = Out[int](data=10)
+    t.i_in1._ref = None
     assert t == t2
 
 
@@ -460,6 +470,7 @@ def test_tractor_run_resources() -> None:
     tt.run()
     assert tt.o_out1.data == 5.125
 
+
 def test_tractor_to_json(fixture_isodate_now) -> None:
     class TTest1(Traction):
         o_out1: Out[float]
@@ -508,7 +519,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
          'skip_reason': '',
          'state': 'finished',
          'stats': {
-            "$data": {'finished': '1990-01-01T00:00:09.00000Z',
+            "$data": {'finished': '1990-01-01T00:00:08.00000Z',
                       'skipped': False,
                       'started': '1990-01-01T00:00:00.00000Z'},
             '$type': {'args': [],
@@ -516,76 +527,76 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                       'type': 'TractionStats'}
          },
          't_ttest1': {
-            'a_multiplier': {"$data": {'a': 0.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
+            'a_multiplier': {"$data": {'a': 10.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
             'details': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
             'errors': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
-            'o_out1': {"$data": {'data': 0.0}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
+            'o_out1': {"$data": {'data': 10.0}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
             'skip': False,
             'skip_reason': '',
-            'state': 'ready',
+            'state': 'finished',
             'stats': {
-                "$data": {'finished': '',
+                "$data": {'finished': '1990-01-01T00:00:01.00000Z',
                           'skipped': False,
-                          'started': ''},
+                          'started': '1990-01-01T00:00:00.00000Z'},
                 '$type': {'args': [],
                           'module': 'pytraction.base',
                           'type': 'TractionStats'}
             },
-            'uid': '1'},
+            'uid': 'tt1::1'},
         't_ttest2': {
-            'a_reducer': {"$data": {'a': 0.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
+            'a_reducer': {"$data": {'a': 2.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
             'details': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
             'errors': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
-            'i_in1': 'TTest1[1]#o_out1',
-            'o_out1': {"$data": {'data': 0.0}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
+            'i_in1': 'TTest1[tt1::1]#o_out1',
+            'o_out1': {"$data": {'data': 5.5}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
             'skip': False,
             'skip_reason': '',
-            'state': 'ready',
+            'state': 'finished',
             'stats': {
-                "$data": {'finished': '',
+                "$data": {'finished': '1990-01-01T00:00:03.00000Z',
                           'skipped': False,
-                          'started': ''},
+                          'started': '1990-01-01T00:00:02.00000Z'},
                 '$type': {'args': [],
                           'module': 'pytraction.base',
                           'type': 'TractionStats'}
             },
-            'uid': '2'},
+            'uid': 'tt1::2'},
         't_ttest3': {
-            'a_reducer': {"$data": {'a': 0.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
+            'a_reducer': {"$data": {'a': 2.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
             'details': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
             'errors': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
-            'i_in1': 'TTest2[2]#o_out1',
-            'o_out1': {"$data": {'data': 0.0}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
+            'i_in1': 'TTest2[tt1::2]#o_out1',
+            'o_out1': {"$data": {'data': 3.25}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
             'skip': False,
             'skip_reason': '',
-            'state': 'ready',
+            'state': 'finished',
             'stats': {
-                "$data": {'finished': '',
+                "$data": {'finished': '1990-01-01T00:00:05.00000Z',
                           'skipped': False,
-                          'started': ''},
+                          'started': '1990-01-01T00:00:04.00000Z'},
                 '$type': {'args': [],
                           'module': 'pytraction.base',
                           'type': 'TractionStats'}
             },
-            'uid': '3'},
+            'uid': 'tt1::3'},
         't_ttest4': {
-            'a_reducer': {"$data": {'a': 0.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
+            'a_reducer': {"$data": {'a': 2.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
             'details': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
             'errors': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
-            'i_in1': 'TTest2[3]#o_out1',
-            'o_out1': {"$data": {'data': 0.0}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
+            'i_in1': 'TTest2[tt1::3]#o_out1',
+            'o_out1': {"$data": {'data': 2.125}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
             'skip': False,
             'skip_reason': '',
-            'state': 'ready',
+            'state': 'finished',
             'stats': {
-                "$data": {'finished': '',
+                "$data": {'finished': '1990-01-01T00:00:07.00000Z',
                           'skipped': False,
-                          'started': ''},
+                          'started': '1990-01-01T00:00:06.00000Z'},
                 '$type': {'args': [],
                           'module': 'pytraction.base',
                           'type': 'TractionStats'}
             },
-            'uid': '4'},
+            'uid': 'tt1::4'},
         'tractions': {'$data': [
             {'$data': {'a_multiplier': {'$data': {'a': 10.0},
                                         '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}],
@@ -597,13 +608,13 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                        'skip': False,
                        'skip_reason': '',
                        'state': 'finished',
-                       'stats': {'$data': {'finished': '1990-01-01T00:00:02.00000Z',
+                       'stats': {'$data': {'finished': '1990-01-01T00:00:01.00000Z',
                                            'skipped': False,
-                                           'started': '1990-01-01T00:00:01.00000Z'},
+                                           'started': '1990-01-01T00:00:00.00000Z'},
                                  '$type': {'args': [],
                                            'module': 'pytraction.base',
                                            'type': 'TractionStats'}},
-                        'uid': '1'},
+                        'uid': 'tt1::1'},
              '$type': {'args': [],
                        'module': 'tests.test_base_traction',
                        'type': 'test_tractor_to_json.<locals>.TTest1'}},
@@ -618,13 +629,13 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                        'skip': False,
                        'skip_reason': '',
                        'state': 'finished',
-                       'stats': {'$data': {'finished': '1990-01-01T00:00:04.00000Z',
+                       'stats': {'$data': {'finished': '1990-01-01T00:00:03.00000Z',
                                            'skipped': False,
-                                           'started': '1990-01-01T00:00:03.00000Z'},
+                                           'started': '1990-01-01T00:00:02.00000Z'},
                                  '$type': {'args': [],
                                            'module': 'pytraction.base',
                                            'type': 'TractionStats'}},
-                        'uid': '2'},
+                        'uid': 'tt1::2'},
              '$type': {'args': [], 
                        'module': 'tests.test_base_traction',
                        'type': 'test_tractor_to_json.<locals>.TTest2'}},
@@ -639,13 +650,13 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                        'skip': False,
                        'skip_reason': '',
                        'state': 'finished',
-                       'stats': {'$data': {'finished': '1990-01-01T00:00:06.00000Z',
+                       'stats': {'$data': {'finished': '1990-01-01T00:00:05.00000Z',
                                            'skipped': False,
-                                           'started': '1990-01-01T00:00:05.00000Z'},
+                                           'started': '1990-01-01T00:00:04.00000Z'},
                                  '$type': {'args': [],
                                            'module': 'pytraction.base',
                                            'type': 'TractionStats'}},
-                        'uid': '3'},
+                        'uid': 'tt1::3'},
              '$type': {'args': [],
                        'module': 'tests.test_base_traction',
                        'type': 'test_tractor_to_json.<locals>.TTest2'}},
@@ -660,13 +671,13 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                        'skip': False,
                        'skip_reason': '',
                        'state': 'finished',
-                       'stats': {'$data': {'finished': '1990-01-01T00:00:08.00000Z',
+                       'stats': {'$data': {'finished': '1990-01-01T00:00:07.00000Z',
                                            'skipped': False,
-                                           'started': '1990-01-01T00:00:07.00000Z'},
+                                           'started': '1990-01-01T00:00:06.00000Z'},
                                  '$type': {'args': [],
                                            'module': 'pytraction.base',
                                            'type': 'TractionStats'}},
-                        'uid': '4'},
+                        'uid': 'tt1::4'},
              '$type': {'args': [],
                        'module': 'tests.test_base_traction',
                        'type': 'test_tractor_to_json.<locals>.TTest2'}},

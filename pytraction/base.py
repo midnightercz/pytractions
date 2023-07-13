@@ -111,7 +111,6 @@ class TypeNode:
         current = root
         stack = []
         while True:
-            #print("FROM TYPE", current.type_)
             if hasattr(current.type_, "__args__"):
                 for arg in current.type_.__args__:
                     n = cls(type_=arg)
@@ -126,10 +125,8 @@ class TypeNode:
                 break
             if get_origin(current.type_):
                 current.type_ = get_origin(current.type_)
-                #print("FROM TYPE ORIGIN", current.type_)
             elif hasattr(current.type_, "_orig_cls") and current.type_._orig_cls:
                 current.type_ = current.type_._orig_cls
-                #print("FROM TYPE ORIGIN", current.type_)
             current = stack.pop()
         return root
 
@@ -146,30 +143,20 @@ class TypeNode:
     def replace_params(self, params_map):
         """Replace Typevars in TypeNode structure with values from provided mapping."""
         
-        #print("REPLACE PARAMS", params_map)
 
         stack = [(self, 0, None)]
         while stack:
             current, parent_index, current_parent = stack.pop(0)
-            #print("REPLACE PARAMS POP", current, parent_index, current_parent)
             for n, ch in enumerate(current.children):
                 stack.insert(0, (ch, n, current))
             if type(current.type_) == TypeVar:
-                #print("REPLACE PARAMS TypeVar ID", id(current.type_))
-                #for p in params_map:
-                #    #print(f"REPLACE PARAMS params map {p} ID {id(p)}")
-
                 if current.type_ in params_map:
-                    #print("REPLACED PARAMS TypeVar", current.type_, "TO", params_map[current.type_])
                     current.type_ = params_map[current.type_]
 
     def to_type(self, types_cache={}, params_map={}):
         """Return new type for TypeNode or already existing type from cache."""
 
-        #print("TO TYPE", self)
-        #print("TO TYPE JSON", self.to_json())
         if json.dumps(self.to_json(), sort_keys=True) in self._to_type_cache:
-            #print("TO TYPE CACHED", self, self.to_json(), self._to_type_cache[json.dumps(self.to_json(), sort_keys=True)], id(self._to_type_cache[json.dumps(self.to_json(), sort_keys=True)]))
             return self._to_type_cache[json.dumps(self.to_json(), sort_keys=True)]
 
         stack = [(self, 0, None)]
@@ -184,24 +171,18 @@ class TypeNode:
             node, parent_index, parent = item
 
             if node.children:
-                #print("NODE TO TYPE", node.type_)
                 type_ = node.type_
-                #print("TO TYPE", type_)
 
                 children_types = tuple([x.type_ for x in node.children])
                 children_type_ids = tuple([id(x.type_) for x in node.children])
 
                 if f"{type_.__qualname__}[{children_type_ids}]" in types_cache:
-                    #print("Storing to cache", f"{type_.__qualname__}[{children_type_ids}]")
                     node.type_ = types_cache[f"{type_.__qualname__}[{children_type_ids}]"][0]
                 else:
                     if type_ == Union:
                         node.type_ = Union[tuple([x.type_ for x in node.children])]
                     else:
-                        #print("$$$ to type params map", params_map)
-                        #print("TYPE_", type_)
                         new_type = type_.__class_getitem__(tuple([x.type_ for x in node.children]), params_map=params_map)
-                        #print(types_cache)
                         node.type_ = new_type #types_cache[f"{id(type_)}[{children_type_ids}]"][0]
 
             if not parent:
@@ -229,7 +210,6 @@ class TypeNode:
         post_order.insert(0, root_node)
         while stack:
             current_node = stack.pop()
-            #print("ORDER", current_node.n1.type_, current_node.n2.type_)
                 
             if current_node.n1.type_ is Union and current_node.n2.type_ is not Union:
                 for ch1 in current_node.n1.children:
@@ -277,10 +257,7 @@ class TypeNode:
         node = CMPNode(self, other, op, op)
         post_order = self.__eq_post_order(node)
 
-        #print(post_order)
-        #print("-----")
         for cmp_node in post_order:
-            #print("TYPE NODE cmp_node op", cmp_node.op)
             if cmp_node.op == "any":
                 if cmp_node.children:
                     ch_eq = any([ch.eq for ch in cmp_node.children])
@@ -288,9 +265,6 @@ class TypeNode:
                     ch_eq = True
             else:
                 ch_eq = all([ch.eq for ch in cmp_node.children])
-
-            #print("TYPE NODE EQ CH_EQ 1", ch_eq)
-
 
             n1_type = get_origin(cmp_node.n1.type_) or cmp_node.n1.type_
             n2_type = get_origin(cmp_node.n2.type_) or cmp_node.n2.type_
@@ -315,17 +289,6 @@ class TypeNode:
             has_params1 = hasattr(n1_type, "_params") and len(n1_type._params) != 0
             has_params2 = hasattr(n2_type, "_params") and len(n2_type._params) != 0
 
-            #print("TYPE NODE EQ has_params 1", has_params1)
-            #print("TYPE NODE EQ has_params 2", has_params2)
-            #print("TYPE NODE EQ 1", n1_type, orig_cls1)
-            #print("TYPE NODE EQ 2", n2_type, orig_cls2)
-            #print("TYPE NODE EQ t1 == t2", n1_type == n2_type, id(n1_type), id(n2_type))
-            #print("TYPE NODE EQ orig_cls1 == orig_cls2", orig_cls1 == orig_cls2, id(orig_cls1), id(orig_cls2))
-
-            #print("TYPE NODE EQ subclass check", self.subclass_check)
-            #print("TYPE NODE QE subcls", inspect.isclass(n1_type), inspect.isclass(n2_type), inspect.isclass(n1_type) and inspect.isclass(n2_type) and issubclass(n1_type, n2_type))
-            #print("TYPE NODE QE subcls", inspect.isclass(orig_cls1), inspect.isclass(orig_cls2), inspect.isclass(orig_cls1) and inspect.isclass(orig_cls2) and issubclass(orig_cls1, orig_cls2))
-
             if n1_type != Union and n2_type != Union:
                 ch_eq &= (n1_type == n2_type or
                           (orig_cls1 == orig_cls2 and has_params1 and has_params2) or
@@ -334,9 +297,7 @@ class TypeNode:
                           (self.subclass_check and (inspect.isclass(n1_type) and inspect.isclass(n2_type) and issubclass(n1_type, n2_type))) or
                           (self.subclass_check and (inspect.isclass(n1_type) and inspect.isclass(orig_cls2) and issubclass(n1_type, orig_cls2))) or
                           bool(self.subclass_check and inspect.isclass(orig_cls1) and inspect.isclass(orig_cls2) and issubclass(orig_cls1, orig_cls2)))
-            #print("TYPE NODE EQ CH_EQ", ch_eq)
             cmp_node.eq = ch_eq
-            #print("--")
 
         return node.eq
 
@@ -348,10 +309,7 @@ class TypeNode:
         node = CMPNode(self, other, op, op)
         post_order = self.__eq_post_order(node)
 
-        #print(post_order)
-        #print("-----")
         for cmp_node in post_order:
-            #print("TYPE NODE cmp_node op", cmp_node.op)
             if cmp_node.op == "any":
                 if cmp_node.children:
                     ch_eq = any([ch.eq for ch in cmp_node.children])
@@ -360,10 +318,6 @@ class TypeNode:
             else:
                 ch_eq = all([ch.eq for ch in cmp_node.children])
 
-            #print("TYPE NODE EQ CH_EQ 1", ch_eq)
-
-            #n1_type = get_origin(cmp_node.n1.type_) or cmp_node.n1.type_
-            #n2_type = get_origin(cmp_node.n2.type_) or cmp_node.n2.type_
             n1_type = cmp_node.n1.type_
             n2_type = cmp_node.n2.type_
 
@@ -392,21 +346,6 @@ class TypeNode:
             is_any1 = n1_type is ANY
             is_any2 = n2_type is ANY
 
-            # print("TYPE NODE EQ is any 1", is_any1)
-            # print("TYPE NODE EQ is any 2", is_any2)
-            # print("TYPE NODE EQ has_params 1", has_params1)
-            # print("TYPE NODE EQ has_params 2", has_params2)
-            # print("TYPE NODE EQ 1", n1_type, orig_cls1)
-            # print("TYPE NODE EQ 2", n2_type, orig_cls2)
-            # print("TYPE NODE EQ t1 == t2", n1_type == n2_type, id(n1_type), id(n2_type))
-            # print("TYPE NODE EQ orig_cls1 == orig_cls2", orig_cls1 == orig_cls2, id(orig_cls1), id(orig_cls2))
-            # print("TYPE NODE EQ n1 == orig_cls2", n1_type == orig_cls2)
-            # print("TYPE NODE EQ n2 == orig_cls1", n2_type == orig_cls1)
-            #
-            # print("TYPE NODE EQ subclass check", self.subclass_check)
-            # print("TYPE NODE QE subcls", inspect.isclass(n1_type), inspect.isclass(n2_type), inspect.isclass(n1_type) and inspect.isclass(n2_type) and issubclass(n1_type, n2_type))
-            # print("TYPE NODE QE subcls", inspect.isclass(orig_cls1), inspect.isclass(orig_cls2), inspect.isclass(orig_cls1) and inspect.isclass(orig_cls2) and issubclass(orig_cls1, orig_cls2))
-
             if is_any1 or is_any2:
                 ch_eq &= is_any1 and is_any2
             elif n1_type is not Union and n2_type is not Union:
@@ -419,9 +358,7 @@ class TypeNode:
                           bool(self.subclass_check and inspect.isclass(orig_cls1) and inspect.isclass(orig_cls2) and issubclass(orig_cls1, orig_cls2)))
             else:
                 ch_eq = False
-            #print("TYPE NODE EQ CH_EQ", ch_eq)
             cmp_node.eq = ch_eq
-            #print("--")
 
         return node.eq
 
@@ -513,21 +450,14 @@ class TypeNode:
         return root_node.eq
 
     def to_json(self) -> Dict[str, Any]:
-        ####!!!!!!! BROKEN NOW
-        #for (t, cached) in self._json_cache:
-        #    if t.__eq_cached_(self):
-        #        #print("EQ cached", t, self)
-        #        return cached
 
         pre_order: Dict[str, Any] = {"root": {}}
         stack: List[Tuple[Base, Dict[str, Any], str]] = [(self, pre_order, "root")]
         while stack:
             current, current_parent, parent_key = stack.pop(0)
-            #print("TYPE TO JSON", current.type_, current, current_parent, parent_key)
 
             type_ = current.type_
             if isinstance(type_, ForwardRef):
-                #print("FORWARD REF", type_)
                 type_ = evaluate_forward_ref(type_, sys._getframe(1))
 
             if hasattr(type_, "__orig_qualname__"):
@@ -541,7 +471,6 @@ class TypeNode:
                                           "args": [None,] * len(current.children),
                                           "module": module}
             for n, arg in enumerate(current.children):
-                #print("STACK APPEND", (arg, current_parent[parent_key]['args'], n))
                 stack.append((arg, current_parent[parent_key]['args'], n))
 
         self._json_cache.append((self.copy(subclass_check=False), pre_order['root']))
@@ -557,16 +486,13 @@ class TypeNode:
 
         while stack:
             parent, parent_key, _type, _type_mod, _args = stack.pop(0)
-            #print("TYPE FROM JSON", parent, parent_key, _type, _type_mod, _args)
             mod = sys.modules[_type_mod]
             _type_path = _type.split(".")
             _type_o = mod
-            #print(_type_path)
             for path_part in _type_path:
                 if path_part == "<locals>":
-                    _type_o = _type_o.__code__.co_consts
+                    _, _type_o = _type_o.__code__.co_consts
                 else:
-                    #print(path_part, path_part == 'NoneType')
                     if path_part != 'NoneType':
                         _type_o = getattr(_type_o, path_part)
                     else:
@@ -580,7 +506,6 @@ class TypeNode:
 
         for po_entry in pre_order:
             parent, parent_key, type_node = po_entry
-            #print(parent, parent_key, parent.children)
             parent.children[parent_key] = type_node
 
         return root_parent.children[0]
@@ -608,60 +533,43 @@ class DefaultOut:
     params: List
 
     def copy(self, generic_cache):
-        #print("Default out copy", self.type_)
-        #print("Default out copy typenode", TypeNode.from_type(self.type_))
-        #print("Default out copied typenode", TypeNode.from_type(self.type_).to_type(types_cache=generic_cache))
-
         return DefaultOut(
             type_=TypeNode.from_type(self.type_).to_type(types_cache=generic_cache),
             params=(TypeNode.from_type(self.params[0]).to_type(types_cache=generic_cache),)
         )
 
     def __call__(self):
-        #print("CALL DEFAULT OUT", self.params, self.type_, Out[self.params](data=self.type_()))
         return Out[self.params](data=self.type_())
 
     def replace_params(self, params_map, cache):
-        #print("-------> Default out replace params", self.type_, self.params, params_map)
         tn  = TypeNode.from_type(self.type_)
         tn.replace_params(params_map)
         new_type = tn.to_type(types_cache=cache)
-        #print("-------> Default out new type", new_type)
-        
-        #new_type = Base._replace_generic_cache(self.type_, new_type)
-        #print("DEFAULT OUT replace", new_type)
         self.type_ = new_type
 
         tn  = TypeNode.from_type(self.params[0])
         tn.replace_params(params_map)
         new_type = tn.to_type(types_cache=cache)
 
-        #new_type = Base._replace_generic_cache(self.params[0], new_type)
-        #print("DEFAULT OUT replace", new_type)
         self.params = (new_type,)
 
 
 class BaseMeta(type):
     def __repr__(cls):
-        #print("REPR cls", object.__repr__(cls), cls._params)
         qname = cls.__orig_qualname__ if hasattr(cls, "__orig_qualname__") else cls.__qualname__ 
         if cls._params:
-            #print("REPR", super().__repr__())
             params = []
             for p in cls._params:
                 if get_origin(p) is Union:
                     uparams = ",".join([repr(up) if up is not type(None) else 'NoneType' for up in sorted(get_args(p), key=lambda x: repr(x))])
-                    #print("uparams", uparams)
                     params.append(f"Union[{uparams}]")
                 elif isinstance(p, cls):
                     params.append(repr(p))
                 else:
                     params.append(p.__qualname__ if hasattr(p, "__qualname__") else p.__name__)
             params_str = ",".join(params)
-            #print(f"REPR {qname}[{params_str}]")
             return f"{qname}[{params_str}]"
         else:
-            #print(f"REPR no params {qname}")
             return f"{qname}"
 
 
@@ -719,15 +627,11 @@ class BaseMeta(type):
                     default = dataclasses.MISSING
                     if attrs[attr].default is not dataclasses.MISSING:
                         default = attrs[attr].default
-                        #print("NOT MISSING TYPE", attr, default)
                     if attrs[attr].default_factory is not dataclasses.MISSING:
                         default = attrs[attr].default_factory
-                        #print("NOT MISSING TYPE F", attr, default)
                 else:
                     default = type(attrs[attr])
-                    #print("DEFAULT NOT FIELD", attr, default)
                 if isinstance(default, DefaultOut):
-                    #print("DEFAULT OUT", attr, default)
                     default = type(default())
 
                 #TODO: fix
@@ -748,12 +652,9 @@ class BaseMeta(type):
         for base in bases:
             for f, ft in fields.items():
                 if hasattr(base, "__dataclass_fields__") and f in base.__dataclass_fields__:
-                    #print(f, ft)
                     if base.__dataclass_fields__[f].default is not dataclasses.MISSING:
-                        #print("default", base.__dataclass_fields__[f].default)
                         defaults[f] = dataclasses.field(default=base.__dataclass_fields__[f].default)
                     elif base.__dataclass_fields__[f].default_factory is not dataclasses.MISSING:
-                        #print("default factory", base.__dataclass_fields__[f].default_factory)
                         defaults[f] = dataclasses.field(default_factory=base.__dataclass_fields__[f].default_factory)
 
             for f, ft in getattr(base, "__annotations__", {}).items():
@@ -764,8 +665,6 @@ class BaseMeta(type):
         fields.update({k: v for k, v in attrs.get('__annotations__', {}).items() if not k.startswith("_")})
         all_annotations.update(annotations)
         attrs["__annotations__"] = all_annotations
-
-        #print("DEFAULTS", name, defaults)
 
         for default, defval in defaults.items():
             if default not in attrs:
@@ -814,23 +713,18 @@ class Base(metaclass=BaseMeta):
 
     @classmethod
     def _replace_generic_cache(cls, type_, new_type):
-        #print("new type - ld type", new_type, type_)
         if hasattr(new_type, "_params") and new_type._params:
             _param_ids = tuple([id(p) for p in new_type._params])
             cache_key = f"{id(type_)}[{_param_ids}]"
         if new_type != type_:
-            #print("new type != old type", new_type, type_)
             if hasattr(new_type, "_params") and new_type._params:
                 cls._generic_cache[cache_key] = (new_type, GenericAlias(new_type, new_type._params))
-                #print("cached", cache_key)
-                #print(cls._generic_cache)
                 new_type = cls._generic_cache[cache_key][1]
         return new_type
 
 
     @staticmethod
     def _make_qualname(cls, params):
-        #print("--- Make qualname", cls, params)
         if params:
             stack = [(cls.__qualname__, params)]
         elif cls._params:
@@ -842,20 +736,14 @@ class Base(metaclass=BaseMeta):
 
         while stack:
             current_qname, current_params = stack.pop(0)
-            #print("Adding", current_qname)
             order.append(current_qname)
             if current_params:
                 stack.insert(0, ("]", []))
                 order.append("[")
             for p in current_params:
-                #print("----", p, get_args(p))
                 if get_origin(p) is Optional:
-                    #new_qname = {"name": "Union", "params": []}
-                    #print("Optional", get_args(p))
                     stack.insert(0, ("Optional", get_args(p)))
                 if get_origin(p) is Union:
-                    #new_qname = {"name": "Union", "params": []}
-                    #print("Union", get_args(p))
                     stack.insert(0, ("Union", sorted(get_args(p), key=lambda x:repr(x))))
                 elif hasattr(p, "_params"):
                     if hasattr(p, "__orig_qualname__"):
@@ -874,12 +762,10 @@ class Base(metaclass=BaseMeta):
                 elif isinstance(p, TypeVar):
                     order.append(p.__name__)
                     order.append(",")
-        #print("FINALE QUALNAME", "".join(order))
         return "".join(order)
 
 
     def __class_getitem__(cls, param, params_map={}):
-        #print(">>>>>>", cls.__qualname__, param, params_map)
         _params = param if isinstance(param, tuple) else (param,)
 
         # param ids for caching as TypeVars are class instances
@@ -887,20 +773,11 @@ class Base(metaclass=BaseMeta):
         #
         _param_ids = tuple([id(p) for p in param]) if isinstance(param, tuple) else (id(param),)
         # Create new class to have its own parametrized fields
-        #cls_qname = cls.__orig_qualname__ if hasattr(cls, "__orig_qualname__") else cls.__qualname__
-        #print('  GETITEM', cls, id(cls))
         qname = cls._make_qualname(cls, _params)
-        #print("GETITEM", qname)
-        ### if f"{id(cls)}[{_param_ids}]" in cls._generic_cache:
-        ###     print("CACHED", f"{cls.__qualname__}[{_params}]", f"{id(cls)}[{_param_ids}]")
-        ###     ret, alias = cls._generic_cache[f"{id(cls)}[{_param_ids}]"]
-        ###     return ret
         if qname in sys.modules[cls.__module__].__dict__:
-            #print("CACHED", f"{cls.__qualname__}[{_params}]", f"{id(cls)}[{_param_ids}]")
             ret = sys.modules[cls.__module__].__dict__[qname]
             return ret
 
-        #print("NOT CACHED", f"{cls.__qualname__}[{_params}]", f"{cls.__qualname__}[{_param_ids}]")
         bases = [x for x in resolve_bases([cls] + list(cls.__bases__)) if x is not Generic]
         attrs = {k: v for k, v in cls._attrs.items() if k not in ("_attrs", "_fields")}
         
@@ -912,31 +789,16 @@ class Base(metaclass=BaseMeta):
 
         # Fields needs to be copied to specific subclass, otherwise
         # it's stays shared with base class
-        #new_fields = {}
-        #print("!!!!! PARAMS MAP", _params_map)
         for attr, type_ in cls._fields.items():
-            #print("SUB GETITEM", "F", attr, type_)
             tn = TypeNode.from_type(type_)
-            #print(">>>>>>", attr, type_)
-            #print("    replacing params", _params_map)
             tn.replace_params(_params_map)
-            #print("    to type")
             new_type = tn.to_type(types_cache=cls._generic_cache, params_map=_params_map)
-            #print("id new type", id(new_type))
-            #print("    NEW TYPE", attr, type_, new_type)
-            #print("DTCLS FIELD", cls.__dataclass_fields__[attr])
-
-            #new_type = cls._replace_generic_cache(type_, new_type)
-
-            #print("<<<<<<")
 
             if not tn.json_compatible():
                 raise JSONIncompatibleError(f"Attribute  {attr}: {new_type} is not json compatible")
-            #new_fields[attr] = new_type
             kwds["__annotations__"][attr] = new_type
 
         for k, kf in kwds.items():
-            #print("... k", k)
             if not isinstance(kf, dataclasses.Field):
                 continue
             new_kf = dataclasses.Field(
@@ -950,98 +812,40 @@ class Base(metaclass=BaseMeta):
                 kw_only=kf.kw_only)
             
             if hasattr(new_kf.default_factory, "replace_params"):
-                #print("has replace params")
-                #print("Default Out orig", new_kf.default_factory)
                 new_default_factory = new_kf.default_factory.copy(generic_cache=cls._generic_cache)
-                #print("Default Out new", new_default_factory)
                 new_default_factory.replace_params(_params_map, cls._generic_cache)
                 new_kf.default_factory = new_default_factory
-                #print(k, "DEFAULT OUT REPLACED", new_default_factory)
             else:
                 if new_kf.default_factory is not dataclasses.MISSING:
-                    #print("default factory not missing", new_kf.default_factory)
                     new_default_factory = TypeNode.from_type(new_kf.default_factory)
-                #else:
-                #    new_default_factory = TypeNode.from_type(new_kf.default_factory)
-                    #print("default factory not missing 2", new_default_factory)
                     new_default_factory.replace_params(_params_map)
-                    #print("default factory not missing 3", new_default_factory)
                     new_default_factory = new_default_factory.to_type(types_cache=cls._generic_cache)
-                    #print("new default factory", new_default_factory)
-
-
-                    #new_default_factory = cls._replace_generic_cache(new_kf.default_factory, new_default_factory)
-                    #print("OLD FACTORY", fv.default_factory, "NEW FACTORY", new_default_factory)
-                    #print(k, "DEFAULT FACTORY REPLACED", new_default_factory)
 
                     new_kf.default_factory = new_default_factory
 
 
             kwds[k] = new_kf
-            #print("!!", k, kf, new_kf)
 
 
         kwds["_params"] = _params
-        #print("ORIG CLS __class_getitem__", param, cls, id(cls))
         if cls._orig_cls:
             kwds["_orig_cls"] = cls._orig_cls
         else:
             kwds["_orig_cls"] = cls
 
-        #print("KWDS OQUALNAME", kwds.get('__orig_qualname__'))
         kwds['__orig_qualname__'] = kwds.get('__orig_qualname__',kwds['__qualname__'])
         
-        #cls._make_qualname(cls, _params)
-        #params_qualname = []
-        #for p in _params:
-        #    if get_origin(p) is Union:
-        #
-        #
-        #    params_qualname.append(p.__qualname__)
-        #   
-        #    params_qualname.append(p.__qualname__)
 
-        #params_qualname = ",".join([p.__qualname__ if hasattr(p, "__qualname__") else p.__name__ for p in _params])
-        #print("PARAMS QUALNAME", params_qualname)
-
-        #print("GET_ITEM", cls, _params)
         kwds['__qualname__'] = cls._make_qualname(cls, _params) #  kwds['__orig_qualname__'] + f"[{params_qualname}]"
         o_qualname = kwds['__orig_qualname__']
 
-        #print(kwds)
 
         ret = meta(kwds['__qualname__'], tuple(bases), kwds)
-        #print("NEW SUBCLASS", f"{o_qualname}[{params_qualname}]", ret.__orig_qualname__, ret.__qualname__, ret.__name__, repr(ret))
-        #print("       RET _fields", f"{cls.__qualname__}[{param}]", ret._fields)
-        #print("---NEW TYPE", ret,  bases, type(ret))
 
-        #print("STORING TO MODULES", ret, ret.__name__, ret.__qualname__)
         sys.modules[ret.__module__].__dict__[ret.__qualname__] = ret
         alias = GenericAlias(ret, param)
 
-        #for f, fv in ret.__dataclass_fields__.items():
-        #    if fv.default_factory != dataclasses._MISSING_TYPE:
-        #        #if hasattr(fv.default_factory, "replace_params"):
-        #        #    new_default_factory = fv.default_factory.copy(generic_cache=cls._generic_cache)
-        #        #    new_default_factory.replace_params(_params_map, cls._generic_cache)
-        #        #    print("DEFAULT OUT REPLACED", new_default_factory)
-        #        #else:
-        #        #new_default_factory = TypeNode.from_type(fv.default_factory)
-        #        #new_default_factory.replace_params(_params_map)
-        #        #new_default_factory = new_default_factory.to_type(types_cache=cls._generic_cache)
-        #        #new_default_factory = cls._replace_generic_cache(fv.default_factory, new_default_factory)
-        #        #print("OLD FACTORY", fv.default_factory, "NEW FACTORY", new_default_factory)
-        #        #print("DEFAULT FACTORY REPLACED", new_default_factory)
-        #
-        #        #fv.default_factory = new_default_factory
-        #    #setattr(ret, f, new_fv)
-
-        #print("CACHING", f"{ret.__orig_qualname__}[{params_qualname}]", f"{ret.__orig_qualname__}[{_param_ids}]", id(ret), f"{id(cls)}[{_param_ids}]")
         cls._generic_cache[f"{id(cls)}[{_param_ids}]"] = (ret, alias)
-        #print("STORED", f"{cls.__qualname__}[{_param_ids}]", cls._generic_cache[f"{cls.__qualname__}[{_param_ids}]"])
-        #print("NEW TYPE DATACLS", ret.__dataclass_fields__)
-
-        #print("<<<<<<")
         return ret
 
     def to_json(self) -> Dict[str, Any]:
@@ -1193,7 +997,6 @@ class TList(Base, Generic[T]):
         self._list.__setitem__(key, value)
 
     def append(self, obj: T) -> None:
-        #print(type(obj), self._params[0])
         if TypeNode.from_type(type(obj)) != TypeNode.from_type(self._params[0]):
             raise TypeError(f"Cannot assign item {type(obj)} to list of type {self._params[0]}")
         self._list.append(obj)
@@ -1246,7 +1049,6 @@ class TList(Base, Generic[T]):
                 current_parent[parent_key] = current.to_json()
             else:
                 current_parent[parent_key] = current
-        #print("TO JSON", pre_order['root'])
         return pre_order['root']
 
     def content_to_json(self) -> Dict[str, Any]:
@@ -1258,15 +1060,10 @@ class TList(Base, Generic[T]):
             stack.append((item, pre_order['root'], n))
         while stack:
             current, current_parent, parent_key = stack.pop(0)
-            #if not isinstance(current, (int, str, bool, float, type(None), TList, TDict)):
-            #    current_parent[parent_key] = {}
-            #    for f in current._fields:
-            #        stack.append((getattr(current, f), current_parent[parent_key], f))
             if isinstance(current, (TList, TDict, Base)):
                 current_parent[parent_key] = current.content_to_json()
             else:
                 current_parent[parent_key] = current
-        #print("TO JSON", pre_order['root'])
         return pre_order['root']
 
     @classmethod
@@ -1291,29 +1088,21 @@ class TList(Base, Generic[T]):
         while stack:
             parent_args, parent_key, data, type_, type_args = stack.pop(0)
             if hasattr(type_, "__qualname__") and type_.__qualname__ in ("Optional", "Union"):
-                #print("from json UNION/OPTIONAL")
                 if isinstance(data, dict):
                     data_type = data.get("$type", None)
                 else:
                     data_type = TypeNode.from_type(data.__class__).to_json()
-                #print("UARG DATA TYPE", data_type)
                 for uarg in get_args(type_):
-                    #print("UARG", uarg)
-                    #print("UARG", TypeNode.from_type(uarg).to_json())
                     if TypeNode.from_json(data_type) == TypeNode.from_type(uarg):
-                        #print("UARG MATCH")
                         stack.append((parent_args, parent_key, data, uarg, type_args))
                         break
                     if data_type == TypeNode.from_type(uarg).to_json():
-                        #print("UARG MATCH")
                         stack.append((parent_args, parent_key, data, uarg, type_args))
                         break
                 else:
-                    #print("UARG NO! MATCH")
                     stack.append((parent_args, parent_key, data, type(None), type_args))
 
             elif hasattr(type_, "__qualname__") and type_.__qualname__ == "Union":
-                #print("from json UNION")
                 if isinstance(data, dict):
                     data_type = data.get("$type", None)
                 else:
@@ -1323,23 +1112,17 @@ class TList(Base, Generic[T]):
                         stack.append((parent_args, parent_key, data, uarg, type_args))
                         break
             elif TypeNode.from_type(type_) == TypeNode.from_type(TList[ANY]):
-                #print("from json TLIst")
                 parent_args[parent_key] = type_.from_json(data)
             elif type_ not in (int, str, bool, float, type(None)):
-                #print("FROM JSON BASE", data)
                 for key in type_._fields:
-                    #print("key", key)
                     field_args = {}
                     if '$data' in data:
-                        #print("$data")
                         stack.append((type_args, key, data['$data'].get(key), type_._fields[key], field_args))
                     else:
-                        #print("no $data")
                         stack.append((type_args, key, data.get(key), type_._fields[key], field_args))
 
                 post_order.insert(0, (parent_args, parent_key, type_, type_args))
             else:
-                #print("SIMPLE", type_, data)
                 parent_args[parent_key] = data
 
         for (parent_args, parent_key, type_, type_args) in post_order:
@@ -1347,8 +1130,6 @@ class TList(Base, Generic[T]):
             for k, v in type_args.items():
                 if type_.__dataclass_fields__[k].init:
                     init_fields[k] = v
-            #print("LIST FROM JSON 1", parent_args)
-            #print("LIST FROM JSON 2", type_, init_fields)
             parent_args[parent_key] = type_(**init_fields)
             for k, v in type_args.items():
                 if not type_.__dataclass_fields__[k].init:
@@ -1571,7 +1352,6 @@ class TractionMeta(BaseMeta):
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_ or r_")
 
     def __new__(cls, name, bases, attrs):
-        #print(">>> New traction", name, bases, attrs)
         annotations = attrs.get('__annotations__', {})
         # check if all attrs are in supported types
         for attr, type_ in annotations.items():
@@ -1591,7 +1371,6 @@ class TractionMeta(BaseMeta):
                     init=False,
                     default_factory=DefaultOut(type_=ftype._params[0],
                                                params=(ftype._params)))
-                #print("DEFAULT OUT", f, attrs[f])
             # Set all inputs to NoData after as default
             if f.startswith("i_") and f not in attrs:
                 attrs[f] = dataclasses.field(default_factory=NoData[ftype._params])
@@ -1659,28 +1438,19 @@ class Traction(Base, metaclass=TractionMeta):
                 raise AttributeError(f"{self.__class__} doesn't have attribute {name}")
 
         if name.startswith("i_") or name.startswith("o_") or name.startswith("a_"):
-            #vtype = value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
             vtype = value.__class__
             tt1 = TypeNode.from_type(vtype)
             tt2 = TypeNode.from_type(self._fields[name])
             if tt1 != tt2:
-                #print(tt1.to_type(types_cache=self._generic_cache))
-                #print(tt2.to_type(types_cache=self._generic_cache))
                 raise TypeError(f"Cannot set attribute {self.__class__}.{name} to type {vtype}, expected  {self._fields[name]}")
 
         if name.startswith("i_"):
             # Need to check with hasattr first to make sure inputs can be initialized
             if hasattr(self, name):
-                #print("SETATTR", name, getattr(self, name), value)
-                #print("SETATTR default", self.__dataclass_fields__[name].default)
-                #print("GETATTR", getattr(self, name))
 
                 # Allow overwrite default input values
                 if getattr(self, name) == self.__dataclass_fields__[name].default:
-                    #super().__setattr__(name, value)
                     self._no_validate_setattr_(name, value)
-                    #super().__setattr__(name, value)
-                    #print("GETATTR", getattr(self, name))
                     return
                 connected = (
                     TypeNode.from_type(type(getattr(self, name)), subclass_check=False) != TypeNode.from_type(NoData[ANY]) and
@@ -1689,12 +1459,9 @@ class Traction(Base, metaclass=TractionMeta):
                 if connected:
                     raise AttributeError(f"Input {name} is already connected")
 
-            #if hasattr(self, name) and self.__getattribute_orig__(name)._ref: # TypeNode.from_type(type(getattr(self, name)), subclass_check=False) == TypeNode.from_type(Out[ANY]):
-            #    raise AttributeError(f"Input {name} is already connected")
             # in the case input is not set, initialize it
             elif not hasattr(self, name):
                 super().__setattr__(name, value)
-                #print("SETATTR NEW", name, getattr(self, name))
             self.__getattribute_orig__(name)._ref = value
             return
 
@@ -1814,12 +1581,10 @@ class Traction(Base, metaclass=TractionMeta):
         If error occurs due to uncaught exception in this method, step state
         will be set to error
         """
-        #print("_RUN", self.__class__)
         raise NotImplementedError
 
     @classmethod
     def from_json(cls, json_data) -> Self:
-        #print("-> FROM JSON", cls, json_data)
         args = {}
         outs = {}
         for f, ftype in cls._fields.items():
@@ -1828,7 +1593,6 @@ class Traction(Base, metaclass=TractionMeta):
             elif f.startswith("a_") or f.startswith("i_") or f.startswith("r_") or f in ("errors", "stats", "details"):
                 args[f] = ftype.from_json(json_data[f])
             elif f.startswith("i_"):
-                #print("FROM JSON TRACTION INPUT", f)
                 args[f] = ftype.from_json(json_data[f])
             elif f.startswith("o_"):
                 outs[f] = ftype.from_json(json_data[f])
@@ -1955,9 +1719,6 @@ class STMD(Traction, metaclass=STMDMeta):
         """ After tractor is created, all tractions needs to be copied so it's
             possible to use same Tractor class multiple times
         """
-        # resources_map = {}
-        # args_map = {}
-        #print("---- copy traction ", index, self._traction, connect_inputs)
         traction = self._traction
         init_fields = {}
         for ft, field in traction.__dataclass_fields__.items():
@@ -1971,10 +1732,7 @@ class STMD(Traction, metaclass=STMDMeta):
                 init_fields[ft] = getattr(self, ft)
 
             elif ft.startswith("i_") and connect_inputs:
-               #print("I", ft, getattr(self, ft).data[index], id(getattr(self, ft).data[index]))
                init_fields[ft] = getattr(self, ft).data[index]
-               #print("I default", traction.__dataclass_fields__[ft].default)
-            
 
         init_fields['uid'] = "%s:%d" % (self.uid, index)
         # create copy of existing traction
@@ -2002,7 +1760,6 @@ class STMD(Traction, metaclass=STMDMeta):
 
         self.state = TractionState.RUNNING
 
-        #print("E TYPE", self.a_executor_type)
         if self.a_executor_type.a == STMDExecutorType.PROCESS:
             executor_class = ProcessPoolExecutor
         elif self.a_executor_type.a == STMDExecutorType.THREAD:
@@ -2020,56 +1777,36 @@ class STMD(Traction, metaclass=STMDMeta):
                 outputs[f] = getattr(self, f)
 
         first_in = inputs[list(inputs.keys())[0]]
-        #for key in inputs:
-        #    #print("INPUT", self.__class__, key, len(inputs[key].data))
         for key in inputs:
-            #print("INPUT", key, len(inputs[key].data))
             if len(inputs[key].data) != len(first_in.data):
-                #print(inputs[key].data)
-                #print(first_in.data)
                 raise ValueError(f"{self.__class__}: Input {key} has length {len(inputs[key].data)} but others have length {len(first_in.data)} ({list(inputs.keys())[0]})")
 
-        #print("In lengths", len(list(inputs.values())[0].data))
         for o in outputs:
             o_type = getattr(self, o).data._params[0]._params[0]
             for _ in range(len(list(inputs.values())[0].data)):
                 getattr(self, o).data.append(NoOut[o_type]())
 
         if executor_class:
-            #print("EXECUTOR", executor_class)
             with executor_class(max_workers=self.a_pool_size.a) as executor:
                 ft_results = {}
                 self.tractions.extend(TList[Optional[Traction]]([None]*len(list(inputs.values())[0].data)))
-                #print("EXTENDED")
                 for i in range(0, len(list(inputs.values())[0].data)):
                     res = executor.submit(self._traction_runner, i, on_update=on_update)
                     ft_results[res] = i
-                    #self.tractions.append(None)#self._copy_traction(i, connect_inputs=False))
-                #print("Copied")
                 _on_update(self)
                 for ft in as_completed(ft_results):
-                    #print('t', self.__class__, i,'/',len(list(inputs.values())[0].data))
                     i = ft_results[ft]
                     nt = ft.result()
-                    #self.tractions[i] = nt
                     for o in outputs:
-                        #print("o", self.__class__, o, getattr(self, o).data)
                         getattr(self, o).data[i].data = getattr(nt, o).data
-                    #print("STMD", i, "Done")
                 _on_update(self)
-                #print("STMD", self.fullname, "Done")
         else:
-            #print("STMD len", len(list(inputs.values())[0].data))
             for i in range(0, len(list(inputs.values())[0].data)):
-                #print("l", i,'/',len(list(inputs.values())[0].data))
                 res = self._traction_runner(i, on_update=on_update)
                 self.tractions.append(self._copy_traction(i, connect_inputs=False))
                 for o in outputs:
                     getattr(self, o).data[i].data = getattr(res, o).data
 
-        #print("Out lengths", len(list(outputs.values())[0].data))
-
-        #print("STMD FINISHED IN", datetime.datetime.now() - dt)
         self.state = TractionState.FINISHED
         return self
 
