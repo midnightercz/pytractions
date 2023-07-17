@@ -35,7 +35,7 @@ setup(
     packages=find_packages(exclude="tests"),
     data_files=[],
     install_requires=[
-        "pydantic",
+        "dill",
         "mypy",
         "typing_inspect",
         "dataclasses_json"

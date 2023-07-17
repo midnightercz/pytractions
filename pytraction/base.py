@@ -539,7 +539,12 @@ class DefaultOut:
         )
 
     def __call__(self):
-        return Out[self.params](data=self.type_())
+        # Optional
+        if get_origin(self.type_) == Union and len(get_args(self.type_)) == 2 and \
+           get_args(self.type_)[-1] == type(None):
+            return Out[self.params](data=None)
+        else:
+            return Out[self.params](data=self.type_())
 
     def replace_params(self, params_map, cache):
         tn  = TypeNode.from_type(self.type_)
@@ -1778,6 +1783,8 @@ class STMD(Traction, metaclass=STMDMeta):
 
         first_in = inputs[list(inputs.keys())[0]]
         for key in inputs:
+            if inputs[key].data is None:
+                raise ValueError(f"{self.fullname}: No input data for {key}")
             if len(inputs[key].data) != len(first_in.data):
                 raise ValueError(f"{self.__class__}: Input {key} has length {len(inputs[key].data)} but others have length {len(first_in.data)} ({list(inputs.keys())[0]})")
 

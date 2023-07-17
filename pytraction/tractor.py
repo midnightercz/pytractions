@@ -38,7 +38,6 @@ class TractorMeta(TractionMeta):
     @classmethod
     def _before_new(cls, name, attrs, bases):
         # mapping which holds tractor inputs + tractions outputs
-        #print(f"---------------- {name} -----------------------------------------")
         outputs_map = {}
         # inputs map to map (traction, input_name) -> (traction/tractor, output_name)
         io_map = {}
@@ -67,7 +66,6 @@ class TractorMeta(TractionMeta):
                             ]:
             for base in bases:
                 if hasattr(base, _attr):
-                    #print("BASE", _attr, getattr(base, _attr))
                     for k, v in getattr(base, _attr).items():
                         if k not in dst_o:
                             dst_o[k] = v
@@ -224,7 +222,6 @@ class Tractor(Traction, metaclass=TractorMeta):
                     #print("default traction init", traction_name, ft, getattr(traction, ft))
                     init_fields[ft] = getattr(traction, ft)
             elif ft == 'uid':
-                print("UID", "%s::%s" % (self.uid, getattr(traction, ft)))
                 init_fields[ft] = "%s::%s" % (self.uid, getattr(traction, ft))
             # if field doesn't start with _ include it in init_fields to
             # initialize the traction copy
@@ -259,7 +256,6 @@ class Tractor(Traction, metaclass=TractorMeta):
                     #print("post init ma", f, self._margs_map)
                     for maf in fo._fields:
                         if ("#", f, maf) in self._margs_map:
-                            #print()
                             setattr(fo, maf, getattr(self, self._margs_map[("#", f, maf)]))
 
         #print("--")
