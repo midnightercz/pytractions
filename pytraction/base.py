@@ -1,12 +1,14 @@
 import abc
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 import datetime
+import hashlib
 import inspect
 import json
 from types import prepare_class, resolve_bases
 import enum
 import sys
 import os
+
 
 import dill
 import multiprocessing
@@ -559,6 +561,10 @@ class DefaultOut:
         self.params = (new_type,)
 
 
+def _hash(obj):
+    return hashlib.sha256(json.dumps(obj.to_json(), sort_keys=True)).hexdigest()
+
+
 class BaseMeta(type):
     def __repr__(cls):
         qname = cls.__orig_qualname__ if hasattr(cls, "__orig_qualname__") else cls.__qualname__ 
@@ -676,12 +682,14 @@ class BaseMeta(type):
                 attrs[default] = defval
 
         attrs['_fields'] = fields
+        attrs['__hash__'] = _hash
 
         cls._before_new(name, attrs, bases)
 
         ret = super().__new__(cls, name, bases, attrs)
         ret = dataclasses.dataclass(ret, kw_only=True)
         return ret
+
 
 
 class Base(metaclass=BaseMeta):
