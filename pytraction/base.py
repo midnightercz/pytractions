@@ -7,6 +7,7 @@ import json
 from types import prepare_class, resolve_bases
 import enum
 import sys
+import uuid
 import os
 
 
@@ -144,7 +145,6 @@ class TypeNode:
 
     def replace_params(self, params_map):
         """Replace Typevars in TypeNode structure with values from provided mapping."""
-        
 
         stack = [(self, 0, None)]
         while stack:
@@ -544,9 +544,12 @@ class DefaultOut:
         # Optional
         if get_origin(self.type_) == Union and len(get_args(self.type_)) == 2 and \
            get_args(self.type_)[-1] == type(None):
-            return Out[self.params](data=None)
+            ret = Out[self.params]()
         else:
-            return Out[self.params](data=self.type_())
+            ret = Out[self.params]()
+            ret.data = self.type_()
+
+        return ret
 
     def replace_params(self, params_map, cache):
         tn  = TypeNode.from_type(self.type_)
@@ -691,7 +694,6 @@ class BaseMeta(type):
         return ret
 
 
-
 class Base(metaclass=BaseMeta):
     _config: ClassVar[BaseConfig] = BaseConfig()
     _fields: ClassVar[Dict[str, Any]] = {}
@@ -714,14 +716,21 @@ class Base(metaclass=BaseMeta):
     def _validate_setattr_(self, name: str, value: Any) -> None:
 
         if not name.startswith("_"):  # do not check for private attrs
-            if name not in self._fields and not self._config.allow_extra:
+            properties = dict(inspect.getmembers(self.__class__, lambda o: isinstance(o, property)))
+
+            if name not in self._fields and not self._config.allow_extra and name not in properties:
                 raise AttributeError(f"{self.__class__} doesn't have attribute {name}")
 
-            vtype = value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
-            tt1 = TypeNode.from_type(vtype)
-            tt2 = TypeNode.from_type(self._fields[name])
-            if tt1 != tt2:
-                raise TypeError(f"Cannot set attribute {self.__class__}.{name} to type {value}({vtype}), expected {self._fields[name]}")
+            if name not in properties:
+                vtype = value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
+                tt1 = TypeNode.from_type(vtype)
+                tt2 = TypeNode.from_type(self._fields[name])
+                if tt1 != tt2:
+                    raise TypeError(f"Cannot set attribute {self.__class__}.{name} to type {value}({vtype}), expected {self._fields[name]}")
+            else:
+                getattr(self.__class__,name).setter(value)
+                return
+
         return super().__setattr__(name, value)
 
     @classmethod
@@ -734,7 +743,6 @@ class Base(metaclass=BaseMeta):
                 cls._generic_cache[cache_key] = (new_type, GenericAlias(new_type, new_type._params))
                 new_type = cls._generic_cache[cache_key][1]
         return new_type
-
 
     @staticmethod
     def _make_qualname(cls, params):
@@ -773,7 +781,9 @@ class Base(metaclass=BaseMeta):
                     order.append(p.__forward_arg__)
                     order.append(",")
                 elif isinstance(p, TypeVar):
-                    order.append(p.__name__)
+                    # for typevar we need to add id to qualname, otherwise typevar replacement won't work
+                    # as class_getitem could return cached version with typevar with different id
+                    order.append(f"{p.__name__}[{id(p)}]")
                     order.append(",")
         return "".join(order)
 
@@ -793,12 +803,11 @@ class Base(metaclass=BaseMeta):
 
         bases = [x for x in resolve_bases([cls] + list(cls.__bases__)) if x is not Generic]
         attrs = {k: v for k, v in cls._attrs.items() if k not in ("_attrs", "_fields")}
-        
+
         meta, ns, kwds = prepare_class(f"{cls.__name__}[{param}]", bases, attrs)
 
         _params_map = params_map.copy()
         _params_map.update(dict(zip(cls.__parameters__, _params)))
-
 
         # Fields needs to be copied to specific subclass, otherwise
         # it's stays shared with base class
@@ -809,6 +818,8 @@ class Base(metaclass=BaseMeta):
 
             if not tn.json_compatible():
                 raise JSONIncompatibleError(f"Attribute  {attr}: {new_type} is not json compatible")
+            if attr not in kwds:
+                kwds[attr] = new_type
             kwds["__annotations__"][attr] = new_type
 
         for k, kf in kwds.items():
@@ -823,7 +834,7 @@ class Base(metaclass=BaseMeta):
                 compare=kf.compare,
                 metadata=kf.metadata,
                 kw_only=kf.kw_only)
-            
+
             if hasattr(new_kf.default_factory, "replace_params"):
                 new_default_factory = new_kf.default_factory.copy(generic_cache=cls._generic_cache)
                 new_default_factory.replace_params(_params_map, cls._generic_cache)
@@ -833,7 +844,6 @@ class Base(metaclass=BaseMeta):
                     new_default_factory = TypeNode.from_type(new_kf.default_factory)
                     new_default_factory.replace_params(_params_map)
                     new_default_factory = new_default_factory.to_type(types_cache=cls._generic_cache)
-
                     new_kf.default_factory = new_default_factory
 
 
@@ -1220,7 +1230,7 @@ class TDict(Base, Generic[TK, TV]):
 
     def get(self, key: TK, default=None):
         if TypeNode.from_type(type(key)) != TypeNode.from_type(TK):
-            raise TypeError(f"Cannot get item by key {key} of type {type(key)} in dict of type {Dict[TK, TV]}")
+            raise TypeError(f"Cannot get item by key {key} of type {type(key)} in dict of type TDict[{self._params}]")
         return self._dict.get(key, default=default)
 
     def items(self):
@@ -1289,11 +1299,91 @@ class TDict(Base, Generic[TK, TV]):
         return pre_order['root']
 
 
+class IOStore:
+    def data(self, key: str) -> Any:
+        pass
+
+    def set_data(self, key: str, val: Any):
+        pass
+
+
+class MemoryIOStore(IOStore):
+    def __init__(self):
+        self._data = {}
+
+    def data(self, key: str) -> Any:
+        return self._data.get(key, None)
+
+    def move_data(self, old_key: str, new_key: str) -> Any:
+        data = self._data.pop(old_key, None)
+        self._data[new_key] = data
+
+    def set_data(self, key: str, val: Any):
+        self._data[key] = val
+
+
+class _DefaultIOStore:
+    def __init__(self):
+        self.io_store = MemoryIOStore()
+
+
+DefaultIOStore = _DefaultIOStore()
+
+
 class In(Base, Generic[T]):
     _ref: Optional[T] = None
     # data here are actually not used after input is assigned to some output
     # it's just to deceive mypy
-    data: Optional[T] = None
+    data: Optional[T]
+    _name: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
+    _owner: Optional[_Traction] = dataclasses.field(repr=False, init=False, default=None, compare=False)
+    _io_store: IOStore = dataclasses.field(repr=False, init=False, compare=False)
+    _uid: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
+
+    def __post_init__(self):
+        self._io_store = DefaultIOStore.io_store
+
+    def _validate_setattr_(self, name: str, value: Any) -> None:
+        if name in ("_name", "_owner"):
+            old_uid = self._uid
+            self._uid = None
+            object.__setattr__(self, name, value)
+            new_uid = self.uid
+            self._io_store.move_data(old_uid, new_uid)
+            return
+
+        if not name.startswith("_"):  # do not check for private attrs
+            properties = dict(inspect.getmembers(self.__class__, lambda o: isinstance(o, property)))
+            if name not in self._fields and not self._config.allow_extra and name not in properties:
+                raise AttributeError(f"{self.__class__} doesn't have attribute {name}")
+            if name == "data":
+                if not hasattr(self, "_io_store"):
+                    self._io_store = DefaultIOStore.io_store
+                return self._io_store.set_data(self.uid, value)
+            elif name not in properties:
+                vtype = value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
+                tt1 = TypeNode.from_type(vtype)
+                tt2 = TypeNode.from_type(self._fields[name])
+                if tt1 != tt2:
+                    raise TypeError(f"Cannot set attribute {self.__class__}.{name} to type {value}({vtype}), expected {self._fields[name]}")
+            else:
+                getattr(self.__class__, name).setter(value)
+                return
+        return object.__setattr__(self, name, value)
+
+    def __getattribute__(self, name) -> Any:
+        if name == 'data':
+            return object.__getattribute__(self, '_io_store').data(self.uid)
+        else:
+            return object.__getattribute__(self, name)
+
+    @property
+    def uid(self):
+        if not self._name:
+            self._name = str(uuid.uuid4())
+        if self._uid is None:
+            self._uid = (self._owner.fullname if self._owner else "") + "::" + self._name
+        return self._uid
 
     def content_to_json(self) -> Dict[str, Any]:
         if isinstance(self.data, (TList, TDict, Base)):
@@ -1301,9 +1391,22 @@ class In(Base, Generic[T]):
         else:
             return self.data
 
+
 class Out(In, Generic[T]):
-    _owner: Optional[_Traction] = dataclasses.field(repr=False, init=False, default=None, compare=False)
-    _name: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
+    _io_store: IOStore = dataclasses.field(repr=False, init=False, compare=False)
+    data: Optional[T]
+    _uid: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
+
+    def __post_init__(self):
+        self._io_store = DefaultIOStore.io_store
+
+    @property
+    def uid(self):
+        if not self._name:
+            self._name = str(uuid.uuid4())
+        if self._uid is None:
+            self._uid = (self._owner.fullname if self._owner else "") + "::" + self._name
+        return self._uid
 
 
 class NoOut(Out, Generic[T]):
@@ -1431,6 +1534,14 @@ class Traction(Base, metaclass=TractionMeta):
     stats: TractionStats = dataclasses.field(default_factory=TractionStats)
     details: TList[str] = dataclasses.field(default_factory=TList[str])
 
+    def __post_init__(self):
+        for f in self._fields:
+            if not f.startswith("o_") and not f.startswith("i_"):
+                continue
+            if not getattr(self, f)._owner:
+                getattr(self, f)._name = f
+                getattr(self, f)._owner = self
+
     def __getattribute_orig__(self, name: str) -> Any:
         return super().__getattribute__(name)
 
@@ -1508,7 +1619,7 @@ class Traction(Base, metaclass=TractionMeta):
         ret = {}
         for f in self._fields:
             if f.startswith("i_"):
-                if hasattr(getattr(self, f), "_owner") and getattr(self, f)._owner:
+                if hasattr(getattr(self, f), "_owner") and getattr(self, f)._owner and getattr(self, f)._owner != self:
                     ret[f] = getattr(self, f)._owner.fullname + "#" + getattr(self, f)._name
                 else:
                     i_json = getattr(self, f).to_json()
@@ -1747,7 +1858,7 @@ class STMD(Traction, metaclass=STMDMeta):
             elif ft.startswith("i_") and connect_inputs:
                init_fields[ft] = getattr(self, ft).data[index]
 
-        init_fields['uid'] = "%s:%d" % (self.uid, index)
+        init_fields['uid'] = "%s:%d" % (self.fullname, index)
         # create copy of existing traction
         ret = traction(**init_fields)
 
@@ -1818,13 +1929,10 @@ class STMD(Traction, metaclass=STMDMeta):
         else:
             for i in range(0, len(list(inputs.values())[0].data)):
                 res = self._traction_runner(i, on_update=on_update)
-                self.tractions.append(self._copy_traction(i, connect_inputs=False))
+                #self.tractions.append(self._copy_traction(i, connect_inputs=False))
                 for o in outputs:
                     getattr(self, o).data[i].data = getattr(res, o).data
 
         self.state = TractionState.FINISHED
         return self
-
-
-
 

@@ -14,6 +14,7 @@ from pytraction.base import (
     Base,
     NoData,
     TypeNode,
+    STMDExecutorType
 )
 
 
@@ -191,6 +192,14 @@ def test_traction_outputs_no_init_custom_default():
     assert t.o_out1 == Out[int](data=10)
 
 
+def test_traction_outputs_uid():
+    class TTest(Traction):
+        o_out1: Out[int] = Out[int](data=10)
+
+    t = TTest(uid="1")
+    assert t.o_out1.uid == 'TTest[1]::o_out1'
+
+
 def test_traction_chain():
     class TTest1(Traction):
         o_out1: Out[int]
@@ -253,7 +262,7 @@ def test_traction_json(fixture_isodate_now):
             self.o_out1.data = self.i_in1.data + 10
 
     t1 = TTest1(uid="1")
-    t2 = TTest2(uid="1", i_in1=t1.o_out1)
+    t2 = TTest2(uid="2", i_in1=t1.o_out1)
 
     t1.run()
     t2.run()
@@ -295,7 +304,7 @@ def test_traction_json(fixture_isodate_now):
                       'module': 'pytraction.base',
                       "type": "TractionStats"}
         },
-        'uid': '1',
+        'uid': '2',
     }
 
 
@@ -373,24 +382,13 @@ def test_tractor_members_invalid_order() -> None:
 
 
 def test_tractor_run() -> None:
-    class TTest1(Traction):
-        o_out1: Out[float]
-        a_multiplier: Arg[float]
-
-        def _run(self, on_update) -> None:  # pragma: no cover
-            self.o_out1.data = 1 * self.a_multiplier.a
-            print("TTEST1 out", self.uid, self.o_out1.data)
-
     class TTest2(Traction):
         i_in1: In[float]
         o_out1: Out[float]
         a_reducer: Arg[float]
 
         def _run(self, on_update) -> None:  # pragma: no cover
-            print(f"TTEST2[{self.uid}] in", self.i_in1.data, id(self.i_in1))
-
             self.o_out1.data = (self.i_in1.data + 1) / float(self.a_reducer.a)
-            print(f"TTEST2[{self.uid}] out", self.o_out1.data, id(self.o_out1))
 
     class TestTractor(Tractor):
         a_multiplier: Arg[float] = Arg[float](a=0.0)
@@ -411,7 +409,7 @@ def test_tractor_run() -> None:
         o_out1: Out[float] = t_ttest4.o_out1
 
     tt = TestTractor(
-        uid='tt1', 
+        uid='tt1',
         a_multiplier=Arg[float](a=10.0),
         a_reducer=Arg[float](a=2.0),
         i_in1=In[float](data=10.0)
@@ -478,7 +476,6 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
 
         def _run(self, on_update) -> None:  # pragma: no cover
             self.o_out1.data = 1 * self.a_multiplier.a
-            print("TTEST1 out", self.uid, self.o_out1.data)
 
     class TTest2(Traction):
         i_in1: In[float]
@@ -486,10 +483,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
         a_reducer: Arg[float]
 
         def _run(self, on_update) -> None:  # pragma: no cover
-            print(f"TTEST2[{self.uid}] in", self.i_in1.data, id(self.i_in1))
-
             self.o_out1.data = (self.i_in1.data + 1) / float(self.a_reducer.a)
-            print(f"TTEST2[{self.uid}] out", self.o_out1.data, id(self.o_out1))
 
     class TestTractor(Tractor):
         a_multiplier: Arg[float] = Arg[float](a=0.0)
@@ -697,7 +691,6 @@ class G_TTest1(Traction):
     a_multiplier: Arg[float]
 
     def _run(self, on_update) -> None:  # pragma: no cover
-        print("GTEST RUN", self.i_in1.data, self.a_multiplier.a)
         self.o_out1.data = self.i_in1.data * self.a_multiplier.a
 
 
@@ -720,12 +713,75 @@ def test_stmd(fixture_isodate_now) -> None:
     ]))
     stmd1 = TestSTMD(uid='tt1', a_pool_size=Arg[int](a=1), a_multiplier=Arg[float](a=10.0), i_in1=stmd_in1)
     stmd1.run()
-    print(stmd1.o_out1)
     assert stmd1.o_out1.data[0].data == 10.0
     assert stmd1.o_out1.data[1].data == 20.0
     assert stmd1.o_out1.data[2].data == 30.0
     assert stmd1.o_out1.data[3].data == 40.0
     assert stmd1.o_out1.data[4].data == 50.0
+
+
+def test_stmd_threads(fixture_isodate_now) -> None:
+
+    class TestSTMD(STMD):
+        a_multiplier: Arg[float] = Arg[float](a=0.0)
+
+        _traction: Type[Traction] = G_TTest1
+
+        o_out1: Out[TList[Out[float]]] = Out[TList[Out[float]]](data=TList[Out[float]]([]))
+        i_in1: In[TList[In[float]]]
+
+    stmd_in1 = In[TList[In[float]]](data=TList[In[float]]([
+        In[Union[float, int]](data=1.0),
+        In[Union[float, int]](data=2.0),
+        In[Union[float, int]](data=3.0),
+        In[Union[float, int]](data=4.0),
+        In[Union[float, int]](data=5.0)
+    ]))
+    stmd1 = TestSTMD(
+        uid='tt1',
+        a_executor_type = Arg[STMDExecutorType](a=STMDExecutorType.THREAD),
+        a_pool_size=Arg[int](a=1),
+        a_multiplier=Arg[float](a=10.0),
+        i_in1=stmd_in1)
+    stmd1.run()
+    assert stmd1.o_out1.data[0].data == 10.0
+    assert stmd1.o_out1.data[1].data == 20.0
+    assert stmd1.o_out1.data[2].data == 30.0
+    assert stmd1.o_out1.data[3].data == 40.0
+    assert stmd1.o_out1.data[4].data == 50.0
+
+
+class GTestSTMD(STMD):
+    a_multiplier: Arg[float] = Arg[float](a=0.0)
+
+    _traction: Type[Traction] = G_TTest1
+
+    o_out1: Out[TList[Out[float]]] = Out[TList[Out[float]]](data=TList[Out[float]]([]))
+    i_in1: In[TList[In[float]]]
+
+def test_stmd_processes(fixture_isodate_now) -> None:
+
+    stmd_in1 = In[TList[In[float]]](data=TList[In[float]]([
+        In[Union[float, int]](data=1.0),
+        In[Union[float, int]](data=2.0),
+        In[Union[float, int]](data=3.0),
+        In[Union[float, int]](data=4.0),
+        In[Union[float, int]](data=5.0)
+    ]))
+    stmd1 = GTestSTMD(
+        uid='tt1',
+        a_executor_type = Arg[STMDExecutorType](a=STMDExecutorType.PROCESS),
+        a_pool_size=Arg[int](a=2),
+        a_multiplier=Arg[float](a=10.0),
+        i_in1=stmd_in1)
+    stmd1.run()
+    assert stmd1.o_out1.data[0].data == 10.0
+    assert stmd1.o_out1.data[1].data == 20.0
+    assert stmd1.o_out1.data[2].data == 30.0
+    assert stmd1.o_out1.data[3].data == 40.0
+    assert stmd1.o_out1.data[4].data == 50.0
+    #assert False
+
 
 class G_TestTractor(Tractor):
     i_in1: In[Union[float, int]] = In[Union[float, int]](data=20.0)
@@ -754,7 +810,6 @@ def test_stmd_tractor(fixture_isodate_now) -> None:
     ]))
     stmd1 = TestSTMD(uid='tt1', a_pool_size=Arg[int](a=1), a_multiplier=Arg[float](a=10.0), i_in1=stmd_in1)
     stmd1.run()
-    print(stmd1.o_out1)
     assert stmd1.o_out1.data[0].data == 100.0
     assert stmd1.o_out1.data[1].data == 200.0
     assert stmd1.o_out1.data[2].data == 300.0
@@ -766,13 +821,6 @@ def test_type_from_to_json():
     original = TypeNode.from_type(Out[TList[Out[int]]])
     copy = TypeNode.from_json(original.to_json())
     copy_of_copy = TypeNode.from_json(copy.to_json())
-
-    print(original.to_json())
-    print(copy.to_json())
-    print(copy_of_copy.to_json())
-    print(TypeNode.from_json(TypeNode.from_type(Out[TList[Out[int]]]).to_json()).to_json())
-    #assert original == copy == copy_of_copy
-
     assert TypeNode.from_json(TypeNode.from_type(Out[TList[Out[int]]]).to_json()) == original
 
 def test_type_in_out():
