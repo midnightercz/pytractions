@@ -14,7 +14,7 @@ from .base import (
 
 class TractorMeta(TractionMeta):
     @classmethod
-    def _attribute_check(cls, attr, type_):
+    def _attribute_check(cls, attr, type_, all_attrs):
         if attr not in ('uid', 'state', 'skip', 'skip_reason', 'errors', 'stats', 'details', 'tractions'):
             if attr.startswith("i_"):
                 if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(In[ANY]):
@@ -32,6 +32,11 @@ class TractorMeta(TractionMeta):
             elif attr.startswith("t_"):
                 if TypeNode.from_type(type_, subclass_check=True) != TypeNode.from_type(Traction):
                     raise TypeError(f"Attribute {attr} has to be type Traction, but is {type_}")
+            elif attr.startswith("d_"):
+                if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(str):
+                    raise TypeError(f"Attribute {attr} has to be type str, but is {type_}")
+                if attr.replace("d_", "", 1) not in all_attrs['__annotations__']:
+                    raise TypeError(f"Attribute {attr.replace('d_', '', 1)} is not defined for description {attr}: {all_attrs}")
             else:
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or t_")
 
@@ -175,6 +180,7 @@ class TractorMeta(TractionMeta):
 
 
 class Tractor(Traction, metaclass=TractorMeta):
+    _TYPE: str = "TRACTOR"
     uid: str
     state: str = "ready"
     skip: bool = False
@@ -347,6 +353,7 @@ class Tractor(Traction, metaclass=TractorMeta):
 
 
 class MultiTractor(Tractor, metaclass=TractorMeta):
+    _TYPE: str = "MULTITRACTOR"
     uid: str
     state: str = "ready"
     skip: bool = False

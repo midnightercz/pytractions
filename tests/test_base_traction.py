@@ -32,6 +32,15 @@ def test_traction_ok_args_1():
         a_arg1: Arg[int]
 
 
+def test_traction_ok_args_description_1():
+    class TTest(Traction):
+        i_in1: In[int]
+        o_out1: Out[int]
+        r_res1: Res[int]
+        a_arg1: Arg[int]
+        d_i_in1: str = "Description of i_in1"
+
+
 def test_traction_wrong_args_1():
     with pytest.raises(TypeError):
 
@@ -98,10 +107,12 @@ def test_traction_inputs_read_set():
 def test_traction_to_json():
     class TTest(Traction):
         i_in1: In[int] = In[int]()
+        d_i_in1: str = "description of i_in1"
 
     o: Out[int] = Out[int](data=10)
     t = TTest(uid="1", i_in1=o)
     assert t.to_json() == {
+        'd_i_in1': 'description of i_in1',
         "details": {"$data": [],
                     "$type": {"args":[{"args": [], "type": "str", 'module': 'builtins'}], "type": "TList", "module":"pytraction.base"}},
         "errors": {"$data": [],
@@ -112,6 +123,7 @@ def test_traction_to_json():
                             "type": "Out",
                             'module': "pytraction.base"}
                   },
+        "name": "TTest",
         "skip": False,
         "skip_reason": "",
         "state": "ready",
@@ -148,6 +160,7 @@ def test_traction_inlist_to_json():
                                       'type': 'TList'}],
                   'module': 'pytraction.base',
                   'type': 'Out'}},
+        "name": "TTest",
         "skip": False,
         "skip_reason": "",
         "state": "ready",
@@ -270,6 +283,7 @@ def test_traction_json(fixture_isodate_now):
         'details': {"$data": [], "$type": {"args": [{"args": [], "type": "str", 'module':'builtins'}], "type": "TList", 'module': 'pytraction.base'}},
         'errors': {"$data": [],  "$type": {"args": [{"args": [], "type": "str", 'module':'builtins'}], "type": "TList", 'module': 'pytraction.base'}},
         'o_out1': {'$data': {"data": 20}, "$type": {"args": [{"args": [], "type": "int", 'module':'builtins'}], "type": "Out", 'module': 'pytraction.base'}},
+        "name": "TTest1",
         'skip': False,
         'skip_reason': '',
         'state': 'finished',
@@ -291,6 +305,7 @@ def test_traction_json(fixture_isodate_now):
         'errors': {"$data": [],  "$type": {"args": [{"args": [], "type": "str", 'module':'builtins'}], "type": "TList", 'module': 'pytraction.base'}},
         'i_in1': 'TTest1[1]#o_out1',
         'o_out1': {'$data': {"data": 30}, "$type": {"args": [{"args": [], "type": "int", 'module':'builtins'}], "type": "Out", 'module': 'pytraction.base'}},
+        "name": "TTest2",
         'skip': False,
         'skip_reason': '',
         'state': 'finished',
@@ -509,6 +524,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
          'details': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
          'errors': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
          'o_out1': {"$data": {'data': 2.125}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
+         'name': 'TestTractor',
          'skip': False,
          'skip_reason': '',
          'state': 'finished',
@@ -525,6 +541,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
             'details': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
             'errors': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
             'o_out1': {"$data": {'data': 10.0}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
+            'name': 'TTest1',
             'skip': False,
             'skip_reason': '',
             'state': 'finished',
@@ -543,6 +560,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
             'errors': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
             'i_in1': 'TTest1[tt1::1]#o_out1',
             'o_out1': {"$data": {'data': 5.5}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
+            'name': 'TTest2',
             'skip': False,
             'skip_reason': '',
             'state': 'finished',
@@ -561,6 +579,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
             'errors': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
             'i_in1': 'TTest2[tt1::2]#o_out1',
             'o_out1': {"$data": {'data': 3.25}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
+            'name': 'TTest2',
             'skip': False,
             'skip_reason': '',
             'state': 'finished',
@@ -579,6 +598,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
             'errors': {"$data": [], "$type": {'args': [{'args': [],'type': 'str', 'module': 'builtins'}], 'type': 'TList', 'module': 'pytraction.base'}},
             'i_in1': 'TTest2[tt1::3]#o_out1',
             'o_out1': {"$data": {'data': 2.125}, '$type': {'args': [{'args': [], 'type': 'float', 'module': 'builtins'}], 'type': 'Out', 'module': 'pytraction.base'}},
+            'name': 'TTest2',
             'skip': False,
             'skip_reason': '',
             'state': 'finished',

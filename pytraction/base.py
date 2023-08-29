@@ -448,7 +448,6 @@ class TypeNode:
                 ch_eq &= any([issubclass(n1_type, t) for t in [int, float, str, bool, type(None), Base]])
             cmp_node.eq = ch_eq
 
-
         return root_node.eq
 
     def to_json(self) -> Dict[str, Any]:
@@ -1435,7 +1434,7 @@ class Arg(Base, Generic[T]):
 
 class MultiArgMeta(BaseMeta):
     @classmethod
-    def _attribute_check(cls, attr, type_):
+    def _attribute_check(cls, attr, type_, all_attrs):
         if attr.startswith("a_"):
             if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(Arg[ANY]):
                 raise TypeError(f"Attribute {attr} has to be type Arg[ANY], but is {type_}")
@@ -1449,7 +1448,7 @@ class MultiArg(Base, metaclass=MultiArgMeta):
 class TractionMeta(BaseMeta):
 
     @classmethod
-    def _attribute_check(cls, attr, type_):
+    def _attribute_check(cls, attr, type_, all_attrs):
         if attr not in ('uid', 'state', 'skip', 'skip_reason', 'errors', 'stats', 'details'):
             if attr.startswith("i_"):
                 if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(In[ANY]):
@@ -1464,8 +1463,13 @@ class TractionMeta(BaseMeta):
             elif attr.startswith("r_"):
                 if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(Res[ANY]):
                     raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
+            elif attr.startswith("d_"):
+                if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(str):
+                    raise TypeError(f"Attribute {attr} has to be type str, but is {type_}")
+                if attr.replace("d_", "", 1) not in all_attrs['__annotations__']:
+                    raise TypeError(f"Attribute {attr.replace('d_', '', 1)} is not defined for description {attr}: {all_attrs}")
             else:
-                raise TypeError(f"Attribute {attr} has start with i_, o_, a_ or r_")
+                raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or d_")
 
     def __new__(cls, name, bases, attrs):
         annotations = attrs.get('__annotations__', {})
@@ -1474,7 +1478,7 @@ class TractionMeta(BaseMeta):
             # skip private attributes
             if attr.startswith("_"):
                 continue
-            cls._attribute_check(attr, type_)
+            cls._attribute_check(attr, type_, attrs)
 
         # record fields to private attribute
         attrs["_attrs"] = attrs
@@ -1526,6 +1530,7 @@ OnErrorCallable = Callable[[_Traction], None]
 
 
 class Traction(Base, metaclass=TractionMeta):
+    _TYPE: str = "TRACTION"
     uid: str
     state: str = "ready"
     skip: bool = False
@@ -1628,6 +1633,8 @@ class Traction(Base, metaclass=TractionMeta):
                 ret[f] = getattr(self, f)
             else:
                 ret[f] = getattr(self, f).to_json()
+        ret['name'] = self.__class__.__name__
+        ret['type'] = self._TYPE
         return ret
 
     def _getstate_to_json(self) -> Dict[str, Any]:
@@ -1732,7 +1739,7 @@ class Traction(Base, metaclass=TractionMeta):
 
 class STMDMeta(TractionMeta):
     @classmethod
-    def _attribute_check(cls, attr, type_):
+    def _attribute_check(cls, attr, type_, all_attrs):
         if attr not in ('uid', 'state', 'skip', 'skip_reason', 'errors', 'stats', 'details', 'traction', 'tractions'):
             if attr.startswith("i_"):
                 if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(In[TList[In[ANY]]]):
@@ -1747,7 +1754,7 @@ class STMDMeta(TractionMeta):
                 if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(Res[ANY]):
                     raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
             else:
-                raise TypeError(f"Attribute {attr} has start with i_, o_, a_ or r_")
+                raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or d_")
 
 
     def __new__(cls, name, bases, attrs):
@@ -1757,7 +1764,7 @@ class STMDMeta(TractionMeta):
             # skip private attributes
             if attr.startswith("_"):
                 continue
-            cls._attribute_check(attr, type_)
+            cls._attribute_check(attr, type_, attrs)
             if attr.startswith("i_") and attr not in attrs['_traction']._fields:
                 raise ValueError(f"STMD {cls}{name} has attribute {attr} but traction doesn't have input with the same name")
             if attr.startswith("o_") and attr not in attrs['_traction']._fields:
@@ -1820,6 +1827,7 @@ class STMDExecutorType(str, enum.Enum):
 
 
 class STMD(Traction, metaclass=STMDMeta):
+    _TYPE: str = "STMD"
     uid: str
     state: str = "ready"
     skip: bool = False
