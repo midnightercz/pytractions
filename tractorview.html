@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script src="https://unpkg.com/konva@9.2.0/konva.min.js"></script>
+    <meta charset="utf-8" />
+    <title>Konva Groups Demo</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background-color: #f0f0f0;
+      }
+			.side-panel {
+				float: left;
+				border: 1px solid black;
+				box-sizing: border-box;
+			}
+			.main-panel {
+				width: 70%;
+				position: relative;
+				float: left;
+				border: 1px solid red;
+				box-sizing: border-box;
+				overflow: auto;
+			}
+			.fileitem {
+				padding-left: 10px;
+				padding-right: 10px;
+				padding-top: 5px;
+				padding-left: 5px;
+			}
+			.title {
+				padding-left: 10px;
+				padding-right: 10px;
+				padding-top: 10px;
+				padding-bottom: 10px;
+				background-color: #669999;
+			}
+
+			#file-list-panel{
+					position: relative;
+					height: 100vh;
+					overflow: auto;
+					transition: width 0.3s ease;
+					background-color: #f0f0f0;
+					float: left;
+					box-sizing: border-box;
+			}
+			#right-panel {
+					position: absolute;
+					display:inline;
+					transition: width 0.3s ease;
+					background-color: #f0f0f0;
+					float: left;
+					width: fit-content;
+					block-size: fit-content;
+					resize:both;
+			}
+
+			#file-list-panel.collapsed, #right-panel.collapsed {
+				width: 2%;
+			}
+
+    </style>
+  </head>
+  <body>
+		<div id='file-list-panel'>
+			<div id='file-list-header' class='title'>
+				<div style='text-align:right'>
+				<button onclick="toggleLeftPanel()" id='left-panel-button'>&lt;</button>
+				</div>
+				Files
+			</div>
+		</div>
+    <div id="container" class="main-panel"></div>
+		<div id='right-panel'>
+				<div style='text-align:left'>
+					<button onclick="toggleRightPanel()" id='right-panel-button'>&gt;</button>
+				</div>
+				<div id='help-div'>
+					<div id='help-div-title' class='title'></div>
+					<div id='help-div-body'></div>
+				</div>
+		</div>
+
+
+    <script>
+			function toggleLeftPanel() {
+					const leftPanel = document.getElementById("file-list-panel");
+					const rightPanel = document.getElementById("right-panel");
+					leftPanel.classList.toggle("collapsed");
+					document.getElementById("left-panel-button").innerHTML = leftPanel.classList.contains("collapsed") ? "&gt;" : "&lt;";
+					var main_panel_width = 70;
+					main_panel_width += leftPanel.classList.contains("collapsed") ? 6 : 0;
+					main_panel_width += rightPanel.classList.contains("collapsed") ? 17 : 0;
+					document.getElementById("container").style.width = main_panel_width + "%";
+			}
+			function toggleRightPanel(force_visible=false) {
+					const leftPanel = document.getElementById("file-list-panel");
+					const rightPanel = document.getElementById("right-panel");
+					if (!force_visible)
+						rightPanel.classList.toggle("collapsed");
+					else {
+						if (rightPanel.classList.contains("collapsed"))
+							rightPanel.classList.remove("collapsed");
+					}
+
+					document.getElementById("right-panel-button").innerHTML = rightPanel.classList.contains("collapsed") ? "&lt;" : "&gt;";
+					var main_panel_width = 70;
+					main_panel_width += leftPanel.classList.contains("collapsed") ? 6 : 0;
+					main_panel_width += rightPanel.classList.contains("collapsed") ? 17 : 0;
+					document.getElementById("container").style.width = main_panel_width + "%";
+					document.getElementById("help-div").style.display = rightPanel.classList.contains("collapsed") ? "none" : "block";
+			}
+			toggleRightPanel();
+
+			const line_colors = [
+				"#2E4057",
+				"#3E6B8B",
+				"#8FB8DE",
+				"#96C1C1",
+				"#16A085",
+				"#1ABC9C",
+				"#27AE60",
+				"#2ECC71",
+				"#3498DB",
+				"#2980B9",
+				"#9B59B6",
+				"#8E44AD",
+				"#E74C3C",
+				"#C0392B",
+				"#D35400",
+				"#E67E22",
+				"#F39C12",
+				"#F0B27A",
+				"#E6B0AA",
+				"#FADBD8"
+			];
+		
+			var font_size = 14;
+      var width = window.innerWidth;
+      var height = window.innerHeight;
+
+			var input_padding = 10;
+			var arrow_width = 10;
+			var arg_spacing = 10;
+		  var scaleBy = 1.01;
+
+      var stage = new Konva.Stage({
+        container: 'container',
+        width: width,
+        height: height,
+				draggable: true,
+      });
+			stage.on('wheel', (e) => {
+        // stop default scrolling
+        e.evt.preventDefault();
+
+        var oldScale = stage.scaleX();
+        var pointer = stage.getPointerPosition();
+
+        var mousePointTo = {
+          x: (pointer.x - stage.x()) / oldScale,
+          y: (pointer.y - stage.y()) / oldScale,
+        };
+
+        // how to scale? Zoom in? Or zoom out?
+        let direction = e.evt.deltaY > 0 ? -1 : 1;
+
+        // when we zoom on trackpad, e.evt.ctrlKey is true
+        // in that case lets revert direction
+        if (e.evt.ctrlKey) {
+          direction = -direction;
+        }
+
+        var newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy;
+
+        stage.scale({ x: newScale, y: newScale });
+
+        var newPos = {
+          x: pointer.x - mousePointTo.x * newScale,
+          y: pointer.y - mousePointTo.y * newScale,
+        };
+        stage.position(newPos);
+      });
+
+			function listFiles() {
+				var xhttp = new XMLHttpRequest();
+				xhttp.onreadystatechange = function () {
+					if (this.readyState == 4 && this.status == 200) {
+						populateFileList(this);
+					}
+				};
+				xhttp.open("GET", "/", true);
+				xhttp.send();
+			};
+			function populateFileList(xml) {
+				var parser = new DOMParser();
+				var htmlDoc = parser.parseFromString(xml.responseText, 'text/html');
+				var preList = htmlDoc.getElementsByTagName("li")
+				const listContainer = document.getElementById('file-list-panel');
+				for (i = 1; i < preList.length; i++) {
+					if (preList[i].getElementsByTagName('a')[0].innerHTML.endsWith('.json')) {
+						const fdiv = document.createElement('div');
+						fdiv.textContent = preList[i].getElementsByTagName('a')[0].innerHTML;
+						fdiv.classList.add('fileitem')
+						listContainer.appendChild(fdiv);
+						fdiv.addEventListener('click', (event) => {
+							loadFile(event.target.textContent);
+						});
+					}
+				}
+			}
+    function loadFile(filePath) {
+      fetch(filePath)
+        .then(function(response) {
+          if (response.ok) {
+            return response.json();
+          } else {
+            throw new Error('Unable to fetch JSON file');
+          }
+        })
+        .then(function(data) {
+					stage.clear();
+					renderTractor(data);
+        })
+      }
+
+
+			function getIOWidth(input) {
+				return Math.max(
+					new Konva.Text({text: input['name'], fontSize: font_size, fontFamily: 'Calibri'}).width(),
+					new Konva.Text({text: type_to_str(input['type']), fontSize: font_size, fontFamily: 'Calibri', fill: 'green'}).width()
+				) + 15;
+			}
+
+			function renderIO(input, _width, out=false, tractor=false, doc=null, parent=null) {
+				var group = new Konva.Group({});
+				var doc_rect_width = 0;
+				if (doc) {
+					doc_rect_width = 15 + input_padding;
+				} else {
+					doc_rect_width = 0;
+				}
+				const name_text = new Konva.Text({text: input['name'], fontSize: font_size, fontFamily: 'Calibri', fill: 'green', x: input_padding + doc_rect_width, y: input_padding});
+				var type_text = new Konva.Text({text: type_to_str(input['type']), fontSize: font_size, fontFamily: 'Calibri', fill: 'green', x: input_padding + doc_rect_width, y: name_text.height() + input_padding});
+				const height = 2 * (name_text.height()) + input_padding*2;
+				const width = _width + (2 * input_padding);
+
+				const poly = new Konva.Line({
+					points: [0, 0, width, 0, width+arrow_width, height/2, width, height, 0, height],
+					fill: 'white',
+					stroke: 'black',
+					strokeWidth: 1,
+					closed: true,
+				});
+				doc_rect = new Konva.Rect({
+					x: input_padding,
+					y: input_padding,
+					width: 15,
+					height: 15,
+					stroke: 'black',
+					fill: null
+				});
+	      doc_rect.on('mouseup', function () {
+					document.getElementById("help-div-title").innerHTML = parent + " &gt; " + input["name"];
+					document.getElementById("help-div-body").innerHTML = doc;
+					document.getElementById("right-panel").width = document.getElementById("help-div-body").outerWidth;
+					toggleRightPanel(force_visible=true);
+   	   });
+
+				doc_label = new Konva.Text({'text': '?', 'fontSize': font_size, 'fontFamily': 'Courier', 'fill': 'black'});
+				doc_label.x(doc_rect.x()+(15-doc_label.width())/2);
+				doc_label.y(doc_rect.y()+(15-doc_label.height())/2);
+	      doc_label.on('mouseup', function () {
+					document.getElementById("help-div-title").innerHTML = parent + " &gt; " + input["name"];
+					document.getElementById("help-div-body").innerHTML = doc;
+					toggleRightPanel(force_visible=true);
+				});
+
+				pin = new Konva.Rect({
+					width: 5,
+					height: 5,
+					stroke: 'black',
+					fill: 'black'
+				});
+				if (out) {
+					pin.x(width+arrow_width)
+					pin.y(height/2-2.5);
+				} else {
+					if (tractor) {
+						pin.x(width+arrow_width);
+						pin.y(height/2-2.5);
+					} else {
+						pin.x(0);
+						pin.y(height/2-2.5);
+					}
+				}
+
+        group.add(poly);
+ 				if (doc) {
+					group.add(doc_rect);
+					group.add(doc_label);
+				}
+				group.add(name_text);
+				group.add(type_text);
+				group.add(pin)
+				return {
+					'group': group,
+					'pin': pin
+				};
+			}
+
+			function renderArgOrRes(arg, res=false, tractor=false) {
+				var group = new Konva.Group({});
+				title_width = Math.max(
+					new Konva.Text({text: arg['name'], fontSize: font_size, fontFamily: 'Calibri'}).width(),
+					new Konva.Text({text: type_to_str(arg['type']), fontSize: font_size, fontFamily: 'Calibri'}).width()
+				);
+				var name_text = new Konva.Text({text: arg['name'], fontSize: font_size, fontFamily: 'Calibri', fill: 'green', x: input_padding, y: input_padding});
+				var type_text = new Konva.Text({text: type_to_str(arg['type']), fontSize: font_size, fontFamily: 'Calibri', fill: 'green', x: input_padding, y: name_text.height() + input_padding});
+
+        var box = new Konva.Rect({
+          width: title_width + input_padding * 2,
+          height: 2 * name_text.height() + 2 * input_padding,
+          name: arg['name'],
+          fill: 'white',
+          stroke: 'black',
+          strokeWidth: 1,
+        });
+        group.add(box);
+				group.add(name_text);
+				group.add(type_text);
+				var pin = null;
+				if (res) {
+					var pin = new Konva.Rect({
+						width: 5,
+						height: 5,
+						stroke: 'black',
+						fill: 'black'
+					});
+					if (tractor) {
+						pin.x(box.width()/2-2.5);
+						pin.y(0);
+					} else {
+						pin.x(0);
+						pin.y(box.height()/2-2.5);
+					}
+					group.add(pin);
+				}
+				return {
+					'group': group,
+					'pin': pin
+				};
+			}
+
+			function getGroupWidth(group) {
+				var min_child_x = 99999999;
+				var max_child_x = -99999999;
+				group.getChildren().forEach(function(child) {
+					min_child_x = Math.min(min_child_x, child.x());
+					max_child_x = Math.max(max_child_x, child.x() + child.width());
+				});
+				return max_child_x - min_child_x;
+			}
+
+			function getGroupHeight(group) {
+				var min_child_y = 99999999;
+				var max_child_y = -99999999;
+				group.getChildren().forEach(function(child) {
+					min_child_y = Math.min(min_child_y, child.y());
+					max_child_y = Math.max(max_child_y, child.y() + child.height());
+				});
+				return max_child_y - min_child_y;
+			}
+
+			function type_to_str(type) {
+				x = type['type'];
+				if (type['args'].length > 0) {
+					x += '[';
+					for (const arg of type['args']) {
+						x += type_to_str(arg);
+						x += ',';
+					}
+					x	= x.slice(0, -1);
+					x += ']';
+				}
+				return x;
+			}
+
+			function renderTraction(name, traction) {
+				var inputs = [];
+				var outputs = [];
+				var args = [];
+				var resources = [];
+				var docs = {};
+				var traction_doc = null;
+
+				for (const [key, value] of Object.entries(traction)) {
+					if (key.startsWith('i_')) {
+						inputs.push({'name': key, 'type': value['$type']});
+					} else if (key.startsWith('o_')) {
+						outputs.push({'name': key, 'type': value['$type']});
+					} else if (key.startsWith('a_')) {
+						args.push({'name': key, 'type': value['$type']});
+					} else if (key.startsWith('r_')) {
+						resources.push({'name': key, 'type': value['$type']});
+					} else if (key.startsWith('r_')) {
+						tractions.push({'name': key, 'type': value['$type']});
+					} else if (key == 'd_') {
+						traction_doc = value['default'];
+					} else if (key.startsWith('d_')) {
+						docs[key.slice(2)] = value['default'];
+					}
+				}
+				console.log("traction doc", traction_doc);
+
+				var doc_rect_width = 0;
+				if (traction_doc) {
+					doc_rect_width = 15 + input_padding;
+				} else {
+					doc_rect_width = 0;
+				}
+				tdoc_rect = new Konva.Rect({
+					x: input_padding,
+					y: input_padding,
+					width: 15,
+					height: 15,
+					stroke: 'black',
+					fill: null
+				});
+	      tdoc_rect.on('mouseup', function () {
+					document.getElementById("help-div-title").innerHTML = name;
+					document.getElementById("help-div-body").innerHTML = traction_doc;
+					document.getElementById("right-panel").width = document.getElementById("help-div-body").outerWidth;
+					toggleRightPanel(force_visible=true);
+   	   });
+
+				tdoc_label = new Konva.Text({'text': '?', 'fontSize': font_size, 'fontFamily': 'Courier', 'fill': 'black'});
+				tdoc_label.x(tdoc_rect.x()+(15-tdoc_label.width())/2);
+				tdoc_label.y(tdoc_rect.y()+(15-tdoc_label.height())/2);
+	      tdoc_label.on('mouseup', function () {
+					document.getElementById("help-div-title").innerHTML = name;
+					document.getElementById("help-div-body").innerHTML = traction_doc;
+					toggleRightPanel(force_visible=true);
+				});
+
+				var title_text = new Konva.Text({
+					text: name, fontSize: font_size, fontFamily: 'Calibri', fill: 'green',
+				});
+				var type_text = new Konva.Text({
+					text: traction['$type']['type'], fontSize: font_size, fontFamily: 'Calibri', fill: 'green',
+				});
+
+				var input_pins = {};
+				var	output_pins = {};
+				var resource_pins = {};
+
+				var rendered_input = renderIO({'name':inputs[0], 'type':{'type':'str', 'args':[]}});
+				var input_ = rendered_input['group'];
+				var input_height = getGroupHeight(input_);
+				var group = new Konva.Group({
+					x: 0, y: 0,
+				});
+
+				var max_in_width = 0;
+				var max_out_width = 0;
+				inputs.forEach(function(input, i) {
+					max_in_width = Math.max(max_in_width, getIOWidth(input));
+				});
+				outputs.forEach(function(output, i) {
+					max_out_width = Math.max(max_out_width, getIOWidth(output));
+				});
+
+        var box = new Konva.Rect({
+          width: Math.max(title_text.width()*2, type_text.width()*2, max_out_width*2),
+          height: title_text.height()+4 + type_text.height()+4 + input_height * Math.max((args.length + outputs.length), (resources.length + inputs.length))+10,
+          name: name,
+          fill: 'white',
+          stroke: 'black',
+          strokeWidth: 1,
+        });
+				var max_text_width = Math.max(title_text.width(), type_text.width());
+				var title = new Konva.Text({text: name, fontSize: font_size, fontFamily: 'Calibri', fill: 'red', x: max_text_width/2, y: 2});
+				var typetext = new Konva.Text({text: traction['$type']['type'], fontSize: font_size, fontFamily: 'Calibri', fill: 'green', x: max_text_width/2, y: 2+title.height()+4});
+
+				var lasty = typetext.y() + typetext.height();
+
+        group.add(box);
+ 				if (traction_doc) {
+					group.add(tdoc_rect);
+					group.add(tdoc_label);
+				}
+				group.add(title);
+				group.add(typetext);
+
+				var max_left_in = -1;
+				var max_left_res = -1;
+			
+				var input_groups = [];
+				var resource_groups = [];
+
+
+				//render inputs
+				inputs.forEach(function(input, i) {
+					var rendered_input = renderIO(input, max_in_width, out=false, tractor=false, doc=docs[input['name']], parent=name);
+					const input_group = rendered_input['group'];
+					input_pins[input['name']] = rendered_input['pin'];
+					max_left_in = Math.max(max_left_in,  getGroupWidth(input_group));
+					input_groups.push(input_group);
+				});
+
+				//render resources
+				resources.forEach(function(output, i) {
+					var rendered_resource = renderArgOrRes(output, res=true);
+					var resource_group = rendered_resource['group'];
+					resource_pins[output['name']] = rendered_resource['pin'];
+					max_left_res = Math.max(max_left_res,  getGroupWidth(resource_group));
+					resource_groups.push(resource_group);
+				});
+				const max_left_width = Math.max(max_left_in, max_left_res);
+
+				//place inputs
+				input_groups.forEach(function(input_group, i) {
+					input_group.y(lasty + 4);
+					if (max_left_in > max_left_res)
+						input_group.x(max_left_in - getGroupWidth(input_group));
+					else
+						input_group.x(max_left_res + arrow_width - getGroupWidth(input_group));
+					group.add(input_group);
+					lasty = lasty + getGroupHeight(input_group);
+				});
+
+				var last_input_y = lasty;
+
+				//place resources
+				resource_groups.forEach(function(resource_group, i) {
+					resource_group.y(lasty + 4);
+					if (max_left_in > max_left_res)
+						resource_group.x(max_left_in - arrow_width - getGroupWidth(resource_group));
+					else
+						resource_group.x(max_left_res - getGroupWidth(resource_group));
+
+					lasty = lasty + getGroupHeight(resource_group);
+					group.add(resource_group);
+				});
+
+				if (max_left_in > max_left_res) {
+					tdoc_label.x(tdoc_label.x()+max_left_in-arrow_width);
+					box.x(max_left_in-arrow_width);
+					tdoc_rect.x(tdoc_rect.x()+max_left_in-arrow_width);
+					title.x(title.x()+max_left_in-arrow_width);
+					typetext.x(typetext.x()+max_left_in-arrow_width);
+				} else {
+					box.x(max_left_res);
+					tdoc_rect.x(tdoc_rect.x()+max_left_res);
+					tdoc_label.x(tdoc_label.x()+max_left_res);
+					title.x(title.x()+max_left_res);
+					typetext.x(typetext.x()+max_left_res);
+				}
+
+				lasty = typetext.y() + typetext.height() + 4;
+
+				args.forEach(function(arg, i) {
+					var rendered_arg = renderArgOrRes(arg);
+					var arg_group = rendered_arg['group'];
+					arg_group.y(lasty);
+					arg_group.x(box.x() + arrow_width + arg_spacing);
+					group.add(arg_group);
+					lasty = lasty + getGroupHeight(arg_group);
+				});
+				outputs.forEach(function(output, i) {
+					console.log(docs[output['name']], name);
+					var rendered_output = renderIO(output, max_out_width, out=true, tractor=false, doc=docs[output['name']], parent=name);
+					var output_group = rendered_output['group'];
+					output_pins[output['name']] = rendered_output['pin'];
+					output_group.y(lasty);
+					output_group.x(box.x() + box.width() - (max_out_width+input_padding*2));
+					group.add(output_group);
+					lasty = lasty + getGroupHeight(output_group);
+				});
+				return {
+					"group": group,
+					"input_pins": input_pins,
+					"output_pins": output_pins,
+					"resource_pins": resource_pins
+				};
+			}
+
+			function renderTractor(data) {
+				var inputs = [];
+				var outputs = [];
+				var args = [];
+				var resources = []
+				var tractions = [];
+				var ios = {};
+				var max_traction_box_height = -1;
+				var io_connections = data['$io_map'];
+				var resource_connections = data['$resource_map'];
+				var global_input_pins = {};
+
+				for (const [key, value] of Object.entries(data)) {
+					if (key.startsWith('i_')) {
+						inputs.push({'name': key, 'type': value['$type']});
+					} else if (key.startsWith('o_')) {
+						outputs.push({'name': key, 'type': value['$type']});
+					} else if (key.startsWith('a_')) {
+						args.push({'name': key, 'type': value['$type']});
+					} else if (key.startsWith('r_')) {
+						resources.push({'name': key, 'type': value['$type']});
+					} else if (key.startsWith('t_')) {
+						tractions.push({'name': key, 'type': value});
+					}
+				}
+			
+				// calculate max width of inputs
+				var max_in_width = 0;
+				for (const input of inputs) {
+					max_in_width = Math.max(max_in_width, getIOWidth(input));
+				}
+
+				lastx = 50;
+				lasty = 50;
+				// Render Tractor inputs
+				for (const input of inputs) {
+					tin = renderIO(input, max_in_width, tractor=true, parent='Tractor');
+					global_input_pins[input['name']] = tin['pin'];
+					const in_group = tin['group'];
+					in_group.x(lastx);
+					in_group.y(lasty);
+					lasty += getGroupHeight(in_group) + 20;
+					layer.add(in_group);
+				}
+
+				var lastx = lastx + max_in_width + 100;
+				var lasty = 150;
+				for (var traction of tractions) {
+					rendered_traction = renderTraction(traction['name'], traction['type']);
+					group = rendered_traction['group'];
+					max_traction_box_height = Math.max(max_traction_box_height, getGroupHeight(group));
+					ios[traction['name']] = {
+						'inputs': rendered_traction['input_pins'],
+						'outputs': rendered_traction['output_pins'],
+						'resources': rendered_traction['resource_pins']
+					}
+
+					var abs = group.getAbsolutePosition();
+					abs.x = lastx;
+					abs.y = lasty;
+					group.x(lastx);
+					group.y(lasty);
+					layer.add(group);
+					lastx += getGroupWidth(group) + 100;
+				}
+					
+				//var y_line_offset = 0;
+				//var x_line_offset = 0;
+				var line_color_i = 0;
+				for (var io_conn of io_connections) {
+					var to = io_conn[0];
+					var from = io_conn[1];
+					var to_pin = ios[to[0]]['inputs'][to[1]];
+					var to_index = Object.keys(ios[to[0]]['inputs']).indexOf(to[1]);
+
+					if (from[0] != "#") {
+						var from_pin = ios[from[0]]['outputs'][from[1]];
+						var from_index = Object.keys(ios[from[0]]['outputs']).indexOf(from[1]);
+						x_offset = Object.keys(ios[from[0]]['outputs']).length * 5 - from_index * 5;
+					} else {
+						var from_pin = global_input_pins[from[1]];
+						var from_index = Object.keys(global_input_pins).indexOf(from[1]);
+						x_offset = Object.keys(global_input_pins).length * 5 - from_index * 5;
+					}
+
+					var absolute_from = from_pin.absolutePosition();
+					var absolute_to = to_pin.absolutePosition();
+
+					y_offset = from_index * 5;
+
+					var line = new Konva.Line({
+						points: [absolute_from.x, absolute_from.y,
+ 										 absolute_from.x+20+x_offset, absolute_from.y,
+ 										 absolute_from.x+20+x_offset, lasty + max_traction_box_height + 10 + y_offset,
+										 absolute_to.x-20-x_offset, lasty + max_traction_box_height + 10 + y_offset,
+										 absolute_to.x-20-x_offset, absolute_to.y,
+										 absolute_to.x, absolute_to.y],
+						stroke: line_colors[line_color_i++ % line_colors.length],
+						strokeWidth: 2,
+						lineCap: 'round',
+						lineJoin: 'round'
+					});
+					//x_line_offset +=5;
+					//y_line_offset +=5;
+					layer.add(line);
+				}
+				var global_resource_pins = {};
+				var global_input_pins = {};
+
+				lastx = 100;
+				line_color_i = line_colors.length;
+
+				// Tractor resources
+				for (const resource of resources) {
+					tres = renderArgOrRes(resource, res=true, tractor=true);
+					global_resource_pins[resource['name']] = tres['pin'];
+					const res_group = tres['group'];
+					res_group.x(lastx);
+					res_group.y(lasty + max_traction_box_height + 100);
+					lastx += getGroupWidth(res_group) + 20;
+					layer.add(res_group);
+				}
+
+				var res_line_y = lasty + max_traction_box_height + 70;
+
+				for (var res_conn of resource_connections) {
+					var to = res_conn[0];
+					var from = res_conn[1];
+					var to_pin = ios[to[0]]['resources'][to[1]];
+					var from_pin = global_resource_pins[from];
+					var absolute_from = from_pin.absolutePosition();
+					var absolute_to = to_pin.absolutePosition();
+
+
+					var points = [absolute_from.x, absolute_from.y, 
+												absolute_from.x, res_line_y, 
+												absolute_to.x-20 , res_line_y,
+												absolute_to.x-20, absolute_to.y,
+												absolute_to.x, absolute_to.y];
+
+					var line = new Konva.Line({
+						points: points,
+						stroke: line_colors[line_color_i-- % line_colors.length],
+						strokeWidth: 2,
+						lineCap: 'round',
+						lineJoin: 'round'
+					});
+					line.dash([10, 5]);
+					layer.add(line);
+				}
+			}
+
+      var layer = new Konva.Layer();
+      //var colors = ['red', 'orange', 'yellow'];
+      //tractions.forEach(function(traction, i) {
+      //  var box = renderTraction(traction);
+			//	layer.add(box);
+      //});
+
+      stage.add(layer);
+			listFiles();
+
+    </script>
+  </body>
+</html>
