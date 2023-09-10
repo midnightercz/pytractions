@@ -1,6 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 import dataclasses
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 from typing_extensions import Self
 
 
@@ -181,6 +181,7 @@ class TractorMeta(TractionMeta):
 
 class Tractor(Traction, metaclass=TractorMeta):
     _TYPE: str = "TRACTOR"
+    _CUSTOM_TYPE_TO_JSON: bool = True
     uid: str
     state: str = "ready"
     skip: bool = False
@@ -315,6 +316,28 @@ class Tractor(Traction, metaclass=TractorMeta):
             self._finish_stats()
             _on_update(self)  # type: ignore
         return self
+
+    @classmethod
+    def type_to_json(cls) -> Dict[str, Any]:
+        pre_order: Dict[str, Any] = {}
+        # stack is list of (current_cls_to_process, current_parent, current_key, current_default)
+        stack: List[Tuple[Base, Dict[str, Any], str]] = [(cls, pre_order, "root", None)]
+        while stack:
+            current, current_parent, parent_key, current_default = stack.pop(0)
+            if hasattr(current, "_CUSTOM_TYPE_TO_JSON") and current._CUSTOM_TYPE_TO_JSON and current != cls:
+                current_parent[parent_key] = current.type_to_json()
+            elif hasattr(current, "_fields"):
+                current_parent[parent_key] = {"$type": TypeNode.from_type(current).to_json()}
+                for f, ftype in current._fields.items():
+                    if type(current.__dataclass_fields__[f].default) in (str, int, float, None):
+                        stack.append((ftype, current_parent[parent_key], f, current.__dataclass_fields__[f].default))
+                    else:
+                        stack.append((ftype, current_parent[parent_key], f, None))
+            else:
+                current_parent[parent_key] = {"$type": TypeNode.from_type(current).to_json(), "default": current_default}
+        pre_order['root']['$io_map'] = [[list(k), list(v)] for k, v in cls._io_map.items()]
+        pre_order['root']['$resource_map'] = [[list(k), v] for k, v in cls._resources_map.items()]
+        return pre_order['root']
 
     @classmethod
     def from_json(cls, json_data) -> Self:

@@ -65,13 +65,16 @@ def find_attr(objects, attr_name):
 
 JSON_COMPATIBLE = Union[int, float, str, bool, _Base, type(None), TypeVar("X")]
 
+
 def on_update_empty(T):
     pass
+
 
 def evaluate_forward_ref(ref, frame):
     caller_globals, caller_locals = frame.f_globals, frame.f_locals
     recursive_guard = set()
     return ref._evaluate(caller_globals, caller_locals, recursive_guard)
+
 
 @dataclasses.dataclass
 class BaseConfig:
@@ -451,7 +454,6 @@ class TypeNode:
         return root_node.eq
 
     def to_json(self) -> Dict[str, Any]:
-
         pre_order: Dict[str, Any] = {"root": {}}
         stack: List[Tuple[Base, Dict[str, Any], str]] = [(self, pre_order, "root")]
         while stack:
@@ -627,6 +629,8 @@ class BaseMeta(type):
             if attr not in annotations:
                 raise NoAnnotationError(f"{attr} has to be annotated")
 
+        defaults = {}
+
         # check if all attrs are in supported types
         for attr, type_ in annotations.items():
             # skip private attributes
@@ -642,11 +646,15 @@ class BaseMeta(type):
                         default = attrs[attr].default
                     if attrs[attr].default_factory is not dataclasses.MISSING:
                         default = attrs[attr].default_factory
+                elif type(attrs[attr]) in (str, int, None, float):
+                    default = attrs[attr]
                 else:
                     default = type(attrs[attr])
+
                 if isinstance(default, DefaultOut):
                     default = type(default())
 
+                defaults[attr] = default
                 #TODO: fix
                 #if default != dataclasses._MISSING_TYPE\
                 #   and not isinstance(default, dataclasses._MISSING_TYPE)\
@@ -657,7 +665,6 @@ class BaseMeta(type):
         attrs["_attrs"] = attrs
         fields = {}
         all_annotations = {}
-        defaults = {}
         for base in bases:
             for f, ft in getattr(base, "_fields", {}).items():
                 fields[f] = ft
@@ -683,6 +690,8 @@ class BaseMeta(type):
             if default not in attrs:
                 attrs[default] = defval
 
+        #print("CLS DEFAULT", name, defaults)
+
         attrs['_fields'] = fields
         attrs['__hash__'] = _hash
 
@@ -694,11 +703,14 @@ class BaseMeta(type):
 
 
 class Base(metaclass=BaseMeta):
+    _CUSTOM_TYPE_TO_JSON: bool = False
+
     _config: ClassVar[BaseConfig] = BaseConfig()
     _fields: ClassVar[Dict[str, Any]] = {}
     _generic_cache: ClassVar[Dict[str, Type[Any]]] = {}
     _params: ClassVar[List[Any]] = []
     _orig_cls: Optional[Type[Any]] = None
+
 
     def __post_init__(self):
         pass
@@ -857,10 +869,8 @@ class Base(metaclass=BaseMeta):
 
         kwds['__orig_qualname__'] = kwds.get('__orig_qualname__',kwds['__qualname__'])
         
-
         kwds['__qualname__'] = cls._make_qualname(cls, _params) #  kwds['__orig_qualname__'] + f"[{params_qualname}]"
         o_qualname = kwds['__orig_qualname__']
-
 
         ret = meta(kwds['__qualname__'], tuple(bases), kwds)
 
@@ -892,15 +902,33 @@ class Base(metaclass=BaseMeta):
             stack.append((getattr(self, f), pre_order['root'], f))
         while stack:
             current, current_parent, parent_key = stack.pop(0)
-            #if not isinstance(current, (int, str, bool, float, type(None), TList)):
-            #    current_parent[parent_key] = {}
-            #    for f in current._fields:
-            #        stack.append((getattr(current, f), current_parent[parent_key], f))
             if isinstance(current, (TList, TDict, Base)):
                 current_parent[parent_key] = current.content_to_json()
             else:
                 current_parent[parent_key] = current
         return pre_order['root']
+
+    @classmethod
+    def type_to_json(cls) -> Dict[str, Any]:
+        pre_order: Dict[str, Any] = {}
+        # stack is list of (current_cls_to_process, current_parent, current_key, current_default)
+        stack: List[Tuple[Base, Dict[str, Any], str]] = [(cls, pre_order, "root", None)]
+        while stack:
+            current, current_parent, parent_key, current_default = stack.pop(0)
+            if hasattr(current, "_CUSTOM_TYPE_TO_JSON") and current._CUSTOM_TYPE_TO_JSON and current != cls:
+                current_parent[parent_key] = current.type_to_json()
+            elif hasattr(current, "_fields"):
+                current_parent[parent_key] = {"$type": TypeNode.from_type(current).to_json()}
+                for f, ftype in current._fields.items():
+                    if type(current.__dataclass_fields__[f].default) in (str, int, float, None):
+                        stack.append((ftype, current_parent[parent_key], f, current.__dataclass_fields__[f].default))
+                    else:
+                        stack.append((ftype, current_parent[parent_key], f, None))
+            else:
+                current_parent[parent_key] = {"$type": TypeNode.from_type(current).to_json(), "default": current_default}
+        return pre_order['root']
+
+
 
     @classmethod
     def from_json(cls, json_data) -> Self:
@@ -1415,7 +1443,7 @@ class NoOut(Out, Generic[T]):
 
 
 class NoData(In, Generic[T]):
-    pass
+    data: Optional[T] = None
 
 
 class Res(Base, Generic[T]):
@@ -1466,7 +1494,7 @@ class TractionMeta(BaseMeta):
             elif attr.startswith("d_"):
                 if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(str):
                     raise TypeError(f"Attribute {attr} has to be type str, but is {type_}")
-                if attr.replace("d_", "", 1) not in all_attrs['__annotations__']:
+                if attr != 'd_' and attr.replace("d_", "", 1) not in all_attrs['__annotations__']:
                     raise TypeError(f"Attribute {attr.replace('d_', '', 1)} is not defined for description {attr}: {all_attrs}")
             else:
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or d_")
@@ -1531,6 +1559,7 @@ OnErrorCallable = Callable[[_Traction], None]
 
 class Traction(Base, metaclass=TractionMeta):
     _TYPE: str = "TRACTION"
+    _CUSTOM_TYPE_TO_JSON: bool = False
     uid: str
     state: str = "ready"
     skip: bool = False
