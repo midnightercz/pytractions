@@ -41,8 +41,9 @@ from typing_extensions import Self
 import dataclasses
 
 from .exc import TractionFailedError
-
 from .utils import ANY
+from .types import CMPNode, TypeNode, JSON_COMPATIBLE
+from .abase import ABase
 
 _Base = ForwardRef("Base")
 TList = ForwardRef("TList")
@@ -63,7 +64,6 @@ def find_attr(objects, attr_name):
         if hasattr(o, attr_name):
             return getattr(o, attr_name)
 
-JSON_COMPATIBLE = Union[int, float, str, bool, _Base, type(None), TypeVar("X")]
 
 
 def on_update_empty(T):
@@ -81,454 +81,6 @@ class BaseConfig:
     validate_set_attr: bool = True
     allow_extra: bool = False
 
-
-class CMPNode:
-    def __init__(self, n1, n2, op, ch_op):
-        self.n1 = n1
-        self.n2 = n2
-        self.children = []
-        self.op = op
-        self.eq = None
-        self.ch_op = ch_op
-
-    def __str__(self):
-        return "<CMPNode n1=%s n2=%s op=%s eq=%s>" % (self.n1, self.n2, self.op, self.eq)
-
-    def __repr__(self):
-        return "<CMPNode n1=%s n2=%s op=%s eq=%s>" % (self.n1, self.n2, self.op, self.eq)
-
-
-class TypeNode:
-    _json_cache = []
-    _to_type_cache = {}
-
-    def __str__(self):
-        return "<TypeNode type=%s>" % self.type_
-
-    def __init__(self, type_, subclass_check=True):
-        self.type_ = type_
-        self.subclass_check = subclass_check
-        self.children = []
-
-    @classmethod
-    def from_type(cls, type_, subclass_check=True):
-        """Create TypeNode from provided type)."""
-        root = cls(type_=type_, subclass_check=subclass_check)
-        current = root
-        stack = []
-        while True:
-            if hasattr(current.type_, "__args__"):
-                for arg in current.type_.__args__:
-                    n = cls(type_=arg)
-                    stack.append(n)
-                    current.children.append(n)
-            elif hasattr(current.type_, "_params"):
-                for arg in current.type_._params:
-                    n = cls(type_=arg)
-                    stack.append(n)
-                    current.children.append(n)
-            if not stack:
-                break
-            if get_origin(current.type_):
-                current.type_ = get_origin(current.type_)
-            elif hasattr(current.type_, "_orig_cls") and current.type_._orig_cls:
-                current.type_ = current.type_._orig_cls
-            current = stack.pop()
-        return root
-
-    def post_order(self):
-        stack = [(self, 0, None)]
-        post_order = []
-        while stack:
-            current, parent_index, current_parent = stack.pop(0)
-            for n, ch in enumerate(current.children):
-                stack.insert(0, (ch, n, current))
-            post_order.insert(0, (current, parent_index, current_parent))
-        return post_order
-
-    def replace_params(self, params_map):
-        """Replace Typevars in TypeNode structure with values from provided mapping."""
-
-        stack = [(self, 0, None)]
-        while stack:
-            current, parent_index, current_parent = stack.pop(0)
-            for n, ch in enumerate(current.children):
-                stack.insert(0, (ch, n, current))
-            if type(current.type_) == TypeVar:
-                if current.type_ in params_map:
-                    current.type_ = params_map[current.type_]
-
-    def to_type(self, types_cache={}, params_map={}):
-        """Return new type for TypeNode or already existing type from cache."""
-
-        if json.dumps(self.to_json(), sort_keys=True) in self._to_type_cache:
-            return self._to_type_cache[json.dumps(self.to_json(), sort_keys=True)]
-
-        stack = [(self, 0, None)]
-        post_order = []
-        while stack:
-            current, parent_index, current_parent = stack.pop(0)
-            for n, ch in enumerate(current.children):
-                stack.insert(0, (ch, n, current))
-            post_order.insert(0, (current, parent_index, current_parent))
-
-        for item in post_order:
-            node, parent_index, parent = item
-
-            if node.children:
-                type_ = node.type_
-
-                children_types = tuple([x.type_ for x in node.children])
-                children_type_ids = tuple([id(x.type_) for x in node.children])
-
-                if f"{type_.__qualname__}[{children_type_ids}]" in types_cache:
-                    node.type_ = types_cache[f"{type_.__qualname__}[{children_type_ids}]"][0]
-                else:
-                    if type_ == Union:
-                        node.type_ = Union[tuple([x.type_ for x in node.children])]
-                    else:
-                        new_type = type_.__class_getitem__(tuple([x.type_ for x in node.children]), params_map=params_map)
-                        node.type_ = new_type #types_cache[f"{id(type_)}[{children_type_ids}]"][0]
-
-            if not parent:
-                continue
-            parent.children[parent_index] = node
-        self._to_type_cache[json.dumps(self.to_json(), sort_keys=True)] = post_order[-1][0].type_
-        return post_order[-1][0].type_
-
-    @staticmethod
-    def __determine_op(ch1, ch2) -> str:
-        op = "all"
-        if (ch1.type_ is Union and ch2.type_ is Union) or (
-            ch1.type_ is not Union and ch2.type_ is not Union
-        ):
-            op = "all"
-        elif (ch1.type_ is not Union and ch2.type_ is Union) or (
-            ch1.type_ is Union and ch2.type_ is not Union
-        ):
-            op = "any"
-        return op
-
-    def __eq_post_order(self, root_node):
-        stack = [root_node]
-        post_order = []
-        post_order.insert(0, root_node)
-        while stack:
-            current_node = stack.pop()
-                
-            if current_node.n1.type_ is Union and current_node.n2.type_ is not Union:
-                for ch1 in current_node.n1.children:
-                    node = CMPNode(ch1, current_node.n2, "all", "all")
-                    stack.insert(0, node)
-                    post_order.insert(0, node)
-                    current_node.children.append(node)
-
-            elif current_node.n1.type_ is not Union and current_node.n2.type_ is Union:
-                for ch2 in current_node.n2.children:
-                    node = CMPNode(current_node.n1, ch2, "all", "all")
-                    stack.insert(0, node)
-                    post_order.insert(0, node)
-                    current_node.children.append(node)
-
-            elif current_node.op == "all":
-                for ch1, ch2 in zip(current_node.n1.children, current_node.n2.children):
-                    op = self.__determine_op(ch1, ch2)
-                    node = CMPNode(ch1, ch2, op, op)
-                    stack.insert(0, node)
-                    post_order.insert(0, node)
-                    current_node.children.append(node)
-            else:
-                if current_node.n1.type_ is Union:
-                    for ch in current_node.n1.children:
-                        op = self.__determine_op(ch, current_node.n2.type_)
-                        node = CMPNode(ch, current_node.n2, op, op)
-                        stack.insert(0, node)
-                        post_order.insert(0, node)
-                        current_node.children.append(node)
-                else:
-                    for ch in current_node.n2.children:
-                        op = self.__determine_op(ch, current_node.n1.type_)
-                        node = CMPNode(ch, current_node.n1, op, op)
-                        stack.insert(0, node)
-                        post_order.insert(0, node)
-                        current_node.children.append(node)
-        return post_order
-
-    def __eq__(self, other):
-        if type(other) != TypeNode:
-            return False
-
-        op = self.__determine_op(self, other)
-        node = CMPNode(self, other, op, op)
-        post_order = self.__eq_post_order(node)
-
-        for cmp_node in post_order:
-            if cmp_node.op == "any":
-                if cmp_node.children:
-                    ch_eq = any([ch.eq for ch in cmp_node.children])
-                else:
-                    ch_eq = True
-            else:
-                ch_eq = all([ch.eq for ch in cmp_node.children])
-
-            n1_type = get_origin(cmp_node.n1.type_) or cmp_node.n1.type_
-            n2_type = get_origin(cmp_node.n2.type_) or cmp_node.n2.type_
-
-            if isinstance(n1_type, ForwardRef):
-                frame = sys._getframe(1)
-                n1_type = evaluate_forward_ref(n1_type, frame)
-            if isinstance(n2_type, ForwardRef):
-                frame = sys._getframe(1)
-                n2_type = evaluate_forward_ref(n2_type, frame)
-            if  n2_type is None:
-                n2_type = type(None)
-            if n1_type is None:
-                n1_type = type(None)
-
-            # check types only of both types are not union
-            # otherwise equality was already decided by check above
-
-            orig_cls1 = getattr(n1_type, "_orig_cls", False)
-            orig_cls2 = getattr(n2_type, "_orig_cls", True)
-
-            has_params1 = hasattr(n1_type, "_params") and len(n1_type._params) != 0
-            has_params2 = hasattr(n2_type, "_params") and len(n2_type._params) != 0
-
-            if n1_type != Union and n2_type != Union:
-                ch_eq &= (n1_type == n2_type or
-                          (orig_cls1 == orig_cls2 and has_params1 and has_params2) or
-                          orig_cls1 == n2_type or
-                          orig_cls2 == n1_type or
-                          (self.subclass_check and (inspect.isclass(n1_type) and inspect.isclass(n2_type) and issubclass(n1_type, n2_type))) or
-                          (self.subclass_check and (inspect.isclass(n1_type) and inspect.isclass(orig_cls2) and issubclass(n1_type, orig_cls2))) or
-                          bool(self.subclass_check and inspect.isclass(orig_cls1) and inspect.isclass(orig_cls2) and issubclass(orig_cls1, orig_cls2)))
-            cmp_node.eq = ch_eq
-
-        return node.eq
-
-    def __eq_cached_(self, other):
-        if type(other) != TypeNode:
-            return False
-
-        op = self.__determine_op(self, other)
-        node = CMPNode(self, other, op, op)
-        post_order = self.__eq_post_order(node)
-
-        for cmp_node in post_order:
-            if cmp_node.op == "any":
-                if cmp_node.children:
-                    ch_eq = any([ch.eq for ch in cmp_node.children])
-                else:
-                    ch_eq = True
-            else:
-                ch_eq = all([ch.eq for ch in cmp_node.children])
-
-            n1_type = cmp_node.n1.type_
-            n2_type = cmp_node.n2.type_
-
-            if isinstance(n1_type, ForwardRef) or isinstance(n2_type, ForwardRef):
-                frame = sys._getframe(1)
-
-            if isinstance(n1_type, ForwardRef):
-                n1_type = evaluate_forward_ref(n1_type, frame)
-            if isinstance(n2_type, ForwardRef):
-                n2_type = evaluate_forward_ref(n2_type, frame)
-
-            if  n2_type is None:
-                n2_type = type(None)
-            if n1_type is None:
-                n1_type = type(None)
-
-            # check types only of both types are not union
-            # otherwise equality was already decided by check above
-
-            orig_cls1 = getattr(n1_type, "_orig_cls", False)
-            orig_cls2 = getattr(n2_type, "_orig_cls", True)
-
-            has_params1 = hasattr(n1_type, "_params") and len(n1_type._params) != 0
-            has_params2 = hasattr(n2_type, "_params") and len(n2_type._params) != 0
-
-            is_any1 = n1_type is ANY
-            is_any2 = n2_type is ANY
-
-            if is_any1 or is_any2:
-                ch_eq &= is_any1 and is_any2
-            elif n1_type is not Union and n2_type is not Union:
-                ch_eq &= (n1_type == n2_type or
-                          (orig_cls1 == orig_cls2 and has_params1 and has_params2) or
-                          orig_cls1 == n2_type or
-                          orig_cls2 == n1_type or
-                          (self.subclass_check and (inspect.isclass(n1_type) and inspect.isclass(n2_type) and issubclass(n1_type, n2_type))) or
-                          (self.subclass_check and (inspect.isclass(n1_type) and inspect.isclass(orig_cls2) and issubclass(n1_type, orig_cls2))) or
-                          bool(self.subclass_check and inspect.isclass(orig_cls1) and inspect.isclass(orig_cls2) and issubclass(orig_cls1, orig_cls2)))
-            else:
-                ch_eq = False
-            cmp_node.eq = ch_eq
-
-        return node.eq
-
-    def json_compatible(self):
-        if self.children:
-            op = "all"
-        else:
-            op = "any"
-
-        root_node = CMPNode(self, TypeNode(JSON_COMPATIBLE), op, op)
-        stack = [root_node]
-        post_order = []
-        post_order.insert(0, root_node)
-        while stack:
-            current_node = stack.pop()
-            if current_node.n1.children:
-                for ch1 in current_node.n1.children:
-                    if ch1.children:
-                        op = "all"
-                    else:
-                        op = "any"
-                    node = CMPNode(ch1, TypeNode(JSON_COMPATIBLE), op, op)
-                    stack.insert(0, node)
-                    post_order.insert(0, node)
-                    current_node.children.append(node)
-            else:
-                for u in (int, float, str, bool, Base, type(None), TypeVar("X")):
-                    node = CMPNode(current_node.n1, TypeNode(u), "any", "any")
-                    post_order.insert(0, node)
-                    current_node.children.append(node)
-
-        for cmp_node in post_order:
-            n1_type = get_origin(cmp_node.n1.type_) or cmp_node.n1.type_
-            n2_type = get_origin(cmp_node.n2.type_) or cmp_node.n2.type_
-            if isinstance(n1_type, ForwardRef):
-                frame = sys._getframe(1)
-                #caller_globals, caller_locals = frame.f_globals, frame.f_locals
-                #recursive_guard = set()
-                #n1_type = n1_type._evaluate(caller_globals, caller_locals, recursive_guard)
-                n1_type = evaluate_forward_ref(n1_type, frame)
-
-            if isinstance(n1_type, ForwardRef):
-                frame = sys._getframe(1)
-                #caller_globals, caller_locals = frame.f_globals, frame.f_locals
-                #recursive_guard = set()
-                #n2_type = n2_type._evaluate(caller_globals, caller_locals, recursive_guard)
-                n2_type = evaluate_forward_ref(n2_type, frame)
-
-
-
-            if cmp_node.children:
-                if cmp_node.ch_op == "any":
-                    ch_eq = any([ch.eq for ch in cmp_node.children])
-                else:
-                    ch_eq = all([ch.eq for ch in cmp_node.children] or [True])
-            else:
-                ch_eq = True
-            # check types only of both types are not union
-            # otherwise equality was already decided by check above
-
-            if type(n1_type) == TypeVar and type(n2_type) == TypeVar:
-                ch_eq &= n1_type == n1_type
-            elif type(n1_type) == TypeVar:
-                if n2_type == Union:
-                    ch_eq = True
-                else:
-                    ch_eq = False
-            elif type(n2_type) == TypeVar:
-                if n1_type == Union:
-                    ch_eq = True
-                else:
-                    ch_eq = False
-                ch_eq = False
-
-            elif n1_type != Union and n2_type != Union:
-                if not inspect.isclass(n1_type):
-                    raise TypeError(f"{n1_type} is not class")
-                if not inspect.isclass(n2_type):
-                    raise TypeError(f"{n2_type} is not class")
-                ch_eq &= issubclass(n1_type, n2_type)
-
-            elif n1_type != Union and n2_type == Union:
-                if not inspect.isclass(n1_type):
-                    raise TypeError(f"{n1_type} is not class")
-                ch_eq &= any([issubclass(n1_type, t) for t in [int, float, str, bool, type(None), Base]])
-            cmp_node.eq = ch_eq
-
-        return root_node.eq
-
-    def to_json(self) -> Dict[str, Any]:
-        pre_order: Dict[str, Any] = {"root": {}}
-        stack: List[Tuple[Base, Dict[str, Any], str]] = [(self, pre_order, "root")]
-        while stack:
-            current, current_parent, parent_key = stack.pop(0)
-
-            type_ = current.type_
-            if isinstance(type_, ForwardRef):
-                type_ = evaluate_forward_ref(type_, sys._getframe(1))
-
-            if hasattr(type_, "__orig_qualname__"):
-                type_name = type_.__orig_qualname__
-            elif hasattr(type_, "__qualname__"):
-                type_name = type_.__qualname__
-            else:
-                type_name = type_.__name__
-            module = type_.__module__
-            current_parent[parent_key] = {"type": type_name,
-                                          "args": [None,] * len(current.children),
-                                          "module": module}
-            for n, arg in enumerate(current.children):
-                stack.append((arg, current_parent[parent_key]['args'], n))
-
-        self._json_cache.append((self.copy(subclass_check=False), pre_order['root']))
-        return pre_order['root']
-
-    @classmethod
-    def from_json(cls, json_data) -> Self:
-        root_parent = cls(None)
-        root_parent.children = [None]
-
-        stack: List[Tuple[TypeNode, str|int , str, str, Dict[str, Any]]] = [(root_parent, 0, json_data['type'], json_data['module'], json_data['args'])]
-        pre_order = []
-
-        while stack:
-            parent, parent_key, _type, _type_mod, _args = stack.pop(0)
-            mod = sys.modules[_type_mod]
-            _type_path = _type.split(".")
-            _type_o = mod
-            for path_part in _type_path:
-                if path_part == "<locals>":
-                    _, _type_o = _type_o.__code__.co_consts
-                else:
-                    if path_part != 'NoneType':
-                        _type_o = getattr(_type_o, path_part)
-                    else:
-                        _type_o = None
-
-            type_node = cls(_type_o)
-            type_node.children = [None] * len(_args)
-            pre_order.insert(0, (parent, parent_key, type_node))
-            for n, arg in enumerate(_args):
-                stack.insert(0, (type_node, n, arg['type'], arg['module'], arg['args']))
-
-        for po_entry in pre_order:
-            parent, parent_key, type_node = po_entry
-            parent.children[parent_key] = type_node
-
-        return root_parent.children[0]
-
-    def copy(self, subclass_check=True):
-        """Return new copy of TypeNode with subclass_check override"""
-
-        root_node = TypeNode(type_=self.type_, subclass_check=subclass_check)
-        root_node.children = [None]
-        stack = [(self, 0, root_node)]
-        post_order = []
-        while stack:
-            current, parent_index, current_parent = stack.pop(0)
-            new_current = TypeNode(type_=current.type_, subclass_check=subclass_check)
-            new_current.children = [None] * len(current.children)
-            for n, ch in enumerate(current.children):
-                stack.insert(0, (ch, n, new_current))
-            current_parent.children[parent_index] = new_current
-
-        return root_node.children[0]
 
 @dataclasses.dataclass
 class DefaultOut:
@@ -553,15 +105,14 @@ class DefaultOut:
         return ret
 
     def replace_params(self, params_map, cache):
-        tn  = TypeNode.from_type(self.type_)
+        tn = TypeNode.from_type(self.type_)
         tn.replace_params(params_map)
         new_type = tn.to_type(types_cache=cache)
         self.type_ = new_type
 
-        tn  = TypeNode.from_type(self.params[0])
+        tn = TypeNode.from_type(self.params[0])
         tn.replace_params(params_map)
         new_type = tn.to_type(types_cache=cache)
-
         self.params = (new_type,)
 
 
@@ -586,7 +137,6 @@ class BaseMeta(type):
             return f"{qname}[{params_str}]"
         else:
             return f"{qname}"
-
 
     @classmethod
     def _before_new(cls, name, attrs, bases):
@@ -681,7 +231,6 @@ class BaseMeta(type):
                 if f in fields:
                     all_annotations[f] = ft
 
-
         fields.update({k: v for k, v in attrs.get('__annotations__', {}).items() if not k.startswith("_")})
         all_annotations.update(annotations)
         attrs["__annotations__"] = all_annotations
@@ -689,8 +238,6 @@ class BaseMeta(type):
         for default, defval in defaults.items():
             if default not in attrs:
                 attrs[default] = defval
-
-        #print("CLS DEFAULT", name, defaults)
 
         attrs['_fields'] = fields
         attrs['__hash__'] = _hash
@@ -702,7 +249,7 @@ class BaseMeta(type):
         return ret
 
 
-class Base(metaclass=BaseMeta):
+class Base(ABase, metaclass=BaseMeta):
     _CUSTOM_TYPE_TO_JSON: bool = False
 
     _config: ClassVar[BaseConfig] = BaseConfig()
@@ -711,15 +258,8 @@ class Base(metaclass=BaseMeta):
     _params: ClassVar[List[Any]] = []
     _orig_cls: Optional[Type[Any]] = None
 
-
     def __post_init__(self):
         pass
-
-    #def __getstate__(self):
-    #    return super().__getstate__()
-
-    #def __setstate__(self, state):
-    #    super().__setstate__(state)
 
     def _no_validate_setattr_(self, name: str, value: Any) -> None:
         return super().__setattr__(name, value)
@@ -739,7 +279,7 @@ class Base(metaclass=BaseMeta):
                 if tt1 != tt2:
                     raise TypeError(f"Cannot set attribute {self.__class__}.{name} to type {value}({vtype}), expected {self._fields[name]}")
             else:
-                getattr(self.__class__,name).setter(value)
+                getattr(self.__class__, name).setter(value)
                 return
 
         return super().__setattr__(name, value)
@@ -776,7 +316,7 @@ class Base(metaclass=BaseMeta):
                 if get_origin(p) is Optional:
                     stack.insert(0, ("Optional", get_args(p)))
                 if get_origin(p) is Union:
-                    stack.insert(0, ("Union", sorted(get_args(p), key=lambda x:repr(x))))
+                    stack.insert(0, ("Union", sorted(get_args(p), key=lambda x: repr(x))))
                 elif hasattr(p, "_params"):
                     if hasattr(p, "__orig_qualname__"):
                         stack.insert(0, (p.__orig_qualname__, p._params))
@@ -857,9 +397,7 @@ class Base(metaclass=BaseMeta):
                     new_default_factory = new_default_factory.to_type(types_cache=cls._generic_cache)
                     new_kf.default_factory = new_default_factory
 
-
             kwds[k] = new_kf
-
 
         kwds["_params"] = _params
         if cls._orig_cls:
@@ -867,10 +405,9 @@ class Base(metaclass=BaseMeta):
         else:
             kwds["_orig_cls"] = cls
 
-        kwds['__orig_qualname__'] = kwds.get('__orig_qualname__',kwds['__qualname__'])
-        
-        kwds['__qualname__'] = cls._make_qualname(cls, _params) #  kwds['__orig_qualname__'] + f"[{params_qualname}]"
-        o_qualname = kwds['__orig_qualname__']
+        kwds['__orig_qualname__'] = kwds.get('__orig_qualname__', kwds['__qualname__'])
+        kwds['__qualname__'] = cls._make_qualname(cls, _params)
+        #o_qualname = kwds['__orig_qualname__']
 
         ret = meta(kwds['__qualname__'], tuple(bases), kwds)
 
@@ -927,8 +464,6 @@ class Base(metaclass=BaseMeta):
             else:
                 current_parent[parent_key] = {"$type": TypeNode.from_type(current).to_json(), "default": current_default}
         return pre_order['root']
-
-
 
     @classmethod
     def from_json(cls, json_data) -> Self:
@@ -992,9 +527,8 @@ class Base(metaclass=BaseMeta):
 
         return root_args['root']
 
-X = TypeVar("X")
-JSON_COMPATIBLE = Union[int, float, str, bool, _Base, type(None), X]
 
+X = TypeVar("X")
 
 T = TypeVar("T")
 TK = TypeVar("TK")
@@ -1118,7 +652,6 @@ class TList(Base, Generic[T]):
 
     @classmethod
     def from_json(cls, json_data) -> Self:
-
         stack = []
         post_order = []
         self_type_json = TypeNode.from_type(cls).to_json()
@@ -1126,7 +659,7 @@ class TList(Base, Generic[T]):
         if TypeNode.from_json(json_data['$type']) != TypeNode.from_type(cls):
             raise ValueError(f"Cannot load {json_data['$type']} to {self_type_json}")
 
-        root_type_args={"iterable":[]}
+        root_type_args={"iterable": []}
         for n, item in enumerate(json_data['$data']):
             root_type_args['iterable'].append(None)
             if not isinstance(item, (int, str, bool, float, type(None))):
@@ -1634,14 +1167,6 @@ class Traction(Base, metaclass=TractionMeta):
             self.__getattribute_orig__(name).data = value.data
             return
 
-        #elif name.startswith("a_"):
-        #    if not hasattr(self, name):
-        #        # output is set for the first time
-        #        super().__setattr__(name, value)
-        #    # Do not overwrite whole output container, rather just copy update data
-        #    self.__getattribute_orig__(name).a = value.a
-        #    return
-
         super().__setattr__(name, value)
 
     @property
@@ -1674,7 +1199,6 @@ class Traction(Base, metaclass=TractionMeta):
             else:
                 ret[f] = getattr(self, f).to_json()
         return ret
-
 
     def run(
         self,
@@ -1764,8 +1288,6 @@ class Traction(Base, metaclass=TractionMeta):
         return ret
 
 
-
-
 class STMDMeta(TractionMeta):
     @classmethod
     def _attribute_check(cls, attr, type_, all_attrs):
@@ -1784,7 +1306,6 @@ class STMDMeta(TractionMeta):
                     raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
             else:
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or d_")
-
 
     def __new__(cls, name, bases, attrs):
         annotations = attrs.get('__annotations__', {})
@@ -1869,12 +1390,10 @@ class STMD(Traction, metaclass=STMDMeta):
     a_executor_type: Arg[STMDExecutorType] = Arg[STMDExecutorType](a=STMDExecutorType.LOCAL)
     tractions: TList[Union[Traction, None]] = TList[Optional[Traction]]([])
 
-
     def _traction_runner(self, index, on_update=None):
         traction = self._copy_traction(index)
         traction.run(on_update=on_update)
         return traction
-
 
     def _copy_traction(self, index, connect_inputs=True):
         """ After tractor is created, all tractions needs to be copied so it's
@@ -1893,7 +1412,7 @@ class STMD(Traction, metaclass=STMDMeta):
                 init_fields[ft] = getattr(self, ft)
 
             elif ft.startswith("i_") and connect_inputs:
-               init_fields[ft] = getattr(self, ft).data[index]
+                init_fields[ft] = getattr(self, ft).data[index]
 
         init_fields['uid'] = "%s:%d" % (self.fullname, index)
         # create copy of existing traction
@@ -1905,7 +1424,6 @@ class STMD(Traction, metaclass=STMDMeta):
 
         if not connect_inputs:
             return ret
-
 
         return ret
 
@@ -1972,4 +1490,3 @@ class STMD(Traction, metaclass=STMDMeta):
 
         self.state = TractionState.FINISHED
         return self
-

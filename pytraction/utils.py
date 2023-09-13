@@ -238,21 +238,18 @@ class Node:
                 stack.insert(0, node)
                 post_order.insert(0, node)
 
-        print(post_order)
         for cmp_node in post_order:
             if cmp_node.children:
                 ch_eq = any([ch.eq for ch in cmp_node.children])
             else:
                 ch_eq = True
 
-            print(cmp_node.n1, cmp_node.n2)
             ch_eq &= cmp_node.n1.type_ == cmp_node.n2.type_ or issubclass(
                 cmp_node.n1.type_, cmp_node.n2.type_
             )
             if not ch_eq:
                 return False
-
-        return True 
+        return True
 
 
 def type_tree(type_):

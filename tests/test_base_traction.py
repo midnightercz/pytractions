@@ -129,6 +129,7 @@ def test_traction_to_json():
         "state": "ready",
         "stats": {"$data": {"finished": "", "skipped": False, "started": ""},
                   "$type": {"args": [], "type": "TractionStats", "module": "pytraction.base"}},
+        "type": "TRACTION",
         "uid": '1',
     }
 
@@ -166,6 +167,7 @@ def test_traction_inlist_to_json():
         "state": "ready",
         "stats": {"$data": {"finished": "", "skipped": False, "started": ""},
                   "$type": {"args": [], "type": "TractionStats", "module": "pytraction.base"}},
+        'type': 'TRACTION',
         "uid": '1',
     }
 
@@ -297,6 +299,7 @@ def test_traction_json(fixture_isodate_now):
                       'module': 'pytraction.base',
                       "type": "TractionStats"}
         },
+        'type': 'TRACTION',
         'uid': '1',
     }
 
@@ -319,6 +322,7 @@ def test_traction_json(fixture_isodate_now):
                       'module': 'pytraction.base',
                       "type": "TractionStats"}
         },
+        'type': 'TRACTION',
         'uid': '2',
     }
 
@@ -553,6 +557,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                           'module': 'pytraction.base',
                           'type': 'TractionStats'}
             },
+            'type': 'TRACTION',
             'uid': 'tt1::1'},
         't_ttest2': {
             'a_reducer': {"$data": {'a': 2.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
@@ -572,6 +577,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                           'module': 'pytraction.base',
                           'type': 'TractionStats'}
             },
+            'type': 'TRACTION',
             'uid': 'tt1::2'},
         't_ttest3': {
             'a_reducer': {"$data": {'a': 2.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
@@ -591,6 +597,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                           'module': 'pytraction.base',
                           'type': 'TractionStats'}
             },
+            'type': 'TRACTION',
             'uid': 'tt1::3'},
         't_ttest4': {
             'a_reducer': {"$data": {'a': 2.0}, "$type": {'args': [{'args': [],'type': 'float', 'module': 'builtins'}], 'type': 'Arg', 'module': 'pytraction.base'}},
@@ -610,6 +617,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                           'module': 'pytraction.base',
                           'type': 'TractionStats'}
             },
+            'type': 'TRACTION',
             'uid': 'tt1::4'},
         'tractions': {'$data': [
             {'$data': {'a_multiplier': {'$data': {'a': 10.0},
@@ -702,6 +710,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                   'module': 'pytraction.base',
                   'type': 'TList'},
         },
+        'type': 'TRACTOR',
         'uid': 'tt1',
     }
 
