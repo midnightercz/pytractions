@@ -8,8 +8,9 @@ import sys
 from .abase import ABase
 from .utils import ANY
 
+X = TypeVar("X")
 
-JSON_COMPATIBLE = Union[int, float, str, bool, ABase, type(None), TypeVar("X")]
+JSON_COMPATIBLE = Union[int, float, str, bool, ABase, type(None), X]
 
 
 def evaluate_forward_ref(ref, frame):
@@ -114,17 +115,17 @@ class TypeNode:
             if node.children:
                 type_ = node.type_
 
-                children_types = tuple([x.type_ for x in node.children])
+                #children_types = tuple([x.type_ for x in node.children])
                 children_type_ids = tuple([id(x.type_) for x in node.children])
 
                 if f"{type_.__qualname__}[{children_type_ids}]" in types_cache:
-                    node.type_ = types_cache[f"{type_.__qualname__}[{children_type_ids}]"][0]
+                    node.type_ = types_cache[f"{type_.__qualname__}[{children_type_ids}]"]
                 else:
                     if type_ == Union:
                         node.type_ = Union[tuple([x.type_ for x in node.children])]
                     else:
                         new_type = type_.__class_getitem__(tuple([x.type_ for x in node.children]), params_map=params_map)
-                        node.type_ = new_type #types_cache[f"{id(type_)}[{children_type_ids}]"][0]
+                        node.type_ = new_type 
 
             if not parent:
                 continue

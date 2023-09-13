@@ -8,15 +8,6 @@ from types import prepare_class, resolve_bases
 import enum
 import sys
 import uuid
-import os
-
-
-import dill
-import multiprocessing
-#dill.Pickler.dumps, dill.Pickler.loads = dill.dumps, dill.loads
-#multiprocessing.reduction.ForkingPickler = dill.Pickler
-#multiprocessing.reduction.dump = dill.dump
-#multiprocessing.queues._ForkingPickler = dill.Pickler
 
 from typing import (
     Dict,
@@ -32,7 +23,6 @@ from typing import (
     GenericAlias,
     Tuple,
     Type,
-    Type,
     Callable,
     get_args
 )
@@ -42,7 +32,7 @@ import dataclasses
 
 from .exc import TractionFailedError
 from .utils import ANY
-from .types import CMPNode, TypeNode, JSON_COMPATIBLE
+from .types import TypeNode, JSON_COMPATIBLE
 from .abase import ABase
 
 _Base = ForwardRef("Base")
@@ -65,7 +55,6 @@ def find_attr(objects, attr_name):
             return getattr(o, attr_name)
 
 
-
 def on_update_empty(T):
     pass
 
@@ -85,7 +74,7 @@ class BaseConfig:
 @dataclasses.dataclass
 class DefaultOut:
     type_: JSON_COMPATIBLE
-    params: List
+    params: List[JSON_COMPATIBLE]
 
     def copy(self, generic_cache):
         return DefaultOut(
@@ -94,7 +83,7 @@ class DefaultOut:
         )
 
     def __call__(self):
-        # Optional
+        # handling Optional
         if get_origin(self.type_) == Union and len(get_args(self.type_)) == 2 and \
            get_args(self.type_)[-1] == type(None):
             ret = Out[self.params]()
@@ -169,7 +158,11 @@ class BaseMeta(type):
         annotations = attrs.get('__annotations__', {})
         for attr, attrv in attrs.items():
             # skip annotation check for methods and functions
-            if inspect.ismethod(attrv) or inspect.isfunction(attrv) or isinstance(attrv, classmethod) or isinstance(attrv, property) or isinstance(attrv, staticmethod):
+            if inspect.ismethod(attrv) or \
+                    inspect.isfunction(attrv) or \
+                    isinstance(attrv, classmethod) or \
+                    isinstance(attrv, property) or \
+                    isinstance(attrv, staticmethod):
                 continue
             # attr starting with _ is considered to be private, there no checks
             # are applied
@@ -178,7 +171,6 @@ class BaseMeta(type):
             # other attributes has to be annotated
             if attr not in annotations:
                 raise NoAnnotationError(f"{attr} has to be annotated")
-
         defaults = {}
 
         # check if all attrs are in supported types
@@ -189,7 +181,7 @@ class BaseMeta(type):
             # Check if type of attribute is json-compatible
             if not TypeNode.from_type(annotations[attr]).json_compatible():
                 raise JSONIncompatibleError(f"Attribute {attr} is not json compatible {annotations[attr]}")
-            if attr in attrs: 
+            if attr in attrs:
                 if type(attrs[attr]) == dataclasses.Field:
                     default = dataclasses.MISSING
                     if attrs[attr].default is not dataclasses.MISSING:
@@ -252,10 +244,15 @@ class BaseMeta(type):
 class Base(ABase, metaclass=BaseMeta):
     _CUSTOM_TYPE_TO_JSON: bool = False
 
+    # dataclasses configuration class
     _config: ClassVar[BaseConfig] = BaseConfig()
+    # mapping of class fields
     _fields: ClassVar[Dict[str, Any]] = {}
+    # mapping used as lookup dict when creating generic subclasses
     _generic_cache: ClassVar[Dict[str, Type[Any]]] = {}
+    # use to store actual parameters when creating generic subclass
     _params: ClassVar[List[Any]] = []
+    # used to store original class when creating generic subclass
     _orig_cls: Optional[Type[Any]] = None
 
     def __post_init__(self):
@@ -265,7 +262,6 @@ class Base(ABase, metaclass=BaseMeta):
         return super().__setattr__(name, value)
 
     def _validate_setattr_(self, name: str, value: Any) -> None:
-
         if not name.startswith("_"):  # do not check for private attrs
             properties = dict(inspect.getmembers(self.__class__, lambda o: isinstance(o, property)))
 
@@ -284,16 +280,16 @@ class Base(ABase, metaclass=BaseMeta):
 
         return super().__setattr__(name, value)
 
-    @classmethod
-    def _replace_generic_cache(cls, type_, new_type):
-        if hasattr(new_type, "_params") and new_type._params:
-            _param_ids = tuple([id(p) for p in new_type._params])
-            cache_key = f"{id(type_)}[{_param_ids}]"
-        if new_type != type_:
-            if hasattr(new_type, "_params") and new_type._params:
-                cls._generic_cache[cache_key] = (new_type, GenericAlias(new_type, new_type._params))
-                new_type = cls._generic_cache[cache_key][1]
-        return new_type
+    # @classmethod
+    # def _replace_generic_cache(cls, type_, new_type):
+    #     if hasattr(new_type, "_params") and new_type._params:
+    #         _param_ids = tuple([id(p) for p in new_type._params])
+    #         cache_key = f"{id(type_)}[{_param_ids}]"
+    #     if new_type != type_:
+    #         if hasattr(new_type, "_params") and new_type._params:
+    #             cls._generic_cache[cache_key] = (new_type, GenericAlias(new_type, new_type._params))
+    #             new_type = cls._generic_cache[cache_key][1]
+    #     return new_type
 
     @staticmethod
     def _make_qualname(cls, params):
@@ -305,7 +301,6 @@ class Base(ABase, metaclass=BaseMeta):
             stack = [(cls.__qualname__, [])]
 
         order = []
-
         while stack:
             current_qname, current_params = stack.pop(0)
             order.append(current_qname)
@@ -338,16 +333,14 @@ class Base(ABase, metaclass=BaseMeta):
                     order.append(",")
         return "".join(order)
 
-
     def __class_getitem__(cls, param, params_map={}):
         _params = param if isinstance(param, tuple) else (param,)
 
         # param ids for caching as TypeVars are class instances
         # therefore has to compare with id() to get good param replacement
-        #
         _param_ids = tuple([id(p) for p in param]) if isinstance(param, tuple) else (id(param),)
-        # Create new class to have its own parametrized fields
         qname = cls._make_qualname(cls, _params)
+        # if there's already existing class, return it instead
         if qname in sys.modules[cls.__module__].__dict__:
             ret = sys.modules[cls.__module__].__dict__[qname]
             return ret
@@ -360,10 +353,11 @@ class Base(ABase, metaclass=BaseMeta):
         _params_map = params_map.copy()
         _params_map.update(dict(zip(cls.__parameters__, _params)))
 
-        # Fields needs to be copied to specific subclass, otherwise
+        # Fields needs to be copied to new subclass, otherwise
         # it's stays shared with base class
         for attr, type_ in cls._fields.items():
             tn = TypeNode.from_type(type_)
+            # field params needs to be replaced as field can also reffer to TypeVar
             tn.replace_params(_params_map)
             new_type = tn.to_type(types_cache=cls._generic_cache, params_map=_params_map)
 
@@ -407,14 +401,12 @@ class Base(ABase, metaclass=BaseMeta):
 
         kwds['__orig_qualname__'] = kwds.get('__orig_qualname__', kwds['__qualname__'])
         kwds['__qualname__'] = cls._make_qualname(cls, _params)
-        #o_qualname = kwds['__orig_qualname__']
 
         ret = meta(kwds['__qualname__'], tuple(bases), kwds)
 
         sys.modules[ret.__module__].__dict__[ret.__qualname__] = ret
-        alias = GenericAlias(ret, param)
 
-        cls._generic_cache[f"{id(cls)}[{_param_ids}]"] = (ret, alias)
+        cls._generic_cache[f"{id(cls)}[{_param_ids}]"] = ret
         return ret
 
     def to_json(self) -> Dict[str, Any]:
@@ -434,7 +426,7 @@ class Base(ABase, metaclass=BaseMeta):
 
     def content_to_json(self) -> Dict[str, Any]:
         pre_order: Dict[str, Any] = {"root": {}}
-        stack: List[Tuple[Base, Dict[str, Any], str]] = []#(self, pre_order, "root")]
+        stack: List[Tuple[Base, Dict[str, Any], str]] = []
         for f in self._fields:
             stack.append((getattr(self, f), pre_order['root'], f))
         while stack:
@@ -449,7 +441,7 @@ class Base(ABase, metaclass=BaseMeta):
     def type_to_json(cls) -> Dict[str, Any]:
         pre_order: Dict[str, Any] = {}
         # stack is list of (current_cls_to_process, current_parent, current_key, current_default)
-        stack: List[Tuple[Base, Dict[str, Any], str]] = [(cls, pre_order, "root", None)]
+        stack: List[Tuple[Type[Base], Dict[str, Any], str, Optional[JSON_COMPATIBLE]]] = [(cls, pre_order, "root", None)]
         while stack:
             current, current_parent, parent_key, current_default = stack.pop(0)
             if hasattr(current, "_CUSTOM_TYPE_TO_JSON") and current._CUSTOM_TYPE_TO_JSON and current != cls:
@@ -466,8 +458,8 @@ class Base(ABase, metaclass=BaseMeta):
         return pre_order['root']
 
     @classmethod
-    def from_json(cls, json_data) -> Self:
-        stack = []
+    def from_json(cls, json_data: JSON_COMPATIBLE) -> Self:
+        stack: List[Tuple[Dict[str, JSON_COMPATIBLE], str, Dict[str, JSON_COMPATIBLE], Type[Optional[Self]], Dict[str, ANY]]] = []
         post_order = []
         root_args: Dict[str, Any] = {"root": None}
         stack.append((root_args, 'root', json_data, cls, {}))
@@ -527,8 +519,6 @@ class Base(ABase, metaclass=BaseMeta):
 
         return root_args['root']
 
-
-X = TypeVar("X")
 
 T = TypeVar("T")
 TK = TypeVar("TK")
@@ -659,7 +649,7 @@ class TList(Base, Generic[T]):
         if TypeNode.from_json(json_data['$type']) != TypeNode.from_type(cls):
             raise ValueError(f"Cannot load {json_data['$type']} to {self_type_json}")
 
-        root_type_args={"iterable": []}
+        root_type_args = {"iterable": []}
         for n, item in enumerate(json_data['$data']):
             root_type_args['iterable'].append(None)
             if not isinstance(item, (int, str, bool, float, type(None))):
@@ -1006,8 +996,8 @@ class MultiArgMeta(BaseMeta):
 class MultiArg(Base, metaclass=MultiArgMeta):
     pass
 
-class TractionMeta(BaseMeta):
 
+class TractionMeta(BaseMeta):
     @classmethod
     def _attribute_check(cls, attr, type_, all_attrs):
         if attr not in ('uid', 'state', 'skip', 'skip_reason', 'errors', 'stats', 'details'):
