@@ -273,7 +273,7 @@ class Base(ABase, metaclass=BaseMeta):
                 tt1 = TypeNode.from_type(vtype)
                 tt2 = TypeNode.from_type(self._fields[name])
                 if tt1 != tt2:
-                    raise TypeError(f"Cannot set attribute {self.__class__}.{name} to type {value}({vtype}), expected {self._fields[name]}")
+                    raise TypeError(f"Cannot set attribute {self.__class__}.{name} to {value}({vtype}), expected {self._fields[name]}")
             else:
                 getattr(self.__class__, name).setter(value)
                 return
@@ -444,6 +444,8 @@ class Base(ABase, metaclass=BaseMeta):
         stack: List[Tuple[Type[Base], Dict[str, Any], str, Optional[JSON_COMPATIBLE]]] = [(cls, pre_order, "root", None)]
         while stack:
             current, current_parent, parent_key, current_default = stack.pop(0)
+            if hasattr(current, "_TYPE"):
+                current_parent['_TYPE'] = current._TYPE
             if hasattr(current, "_CUSTOM_TYPE_TO_JSON") and current._CUSTOM_TYPE_TO_JSON and current != cls:
                 current_parent[parent_key] = current.type_to_json()
             elif hasattr(current, "_fields"):
@@ -881,6 +883,8 @@ DefaultIOStore = _DefaultIOStore()
 
 
 class In(Base, Generic[T]):
+    _TYPE: str = "IN"
+
     _ref: Optional[T] = None
     # data here are actually not used after input is assigned to some output
     # it's just to deceive mypy
@@ -942,7 +946,13 @@ class In(Base, Generic[T]):
             return self.data
 
 
-class Out(In, Generic[T]):
+class STMDSingleIn(In, Generic[T]):
+    data: Optional[T]
+
+
+class Out(STMDSingleIn, Generic[T]):
+    _TYPE: str = "OUT"
+
     _io_store: IOStore = dataclasses.field(repr=False, init=False, compare=False)
     data: Optional[T]
     _uid: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
@@ -970,10 +980,13 @@ class NoData(In, Generic[T]):
 
 
 class Res(Base, Generic[T]):
+    _TYPE: str = "RES"
+
     r: T
 
 
 class Arg(Base, Generic[T]):
+    _TYPE: str = "ARG"
     a: T
 
     def content_to_json(self) -> Dict[str, Any]:
@@ -1278,13 +1291,18 @@ class Traction(Base, metaclass=TractionMeta):
         return ret
 
 
+
+
 class STMDMeta(TractionMeta):
+    _SELF_ARGS = ['a_pool_size', 'a_executor_type', 'a_delete_after_finished']
+
     @classmethod
     def _attribute_check(cls, attr, type_, all_attrs):
         if attr not in ('uid', 'state', 'skip', 'skip_reason', 'errors', 'stats', 'details', 'traction', 'tractions'):
             if attr.startswith("i_"):
-                if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(In[TList[In[ANY]]]):
-                    raise TypeError(f"Attribute {attr} has to be type In[TList[In[ANY]]], but is {type_}")
+                if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(In[TList[In[ANY]]]) and \
+                        TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(STMDSingleIn[ANY]):
+                    raise TypeError(f"Attribute {attr} has to be type In[TList[In[ANY]]] or STMDSingleIn[ANY], but is {type_}")
             elif attr.startswith("o_"):
                 if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(Out[TList[Out[ANY]]]):
                     raise TypeError(f"Attribute {attr} has to be type Out[TList[Out[ANY]]], but is {type_}")
@@ -1311,7 +1329,7 @@ class STMDMeta(TractionMeta):
                 raise ValueError(f"STMD {cls}{name} has attribute {attr} but traction doesn't have input with the same name")
             if attr.startswith("r_") and attr not in attrs['_traction']._fields:
                 raise ValueError(f"STMD {cls}{name} has attribute {attr} but traction doesn't have resource with the same name")
-            if attr.startswith("a_") and attr not in ("a_pool_size", "a_executor_type") and attr not in attrs['_traction']._fields:
+            if attr.startswith("a_") and attr not in cls._SELF_ARGS and attr not in attrs['_traction']._fields:
                 raise ValueError(f"STMD {cls}{name} has attribute {attr} but traction doesn't have argument with the same name")
 
         if '_traction' not in attrs:
@@ -1377,13 +1395,18 @@ class STMD(Traction, metaclass=STMDMeta):
     details: TList[str] = dataclasses.field(default_factory=TList[str])
     _traction: Type[Traction] = Traction
     a_pool_size: Arg[int]
+    a_delete_after_finished: Arg[bool] = Arg[bool](a=True)
     a_executor_type: Arg[STMDExecutorType] = Arg[STMDExecutorType](a=STMDExecutorType.LOCAL)
     tractions: TList[Union[Traction, None]] = TList[Optional[Traction]]([])
 
     def _traction_runner(self, index, on_update=None):
         traction = self._copy_traction(index)
         traction.run(on_update=on_update)
-        return traction
+        outputs = {}
+        for o in traction._fields:
+            if o.startswith("o_"):
+                outputs[o] = getattr(traction, o)
+        return outputs
 
     def _copy_traction(self, index, connect_inputs=True):
         """ After tractor is created, all tractions needs to be copied so it's
@@ -1402,7 +1425,10 @@ class STMD(Traction, metaclass=STMDMeta):
                 init_fields[ft] = getattr(self, ft)
 
             elif ft.startswith("i_") and connect_inputs:
-                init_fields[ft] = getattr(self, ft).data[index]
+                if TypeNode.from_type(self._fields[ft], subclass_check=False) == TypeNode.from_type(STMDSingleIn[ANY]):
+                    init_fields[ft] = getattr(self, ft)
+                else:
+                    init_fields[ft] = getattr(self, ft).data[index]
 
         init_fields['uid'] = "%s:%d" % (self.fullname, index)
         # create copy of existing traction
@@ -1437,7 +1463,7 @@ class STMD(Traction, metaclass=STMDMeta):
             executor_class = None
 
         inputs = {}
-        for f in self._fields:
+        for f, ftype in self._fields.items():
             if f.startswith("i_"):
                 inputs[f] = getattr(self, f)
         outputs = {}
@@ -1445,38 +1471,51 @@ class STMD(Traction, metaclass=STMDMeta):
             if f.startswith("o_"):
                 outputs[f] = getattr(self, f)
 
-        first_in = inputs[list(inputs.keys())[0]]
+        first_in = None
+        for fname in inputs.keys():
+            infield = self._fields[fname]
+            if TypeNode.from_type(infield, subclass_check=False) != TypeNode.from_type(STMDSingleIn[ANY]):
+                first_in = inputs[fname]
+                break
+
+        if not first_in:
+            raise RuntimeError("Cannot have STMD with only SingleIn inputs")
+
         for key in inputs:
             if inputs[key].data is None:
                 raise ValueError(f"{self.fullname}: No input data for {key}")
-            if len(inputs[key].data) != len(first_in.data):
+            if TypeNode.from_type(self._fields[key], subclass_check=False) != TypeNode.from_type(STMDSingleIn[ANY]) and len(inputs[key].data) != len(first_in.data):
                 raise ValueError(f"{self.__class__}: Input {key} has length {len(inputs[key].data)} but others have length {len(first_in.data)} ({list(inputs.keys())[0]})")
 
         for o in outputs:
             o_type = getattr(self, o).data._params[0]._params[0]
-            for _ in range(len(list(inputs.values())[0].data)):
+            for _ in range(len(first_in.data)):
                 getattr(self, o).data.append(NoOut[o_type]())
 
         if executor_class:
             with executor_class(max_workers=self.a_pool_size.a) as executor:
                 ft_results = {}
-                self.tractions.extend(TList[Optional[Traction]]([None]*len(list(inputs.values())[0].data)))
-                for i in range(0, len(list(inputs.values())[0].data)):
+                self.tractions.extend(TList[Optional[Traction]]([None]*len(first_in.data)))
+                for i in range(0, len(first_in.data)):
                     res = executor.submit(self._traction_runner, i, on_update=on_update)
                     ft_results[res] = i
                 _on_update(self)
                 for ft in as_completed(ft_results):
                     i = ft_results[ft]
-                    nt = ft.result()
+                    t_outputs = ft.result()
                     for o in outputs:
-                        getattr(self, o).data[i].data = getattr(nt, o).data
+                        #getattr(self, o).data[i].data = getattr(nt, o).data
+                        getattr(self, o).data[i].data = t_outputs[o].data
+                    if self.a_delete_after_finished.a:
+                        self.tractions[i] = None
                 _on_update(self)
         else:
-            for i in range(0, len(list(inputs.values())[0].data)):
+            for i in range(0, len(first_in.data)):
                 res = self._traction_runner(i, on_update=on_update)
                 #self.tractions.append(self._copy_traction(i, connect_inputs=False))
                 for o in outputs:
-                    getattr(self, o).data[i].data = getattr(res, o).data
+                    #getattr(self, o).data[i].data = getattr(res, o).data
+                    getattr(self, o).data[i].data = res[o].data
 
         self.state = TractionState.FINISHED
         return self

@@ -5,7 +5,7 @@ from typing_extensions import Self
 
 
 from .base import (
-    Traction, TractionStats, TractionState, TList, TractionMeta, Arg, MultiArg, In, Out, Res, ANY, TypeNode,
+    Traction, TractionStats, TractionState, TList, TDict, TractionMeta, Arg, MultiArg, In, Out, Res, ANY, TypeNode,
     OnUpdateCallable, OnErrorCallable, on_update_empty, TractionFailedError,
     NoData, isodate_now
 
@@ -189,7 +189,7 @@ class Tractor(Traction, metaclass=TractorMeta):
     errors: TList[str] = dataclasses.field(default_factory=TList[str])
     stats: TractionStats = dataclasses.field(default_factory=TractionStats)
     details: TList[str] = dataclasses.field(default_factory=TList[str])
-    tractions: TList[Traction] = dataclasses.field(default_factory=TList[Traction], init=False)
+    tractions: TDict[str, Traction] = dataclasses.field(default_factory=TDict[str, Traction], init=False)
 
     def _init_traction(self, traction_name, traction):
         init_fields = {}
@@ -202,7 +202,7 @@ class Tractor(Traction, metaclass=TractorMeta):
                     if source == "#":
                         init_fields[ft] = getattr(self, o_name)
                     else:
-                        init_fields[ft] = getattr(self._tractions[source], o_name)
+                        init_fields[ft] = getattr(self.tractions[source], o_name)
             elif ft.startswith("r_"):
                 self_field = self._resources_map[(traction_name, ft)]
                 init_fields[ft] = getattr(self, self_field)
@@ -239,23 +239,23 @@ class Tractor(Traction, metaclass=TractorMeta):
         return traction.__class__(**init_fields)
 
     def __post_init__(self):
-        self._tractions = {}
-        self.tractions.clear()
+        self.tractions = TDict[str, Traction]({})
+        #self.tractions.clear()
         for f in self._fields:
             # Copy all tractions
             if f.startswith("t_"):
                 traction = getattr(self, f)
                 new_traction = self._init_traction(f, traction)
-                self._tractions[f] = new_traction
+                self.tractions[f] = new_traction
 
-                # also put new traction in tractions list used in run
-                self.tractions.append(new_traction)
+                ### also put new traction in tractions list used in run
+                ## #self.tractions.append(new_traction)
         for f in self._fields:
             if f.startswith("o_"):
                 # regular __setattr__ don't overwrite whole output model but just
                 # data in it to keep connection, so need to use _no_validate_setattr
                 t, tf = self._t_outputs_map[f]
-                self._no_validate_setattr_(f, getattr(self._tractions[t], tf))
+                self._no_validate_setattr_(f, getattr(self.tractions[t], tf))
             if f.startswith("a_"):
                 # for MulArgs which are mapped to args, overwrite them
                 fo = getattr(self, f)
@@ -269,9 +269,10 @@ class Tractor(Traction, metaclass=TractorMeta):
         #print("Traction waves", self._traction_waves)
 
     def _run(self, on_update: Optional[OnUpdateCallable] = None) -> Self:  # pragma: no cover
-        for n, traction in enumerate(self.tractions):
+        for tname, traction in self.tractions.items():
+            #print("Running traction", traction.fullname)
             traction.run(on_update=on_update)
-            setattr(self, list(self._tractions.keys())[n], traction)
+            #setattr(self, list(self._tractions.keys())[n], traction)
             if on_update:
                 on_update(self)
             if traction.state == TractionState.ERROR:
@@ -328,6 +329,8 @@ class Tractor(Traction, metaclass=TractorMeta):
                 current_parent[parent_key] = current.type_to_json()
             elif hasattr(current, "_fields"):
                 current_parent[parent_key] = {"$type": TypeNode.from_type(current).to_json()}
+                if hasattr(current, "_TYPE"):
+                    current_parent[parent_key]['_TYPE'] = current._TYPE
                 for f, ftype in current._fields.items():
                     if type(current.__dataclass_fields__[f].default) in (str, int, float, None):
                         stack.append((ftype, current_parent[parent_key], f, current.__dataclass_fields__[f].default))
@@ -335,6 +338,10 @@ class Tractor(Traction, metaclass=TractorMeta):
                         stack.append((ftype, current_parent[parent_key], f, None))
             else:
                 current_parent[parent_key] = {"$type": TypeNode.from_type(current).to_json(), "default": current_default}
+                if hasattr(current, "_TYPE"):
+                    current_parent[parent_key]['_TYPE'] = current._TYPE
+
+        pre_order['root']['_TYPE'] = cls._TYPE
         pre_order['root']['$io_map'] = [[list(k), list(v)] for k, v in cls._io_map.items()]
         pre_order['root']['$resource_map'] = [[list(k), v] for k, v in cls._resources_map.items()]
         return pre_order['root']
