@@ -1,6 +1,5 @@
 from typing import Optional, Union
-from pytraction.base import Base
-from ..operators import Operator
+from pytraction.base import Base, TList
 
 
 class ENDSENTENCE(Base):
@@ -16,4 +15,16 @@ class PUNC(Base):
 
 
 class Doc(Base):
-    words: TList[Union[str, SENTENCEEND, STOP, PUNC]]
+    words: TList[Union[str, ENDSENTENCE, STOP, PUNC]]
+
+
+class Phrase(Base):
+    words: TList[int]
+    score: float = 0.0
+
+class TextPhrase(Base):
+    words: TList[str]
+    score: float = 0.0
+class Word(Base):
+    wid: int
+    count: int = 0
