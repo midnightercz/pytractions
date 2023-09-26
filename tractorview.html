@@ -113,6 +113,27 @@
 					document.getElementById("container").style.width = main_panel_width + "%";
 					document.getElementById("help-div").style.display = rightPanel.classList.contains("collapsed") ? "none" : "block";
 			}
+
+			function getGroupWidth(group) {
+				var min_child_x = 99999999;
+				var max_child_x = -99999999;
+				group.getChildren().forEach(function(child) {
+					min_child_x = Math.min(min_child_x, child.x());
+					max_child_x = Math.max(max_child_x, child.x() + child.width());
+				});
+				return max_child_x - min_child_x;
+			}
+
+			function getGroupHeight(group) {
+				var min_child_y = 99999999;
+				var max_child_y = -99999999;
+				group.getChildren().forEach(function(child) {
+					min_child_y = Math.min(min_child_y, child.y());
+					max_child_y = Math.max(max_child_y, child.y() + child.height());
+				});
+				return max_child_y - min_child_y;
+			}
+
 			toggleRightPanel();
 
 			const line_colors = [
@@ -235,16 +256,46 @@
 				) + 15;
 			}
 
+			function renderIconButton(on_click)
+			{
+				var group = new Konva.Group({});
+				var doc_rect = new Konva.Rect({
+					x: input_padding,
+					y: input_padding,
+					width: 15,
+					height: 15,
+					stroke: 'black',
+					fill: null
+				});
+	      doc_rect.on('mouseup', on_click);
+				label = new Konva.Text({'text': '?', 'fontSize': font_size, 'fontFamily': 'Courier', 'fill': 'black'});
+				label.x(doc_rect.x() + (doc_rect.width() - label.width())/2);
+				label.y(doc_rect.y() + (doc_rect.height() - label.height())/2);
+	      label.on('mouseup', on_click);
+				group.add(doc_rect);
+				group.add(label);
+				return group;
+			}
+
 			function renderIO(input, _width, out=false, tractor=false, doc=null, parent=null) {
 				var group = new Konva.Group({});
 				var doc_rect_width = 0;
 				if (doc) {
-					doc_rect_width = 15 + input_padding;
+						var onmouseup = function () {
+							document.getElementById("help-div-title").innerHTML = input['name'];
+							document.getElementById("help-div-body").innerHTML = doc;
+							document.getElementById("right-panel").width = document.getElementById("help-div-body").outerWidth;
+							toggleRightPanel(force_visible=true);
+					 }
+					var doc_rect = renderIconButton(onmouseup);
+					var doc_rect_width = getGroupWidth(doc_rect);
+					var doc_rect_height = getGroupHeight(doc_rect);
 				} else {
-					doc_rect_width = 0;
+					var doc_rect_width = 0;
+					var doc_rect_height = 0;
 				}
-				const name_text = new Konva.Text({text: input['name'], fontSize: font_size, fontFamily: 'Calibri', fill: 'green', x: input_padding + doc_rect_width, y: input_padding});
-				var type_text = new Konva.Text({text: type_to_str(input['type']), fontSize: font_size, fontFamily: 'Calibri', fill: 'green', x: input_padding + doc_rect_width, y: name_text.height() + input_padding});
+				const name_text = new Konva.Text({text: input['name'], fontSize: font_size, fontFamily: 'Calibri', fill: '#c45012', x: 2 * input_padding + doc_rect_width, y: input_padding});
+				var type_text = new Konva.Text({text: type_to_str(input['type']), fontSize: font_size, fontFamily: 'Calibri', fill: 'green', x: 2 * input_padding + doc_rect_width, y: name_text.height() + input_padding});
 				const height = 2 * (name_text.height()) + input_padding*2;
 				const width = _width + (2 * input_padding);
 
@@ -255,30 +306,6 @@
 					strokeWidth: 1,
 					closed: true,
 				});
-				doc_rect = new Konva.Rect({
-					x: input_padding,
-					y: input_padding,
-					width: 15,
-					height: 15,
-					stroke: 'black',
-					fill: null
-				});
-	      doc_rect.on('mouseup', function () {
-					document.getElementById("help-div-title").innerHTML = parent + " &gt; " + input["name"];
-					document.getElementById("help-div-body").innerHTML = doc;
-					document.getElementById("right-panel").width = document.getElementById("help-div-body").outerWidth;
-					toggleRightPanel(force_visible=true);
-   	   });
-
-				doc_label = new Konva.Text({'text': '?', 'fontSize': font_size, 'fontFamily': 'Courier', 'fill': 'black'});
-				doc_label.x(doc_rect.x()+(15-doc_label.width())/2);
-				doc_label.y(doc_rect.y()+(15-doc_label.height())/2);
-	      doc_label.on('mouseup', function () {
-					document.getElementById("help-div-title").innerHTML = parent + " &gt; " + input["name"];
-					document.getElementById("help-div-body").innerHTML = doc;
-					toggleRightPanel(force_visible=true);
-				});
-
 				pin = new Konva.Rect({
 					width: 5,
 					height: 5,
@@ -297,11 +324,9 @@
 						pin.y(height/2-2.5);
 					}
 				}
-
         group.add(poly);
  				if (doc) {
 					group.add(doc_rect);
-					group.add(doc_label);
 				}
 				group.add(name_text);
 				group.add(type_text);
@@ -355,25 +380,6 @@
 				};
 			}
 
-			function getGroupWidth(group) {
-				var min_child_x = 99999999;
-				var max_child_x = -99999999;
-				group.getChildren().forEach(function(child) {
-					min_child_x = Math.min(min_child_x, child.x());
-					max_child_x = Math.max(max_child_x, child.x() + child.width());
-				});
-				return max_child_x - min_child_x;
-			}
-
-			function getGroupHeight(group) {
-				var min_child_y = 99999999;
-				var max_child_y = -99999999;
-				group.getChildren().forEach(function(child) {
-					min_child_y = Math.min(min_child_y, child.y());
-					max_child_y = Math.max(max_child_y, child.y() + child.height());
-				});
-				return max_child_y - min_child_y;
-			}
 
 			function type_to_str(type) {
 				x = type['type'];
@@ -414,43 +420,30 @@
 						docs[key.slice(2)] = value['default'];
 					}
 				}
-				console.log("traction doc", traction_doc);
+				console.log(traction)
 
 				var doc_rect_width = 0;
+				var doc_rect = null;
 				if (traction_doc) {
-					doc_rect_width = 15 + input_padding;
+					var onmouseup = function () {
+						document.getElementById("help-div-title").innerHTML = name;
+						document.getElementById("help-div-body").innerHTML = traction_doc;
+						document.getElementById("right-panel").width = document.getElementById("help-div-body").outerWidth;
+						toggleRightPanel(force_visible=true);
+					}
+					var doc_rect = renderIconButton(onmouseup);
+					var doc_rect_width = getGroupWidth(doc_rect);
+					var doc_rect_height = getGroupHeight(doc_rect);
 				} else {
-					doc_rect_width = 0;
+					var doc_rect_width = 0;
 				}
-				tdoc_rect = new Konva.Rect({
-					x: input_padding,
-					y: input_padding,
-					width: 15,
-					height: 15,
-					stroke: 'black',
-					fill: null
-				});
-	      tdoc_rect.on('mouseup', function () {
-					document.getElementById("help-div-title").innerHTML = name;
-					document.getElementById("help-div-body").innerHTML = traction_doc;
-					document.getElementById("right-panel").width = document.getElementById("help-div-body").outerWidth;
-					toggleRightPanel(force_visible=true);
-   	   });
-
-				tdoc_label = new Konva.Text({'text': '?', 'fontSize': font_size, 'fontFamily': 'Courier', 'fill': 'black'});
-				tdoc_label.x(tdoc_rect.x()+(15-tdoc_label.width())/2);
-				tdoc_label.y(tdoc_rect.y()+(15-tdoc_label.height())/2);
-	      tdoc_label.on('mouseup', function () {
-					document.getElementById("help-div-title").innerHTML = name;
-					document.getElementById("help-div-body").innerHTML = traction_doc;
-					toggleRightPanel(force_visible=true);
-				});
-
 				var title_text = new Konva.Text({
 					text: name, fontSize: font_size, fontFamily: 'Calibri', fill: 'green',
 				});
+				console.log(traction);
 				var type_text = new Konva.Text({
-					text: traction['$type']['type'], fontSize: font_size, fontFamily: 'Calibri', fill: 'green',
+					text: traction['$type']['type'] + "[" + traction["_TYPE"] + "]", 
+					fontSize: font_size, fontFamily: 'Calibri', fill: 'green',
 				});
 
 				var input_pins = {};
@@ -483,14 +476,16 @@
         });
 				var max_text_width = Math.max(title_text.width(), type_text.width());
 				var title = new Konva.Text({text: name, fontSize: font_size, fontFamily: 'Calibri', fill: 'red', x: max_text_width/2, y: 2});
-				var typetext = new Konva.Text({text: traction['$type']['type'], fontSize: font_size, fontFamily: 'Calibri', fill: 'green', x: max_text_width/2, y: 2+title.height()+4});
+				var typetext = new Konva.Text({
+					text: traction['$type']['type'] + "[" + traction["_TYPE"] + "]", 
+					fontSize: font_size, fontFamily: 'Calibri', fill: 'green', x: max_text_width/2, y: 2+title.height()+4
+				});
 
 				var lasty = typetext.y() + typetext.height();
 
         group.add(box);
  				if (traction_doc) {
-					group.add(tdoc_rect);
-					group.add(tdoc_label);
+					group.add(doc_rect);
 				}
 				group.add(title);
 				group.add(typetext);
@@ -547,15 +542,15 @@
 				});
 
 				if (max_left_in > max_left_res) {
-					tdoc_label.x(tdoc_label.x()+max_left_in-arrow_width);
 					box.x(max_left_in-arrow_width);
-					tdoc_rect.x(tdoc_rect.x()+max_left_in-arrow_width);
+					if (doc_rect)
+						doc_rect.x(doc_rect.x()+max_left_in-arrow_width);
 					title.x(title.x()+max_left_in-arrow_width);
 					typetext.x(typetext.x()+max_left_in-arrow_width);
 				} else {
 					box.x(max_left_res);
-					tdoc_rect.x(tdoc_rect.x()+max_left_res);
-					tdoc_label.x(tdoc_label.x()+max_left_res);
+					if (doc_rect)
+						doc_rect.x(doc_rect.x()+max_left_res);
 					title.x(title.x()+max_left_res);
 					typetext.x(typetext.x()+max_left_res);
 				}
