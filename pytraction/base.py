@@ -280,17 +280,6 @@ class Base(ABase, metaclass=BaseMeta):
 
         return super().__setattr__(name, value)
 
-    # @classmethod
-    # def _replace_generic_cache(cls, type_, new_type):
-    #     if hasattr(new_type, "_params") and new_type._params:
-    #         _param_ids = tuple([id(p) for p in new_type._params])
-    #         cache_key = f"{id(type_)}[{_param_ids}]"
-    #     if new_type != type_:
-    #         if hasattr(new_type, "_params") and new_type._params:
-    #             cls._generic_cache[cache_key] = (new_type, GenericAlias(new_type, new_type._params))
-    #             new_type = cls._generic_cache[cache_key][1]
-    #     return new_type
-
     @staticmethod
     def _make_qualname(cls, params):
         if params:
@@ -410,6 +399,11 @@ class Base(ABase, metaclass=BaseMeta):
         return ret
 
     def to_json(self) -> Dict[str, Any]:
+        """Return json representation of Base object. Function is written to dump a base object
+        to json from which can be considered as serialized object, therefore it's possible to
+        use this representation to load the very same object.
+        However compare to python serializer, performance of much slower.
+        """
         pre_order: Dict[str, Any] = {}
         stack: List[Tuple[Base, Dict[str, Any], str]] = [(self, pre_order, "root")]
         while stack:
@@ -425,6 +419,10 @@ class Base(ABase, metaclass=BaseMeta):
         return pre_order['root']
 
     def content_to_json(self) -> Dict[str, Any]:
+        """Similar to `Base.to_json` method, but doesn't include information of type of the object.
+        Only it's content. This is exit only method. Output if this method cannot be used as 
+        input for any 'load' method.
+        """
         pre_order: Dict[str, Any] = {"root": {}}
         stack: List[Tuple[Base, Dict[str, Any], str]] = []
         for f in self._fields:
@@ -439,6 +437,8 @@ class Base(ABase, metaclass=BaseMeta):
 
     @classmethod
     def type_to_json(cls) -> Dict[str, Any]:
+        """Similar to `Base.to_json` method, but dumps information only of type of the object
+        """
         pre_order: Dict[str, Any] = {}
         # stack is list of (current_cls_to_process, current_parent, current_key, current_default)
         stack: List[Tuple[Type[Base], Dict[str, Any], str, Optional[JSON_COMPATIBLE]]] = [(cls, pre_order, "root", None)]
@@ -461,6 +461,9 @@ class Base(ABase, metaclass=BaseMeta):
 
     @classmethod
     def from_json(cls, json_data: JSON_COMPATIBLE) -> Self:
+        """ Oposite to `Base.to_json` method. Method returns dumped instance of a Base class filled with
+        data provided on the input.
+        """
         stack: List[Tuple[Dict[str, JSON_COMPATIBLE], str, Dict[str, JSON_COMPATIBLE], Type[Optional[Self]], Dict[str, ANY]]] = []
         post_order = []
         root_args: Dict[str, Any] = {"root": None}
@@ -521,13 +524,18 @@ class Base(ABase, metaclass=BaseMeta):
 
         return root_args['root']
 
-
 T = TypeVar("T")
 TK = TypeVar("TK")
 TV = TypeVar("TV")
 
 
 class TList(Base, Generic[T]):
+    """Similar to python list except this checks type of content and won't allow to add content of
+    different type then what is provided as typevar.
+
+    Example usage: TList[str](['foo'])
+    """
+
     _list: List[T]
 
     def __new__(cls, *args, **kwargs):
@@ -715,6 +723,12 @@ class TList(Base, Generic[T]):
 
 
 class TDict(Base, Generic[TK, TV]):
+    """Similar to python dict except this checks type of content and won't allow to add content of
+    different type then what is provided as typevar.
+
+    Example usage: TDict[str, int]({'foo': 1})
+    """
+
     _dict: Dict[TK, TV]
 
     def __new__(cls, *args, **kwargs):
@@ -883,6 +897,14 @@ DefaultIOStore = _DefaultIOStore()
 
 
 class In(Base, Generic[T]):
+    """Class used for input of a Traction instance. Once connected it redirect all
+    calls to internal _ref variable which is connected output, therefore it's not possible to
+    access the original class.
+    Class needs to be used with specific type as generic Typevar
+
+    Example: In[str](data='foo')
+    """
+
     _TYPE: str = "IN"
 
     _ref: Optional[T] = None
@@ -947,10 +969,19 @@ class In(Base, Generic[T]):
 
 
 class STMDSingleIn(In, Generic[T]):
+    """Special input class which works like regular `In` class, however when
+    used in `STMD` class definition. It's not processes as list of inputs but as
+    single input used as constant input over STMD Tractions.
+    """
+
     data: Optional[T]
 
 
 class Out(STMDSingleIn, Generic[T]):
+    """Class used to define Traction output. Output can be connected only to a Traction input `In` or
+    `STMDSingleIn`
+    """
+
     _TYPE: str = "OUT"
 
     _io_store: IOStore = dataclasses.field(repr=False, init=False, compare=False)
@@ -970,22 +1001,37 @@ class Out(STMDSingleIn, Generic[T]):
 
 
 class NoOut(Out, Generic[T]):
+    """Special type of output indicating output hasn't been set yet.
+    """
+
     data: Optional[T] = None
     _owner: Optional[_Traction] = dataclasses.field(repr=False, init=False, default=None, compare=False)
     _name: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
 
 
 class NoData(In, Generic[T]):
+    """Special type of input indicating input hasn't been connected to any output.
+    """
+
     data: Optional[T] = None
 
 
 class Res(Base, Generic[T]):
-    _TYPE: str = "RES"
+    """Class represeting Traction resources.
 
+    Usage: Res[GithubClient](r=gh_client)
+    """
+
+    _TYPE: str = "RES"
     r: T
 
 
 class Arg(Base, Generic[T]):
+    """Class represeting Traction argument.
+
+    Usage: Arg[int](a=10)
+    """
+
     _TYPE: str = "ARG"
     a: T
 
@@ -1094,15 +1140,85 @@ OnErrorCallable = Callable[[_Traction], None]
 
 
 class Traction(Base, metaclass=TractionMeta):
+    """Class represeting basic processing element.
+Traction works with data provided on defined inputs, using provided resources and arguments and
+store output data to defined outputs.
+
+Traction subclasses can have defined only 5 type of user attributes:
+inputs
+    every input name needs to start with ``i_``
+outputs
+    every output name needs to start with ``o_``
+resources
+    every resource name needs to start with ``r_``
+arguments
+    every argument name needs to start with ``a_``
+documentation
+    every documentation argument needs to start with ``d_``, also rest of the 
+    name must be already defined field. For example `i_in1` can be described in
+   ``d_i_in1``. With only ``d_`` is used as the field name, it should be used as
+   description of whole traction.
+
+example of Traction subclass
+
+.. code-block::
+
+    class AVG(Traction):
+        a_len: Arg[int]
+        a_timeframe: Arg[str]
+        r_ticker_client: Res[TickerClient]
+        o_avg: Out[float]
+
+        d_a_len: str = "Size of the window for calculation."
+        d_a_timeframe: str = "Timeframe which used for calculation"
+        d_r_ticker_client: str = "Ticker client which provides market data"
+        d_o_avg: str = "Average value of fetched candles for selected timeframe and window"
+        d_: str = "Traction used to fetch last spx500 candles and calculates average of their close values"
+
+        def run(self, on_update: Optional[OnUpdateCallable]=None):
+            ret = self.r_ticker_client.r.fetch_spx_data(self.a_timeframe.a)
+            closes = [x['close'] for x in ret[:self.a_len.a]]
+            self.o_avg.data = sum(closes)/self.a_len.a
+
+    tc = TickerClient(...)
+    avg = AVG(uid='spx-avg',
+              a_len=Arg[int](a=10),
+              a_timeframe=Arg[str](a='1H'),
+              r_ticker_client=Res[TickerClient](r=tc)
+    )
+    avg.run()
+    print(avg.o_avg.data)
+
+In the following example, output is set to Out member data. However it's also
+possible to set output like this:
+
+.. code-block::
+
+    self.o_avg = Out[float](data=1.0)
+
+Traction class will internally set only data of the output, reference to the output itself will not
+be overwritten
+
+"""
+
     _TYPE: str = "TRACTION"
     _CUSTOM_TYPE_TO_JSON: bool = False
+    
     uid: str
-    state: str = "ready"
+    "Unique identifier of the current traction."
+    state: TractionState = TractionState.READY
+    "Indicator of current state of the traction."
     skip: bool = False
+    "Flag indicating if execution of the traction was skipped."
     skip_reason: Optional[str] = ""
+    "Can be se to explain why the execution of the traction was skipped."
     errors: TList[str] = dataclasses.field(default_factory=TList[str])
+    """List of errors which occured during the traction execution. Inherited class should add errors
+    here manually"""
     stats: TractionStats = dataclasses.field(default_factory=TractionStats)
+    "Collection of traction stats"
     details: TList[str] = dataclasses.field(default_factory=TList[str])
+    "List of details of the execution of the Traction. Inherited class can add details here manually"
 
     def __post_init__(self):
         for f in self._fields:
@@ -1174,7 +1290,7 @@ class Traction(Base, metaclass=TractionMeta):
 
     @property
     def fullname(self) -> str:
-        """Full name of class instance."""
+        """Full name of traction instance. It's composition of class name and instance uid."""
         return f"{self.__class__.__name__}[{self.uid}]"
 
     def to_json(self) -> Dict[str, Any]:
@@ -1208,6 +1324,29 @@ class Traction(Base, metaclass=TractionMeta):
         on_update: Optional[OnUpdateCallable] = None,
         on_error: Optional[OnErrorCallable] = None,
     ) -> Self:
+        """Start execution of the Traction.
+* When traction is in `TractionState.READY` it runs the
+user defined _pre_run method where user can do some
+preparation before the run itself, potentially set `skip`
+attribute to True to skip the execution. After that, traction
+state is set to TractionState.PREP
+
+* When traction is in TractionState.PREP or TractionState.ERROR, if skip is set to True 
+  skipped attribute is set to True, and execution is finished.
+
+* When skip is not set to True, state is set to TractionState.RUNNING
+  and user defined _run method is executed.
+If an exception is raised during the execution:
+  * If exception is TractionFailedError, state is set to FAILED. This means
+    traction failed with defined failure and it's not possible to rerun it
+
+  * If unexpected exception is raised, traction state is set to ERROR which is
+    state from which it's possible to rerun the traction.
+
+ At the end of the execution traction stats are updated.
+"""
+
+
         _on_update: OnUpdateCallable = on_update or on_update_empty
         _on_error: OnErrorCallable = on_error or on_update_empty
         self._reset_stats()
