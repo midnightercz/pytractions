@@ -2,7 +2,7 @@ from uuid import uuid4
 
 import dataclasses
 
-from typing import Any
+from typing import Any, _UnionGenericAlias
 
 from typing import Optional, Union, Type, List, TypeVar, Generic, Dict
 
@@ -17,41 +17,364 @@ import couchdb
 T = TypeVar('T')
 
 
-class Ref(Base, Generic[T]):
-    model: Optional[T | str] = None
+class AModel(Base):
+    pass
 
 
-DB_COMPATIBLE = Union[None, int, float, str, bool, TList, TDict, Ref]
+class Ref(Base):
+    _model_name: str = ""
+    #uid: str
+    _model: Optional[AModel] = None
+
+class RefDefault:
+    def __init__(self, model_name):
+        self.model_name = model_name
+
+    def __call__(self):
+        r = Ref()
+        r._model_name = self.model_name
+        return r
 
 
-class Model(Base):
+class BackRef(Base):
+    _model_name: str = ""
+    _model: Optional[AModel] = None
+
+
+def _hasattr(inst, name):
+    try:
+        object.__getattribute__(inst, name)
+    except AttributeError:
+        return False
+    return True
+
+
+class Model(AModel):
     model_name: str
     uid: str
+    
+
+    def _validate_setattr_(self, name, value):
+        if name.startswith("_"):
+            return super().__setattr__(name, value)
+        if name not in self._fields:
+            raise AttributeError("Cannot set attribute {} on model {}".format(name, self.model_name))
+        #print('setttr', self.__class__, name, value)
+        if self._fields[name] == Optional[Ref]:
+            # inital setattr
+            if not _hasattr(self, name):
+                # default value
+                if isinstance(value, Ref):
+                    object.__setattr__(self, name, value)
+                    return
+                # override in __init__
+                if isinstance(value, Model):
+                    # first init the Ref instance
+                    object.__setattr__(self, name, self.__dataclass_fields__[name].default_factory())
+                    object.__getattribute__(self, name)._model = value
+                    if self not in [bref._model for bref in getattr(value, f'backref_{self.model_name}')]:
+                        getattr(value, f'backref_{self.model_name}').append(BackRef(_model=self))
+                    return
+                else:
+                    object.__setattr__(self, name, self.__dataclass_fields__[name].default_factory())
+
+            if value is None:
+                # if model is already set
+                print("HAS ATTR", name, _hasattr(self, name))
+                if object.__getattribute__(self, name)._model is not None:
+                    # remove back reference from value model first
+                    omodel = object.__getattribute__(self, name)._model
+                    getattr(omodel, f'backref_{self.model_name}').remove(BackRef(_model=self))
+                object.__getattribute__(self, name)._model = value
+
+                return
+            if not isinstance(value, Model):
+                raise TypeError("Cannot set attribute {} on model {} to value {} of type {}. Expected {}".format(name, self.model_name, value, type(value), Model))
+            if value.model_name != object.__getattribute__(self, name)._model_name:
+                raise TypeError("Cannot set attribute {} on model {} to value {} of model {}. Expected {}".format(name, self.model_name, value, value.model_name, self._fields[name].type_._model_name))
+
+            # if model is already set
+            if object.__getattribute__(self, name)._model is not None:
+                # remove back reference from value model first
+                omodel = object.__getattribute__(self, name)._model
+                getattr(omodel, f'backref_{self.model_name}').remove(BackRef(_model=self))
+            object.__getattribute__(self, name)._model = value
+            if self not in [bref._model for bref in getattr(value, f'backref_{self.model_name}')]:
+                getattr(value, f'backref_{self.model_name}').append(BackRef(_model=self))
+            return
+        else:
+            return super().__setattr__(name, value)
+
+    def __getattribute__(self, name):
+        attr = object.__getattribute__(self, name)
+        #raise AttributeError("Model {} has no attribute {}".format(object.__getattribute__(self, 'model_name'), name))
+        if isinstance(object.__getattribute__(self, name), Ref):
+            return object.__getattribute__(self, name)._model
+        return attr
+
+
+
+class DefObj(Base):
+    pass
+
+
+class DefStr(DefObj):
+    _TNAME = "str"
+
+
+defstr = DefStr()
+
+
+class DefInt(DefObj):
+    _TNAME = "int"
+
+
+defint = DefInt()
+
+
+class DefFloat(DefObj):
+    _TNAME = "float"
+
+
+deffloat = DefFloat()
+
+
+class DefBool(DefObj):
+    _TNAME = "bool"
+
+
+defbool = DefBool()
+
+
+class DefRef(DefObj):
+    model_name: str
+
+
+class DefList(DefObj):
+    dtype: Optional[DefObj]
+
+
+class DefDict(Base):
+    dtype: Optional[DefObj]
+
+
+class DefBackRef(DefObj):
+    model_name: str
+    field_name: str
 
 
 class ModelDefinition(Base):
     model_name: str
-    fields: TDict[str, ANY]
+    fields: TDict[str, DefObj]
 
 
 class Modelizer(Base):
-    _models: Dict[str, Model] = dataclasses.field(default_factory=dict)
+    definitions: TDict[str, ModelDefinition] = TDict[str, ModelDefinition]({})
+    _models: TDict[str, Type[Model]] = TDict[str, Type[Model]]({})
 
-    def model_from_definition(self, definition: ModelDefinition) -> Type[Model]:
-        if definition.model_name not in self._models:
-            print("not cached", definition.model_name)
-            annot = dict(definition.fields.items())
-            annot['model_name'] = str
-            annot['uid'] = str
-            self._models[definition.model_name] = type(
-                definition.model_name, (Model,), {
-                    "__annotations__": annot,
-                    'model_name': definition.model_name,
-                    "uid": dataclasses.field(default_factory=lambda: str(uuid4().hex))}
-            )
-        mod = self._models[definition.model_name]
-        setattr(pytraction.base, definition.model_name, mod)
-        return mod
+    def new_definition(self, mod_name, fields: TDict[str, ANY]):
+        self.definitions[mod_name] = ModelDefinition(model_name=mod_name, fields=fields)
+        model_definition = self.definitions[mod_name]
+        root = {"type": "ModelDefinition",
+                "name": model_definition.model_name,
+                "fields": {}}
+        stack = []
+        for fname, f in model_definition.fields.items():
+            if isinstance(f, DefObj):
+                stack.append({"fieldname": fname, "field": f})
+        while stack:
+            stack_entry = stack.pop()
+            fieldname, field = stack_entry['fieldname'], stack_entry['field']
+            if isinstance(field, DefRef):
+                edef = self.definitions[field.model_name]
+                edef.fields['backref_' + mod_name] = DefBackRef(model_name=mod_name, field_name=fieldname)
+            elif isinstance(field, DefList):
+                stack.append({"field": field.dtype, "fieldname": fieldname})
+            elif isinstance(field, DefDict):
+                stack.append({"field": field.dtype, "fieldname": fieldname})
+        self.consistency_check()
+
+    def definition_to_json(self, mod_name):
+        model_definition = self.definitions[mod_name]
+        root = {"type": "ModelDefinition",
+                "name": model_definition.model_name,
+                "fields": {}}
+        stack = []
+        for fname, f in model_definition.fields.items():
+            stack.append({"current": f, "parent": root['fields'], "parent_key": fname})
+        while stack:
+            stack_entry = stack.pop()
+            current, parent, parent_key = stack_entry['current'], stack_entry['parent'], stack_entry['parent_key']
+            if isinstance(current, DefRef):
+                parent[parent_key] = {"type": "Model",
+                                      "name": current.model_name}
+            elif isinstance(current, DefBackRef):
+                parent[parent_key] = {"type": "BackRef",
+                                      "name": current.model_name,
+                                      "field_name": current.field_name}
+            elif isinstance(current, DefList):
+                parent[parent_key] = {"type": "List",
+                                      "dtype": None}
+                stack.append({"current": current.dtype, "parent": parent[parent_key], "parent_key": "dtype"})
+            elif isinstance(current, DefDict):
+                parent[parent_key] = {"type": "Dict",
+                                      "dtype": None}
+                stack.append({"current": current.dtype, "parent": parent[parent_key], "parent_key": "dtype"})
+            else:
+                parent[parent_key] = current._TNAME
+        return root
+
+    def definition_from_json(self, root):
+        model_name = root['name']
+        root_fields = root['fields']
+        mod_fields = {}
+        stack = []
+        for fname, f in root_fields.items():
+            stack.append({"current": f, "parent": mod_fields, "parent_key": fname, "stype": "field"})
+        while stack:
+            stack_entry = stack.pop()
+            current, parent, parent_key, stype = stack_entry['current'], stack_entry['parent'], stack_entry['parent_key'], stack_entry['stype']
+            if isinstance(current, dict):
+                if current['type'] == 'Model':
+                    parent[parent_key] = DefRef(model_name=current['name'])
+                elif current['type'] == 'BackRef':
+                    parent[parent_key] = DefBackRef(model_name=current['name'], field_name=current['field_name'])
+                elif current['type'] in ('List', 'Dict'):
+                    if current['type']:
+                        dtypei = DefList(dtype=None)
+                    else:
+                        dtypei = DefDict(dtype=None)
+                    if stype == 'field':
+                        parent[parent_key] = dtypei
+                    else:
+                        setattr(parent, parent_key, dtypei)
+                    stack.append({'current': current['dtype'], 'parent': dtypei, 'parent_key': 'dtype', 'stype': 'dtype'})
+            else:
+                if current == 'str':
+                    parent[parent_key] = defstr
+                elif current == 'int':
+                    parent[parent_key] = defint
+                elif current == 'float':
+                    parent[parent_key] = deffloat
+                elif current == 'bool':
+                    parent[parent_key] = defbool
+
+        return ModelDefinition(model_name=model_name, fields=TDict[str, DefObj](mod_fields))
+
+    def consistency_check(self):
+        found_definitions = []
+        found_references = {}
+
+        for mod_name, model_definition in self.definitions.items():
+            found_definitions.append(mod_name)
+            root = {"type": "ModelDefinition",
+                    "name": model_definition.model_name,
+                    "fields": {}}
+            stack = []
+            for fname, f in model_definition.fields.items():
+                stack.append({"current": f, "parent": root['fields'], "parent_key": fname})
+            while stack:
+                stack_entry = stack.pop()
+                current, parent, parent_key = stack_entry['current'], stack_entry['parent'], stack_entry['parent_key']
+                if isinstance(current, DefRef):
+                    parent[parent_key] = {"type": "Model",
+                                          "name": current.model_name}
+                    found_references[current.model_name] = model_definition.model_name
+                elif isinstance(current, DefList):
+                    parent[parent_key] = {"type": "List",
+                                          "dtype": None}
+                    stack.append({"current": current.dtype, "parent": parent[parent_key], "parent_key": "dtype"})
+                elif isinstance(current, DefDict):
+                    parent[parent_key] = {"type": "Dict",
+                                          "dtype": None}
+                    stack.append({"current": current.dtype, "parent": parent[parent_key], "parent_key": "dtype"})
+
+            missing = []
+            for found_ref, ref_model in found_references.items():
+                if found_ref not in found_definitions:
+                    missing.append((found_ref, ref_model))
+            return missing
+
+    def model_from_schema(self, model_name):
+        model_definition = self.definitions[model_name]
+        annot = {}
+        stack = []
+        order = []
+        for fname, ftype in model_definition.fields.items():
+            if isinstance(ftype, DefStr):
+                annot[fname] = str
+            if isinstance(ftype, DefInt):
+                annot[fname] = int
+            if isinstance(ftype, DefBool):
+                annot[fname] = bool
+            if isinstance(ftype, DefFloat):
+                annot[fname] = float
+            if isinstance(ftype, DefRef):
+                annot[fname] = Optional[Ref]
+            elif isinstance(ftype, DefBackRef):
+                annot[fname] = TList[BackRef]
+            elif isinstance(ftype, DefList):
+                order.insert(0, {"type": TList, "children": [], "parent": annot, 'key': fname})
+                stack.append({"parent": annot, "key": fname, "current": ftype.dtype, "order_parent": order[0]})
+            elif isinstance(ftype, DefDict):
+                order.insert(0, {"type": TDict, "children": [str], "parent": annot, 'key': fname})
+                stack.append({"parent": annot, "key": fname, "current": ftype.dtype, "order_parent": order[0]})
+
+        while stack:
+            s_entry = stack.pop()
+            parent, parent_key, current, order_parent = s_entry['parent'], s_entry['key'], s_entry['current'], s_entry['order_parent']
+            if isinstance(s_entry['current'], DefStr):
+                order_parent['children'].append({"final_type": str})
+            if isinstance(current, DefInt):
+                order_parent['children'].append({"final_type": int})
+            if isinstance(current, DefBool):
+                order_parent['children'].append({"final_type": bool})
+            if isinstance(current, DefFloat):
+                order_parent['children'].append({"final_type": float})
+            if isinstance(current, DefRef):
+                order_parent['children'].append({"final_type": Ref})
+            elif isinstance(current, DefBackRef):
+                order_parent['children'].append({"final_type": BackRef})
+            elif isinstance(current, DefList):
+                order_parent['children'].append({"type": TList, "children": []})
+                order.insert(0, order_parent['children'][-1])
+                stack.append({"parent": None,
+                              "key": 0, "current": ftype.dtype, "order_parent": order[0]})
+            elif isinstance(current, DefDict):
+                order_parent['children'].append({"type": TDict, "children": [str]})
+                order.insert(0, order_parent['children'][-1])
+                stack.append({"parent": None,
+                              "key": 0, "current": ftype.dtype, "order_parent": order[0]})
+
+        while order:
+            order_entry = order.pop(0)
+            if order_entry['children']:
+                order_entry['final_type'] = order_entry['type'].__class_getitem__(*[ch['final_type']  for ch in order_entry['children']])
+            if 'key' in order_entry:
+                order_entry['parent'][order_entry['key']] = Optional[order_entry['final_type']]
+
+        annot['model_name'] = str
+        annot['uid'] = str
+        defaults = {}
+        for aname, atype in annot.items():
+            if atype.__class__ == _UnionGenericAlias and atype.__args__ == (ANY, type(None)) and Ref not in atype.__args__:
+                defaults[aname] = None
+            elif TypeNode.from_type(atype) == TypeNode.from_type(TList[ANY]):
+                defaults[aname] = dataclasses.field(default_factory=atype)
+            elif TypeNode.from_type(atype) == TypeNode.from_type(TDict[ANY]):
+                defaults[aname] = dataclasses.field(default_factory=atype)
+            elif TypeNode.from_type(atype) == TypeNode.from_type(Optional[Ref]):
+                defaults[aname] = dataclasses.field(default_factory=RefDefault(model_definition.fields[aname].model_name))
+        attrs = {"__annotations__": annot,
+                 'model_name': model_name,
+                 "uid": dataclasses.field(default_factory=lambda: str(uuid4().hex))
+        }
+        attrs.update(defaults)
+        print("MODEL", model_name, attrs)
+        self._models[model_name] = type(
+            model_name, (Model,), attrs
+        )
+        return self._models[model_name]
 
 
 class ModelStore(Base):
@@ -77,24 +400,33 @@ class ModelStore(Base):
             self._db = self.server["models"]
         return self._db
 
+    def store_model_definition(self, model_name):
+        json_def = self.modelizer.definition_to_json(model_name)
+        self.db.create(
+            {"type": "ModelDefinition",
+             "name": model_name,
+             "definition": json_def}
+        )
+
+
     def store_model(self, model: Model):
         m_out = {}
         out = {"type": "Model", "model_name": model.model_name, "data": m_out}
         stack = []
+        #print("STORING", model)
         for f, ftype in model._fields.items():
             if TypeNode.from_type(ftype) == TypeNode(TList[ANY]):
-                m_out[f] = []
+                m_out[f] = [None]*len(getattr(model, f))
                 for n, x in enumerate(getattr(model, f)):
                     stack.append((x, n, m_out[f]))
             elif TypeNode.from_type(ftype) == TypeNode(TDict[str, ANY]):
                 m_out[f] = {}
                 for k, v in getattr(model, f).items():
                     stack.append((v, k, m_out[f]))
-            elif TypeNode.from_type(ftype) == TypeNode(Ref[ANY]):
-                if isinstance(getattr(model, f).model, str):
-                    m_out[f] = getattr(model, f).model
-                elif isinstance(getattr(model, f).model, Model):
-                    m_out[f] = getattr(model, f).model.uid
+            elif TypeNode.from_type(ftype) == TypeNode(Ref):
+                #print("store", "\n\t", f, "\n\t", ftype, "\n\t", getattr(model, f))
+                if getattr(model, f) is not None:
+                    m_out[f] = getattr(model, f).uid
                 else:
                     m_out[f] = None
             else:
@@ -102,43 +434,34 @@ class ModelStore(Base):
 
         while stack:
             current, parent_key, c_out = stack.pop()
-            if TypeNode.from_type(type(current)) == TypeNode(TList[DB_COMPATIBLE]):
-                c_out[parent_key] = []
+            if TypeNode.from_type(type(current)) == TypeNode(TList[ANY]):
+                c_out[parent_key] = [None,]* len(current)
                 for n, x in enumerate(current):
                     stack.append((x, n, c_out[parent_key]))
-            elif TypeNode.from_type(ftype) == TypeNode(TDict[str, DB_COMPATIBLE]):
+            elif TypeNode.from_type(type(current)) == TypeNode(TDict[str, ANY]):
                 c_out[parent_key] = {}
                 for k, v in current.items():
                     stack.append((v, k, c_out[parent_key]))
-            elif TypeNode.from_type(ftype) == TypeNode(Ref[ANY]):
-                if isinstance(current.model, str):
-                    m_out[f] = getattr(current, f).model
-                elif isinstance(current.model, Model):
-                    m_out[f] = getattr(current, f).model.uid
+            elif isinstance(current, Model):
+                if current:
+                    c_out[parent_key] = current.uid
                 else:
-                    m_out[f] = None
-
-                c_out[parent_key] = current.model.uid
+                    c_out[parent_key] = None
+            elif isinstance(current, BackRef):
+                #print("BR", c_out, parent_key)
+                c_out[parent_key] = current._model.uid
             else:
+                #print("PK", parent_key, c_out)
                 c_out[parent_key] = current
-        print("out", out)
         out['_id'] = out['data']['uid']
         _id, rev = self.db.save(out)
         model.uid = _id
 
-    def load_model_definition(self, mod_name: str):
+    def load_model_definition(self, mod_name):
         model_definition_dict = next(self.db.find({'selector': {'type': 'ModelDefinition', 'name': mod_name}}))
-        return ModelDefinition(
-            model_name=model_definition_dict['name'],
-            fields=TDict[str, ANY]({fname: TypeNode.from_json(ftype).to_type() for fname, ftype in model_definition_dict['fields'].items()})
-        )
-
-    def store_model_definition(self, model_definition):
-        self.db.create(
-            {"type": "ModelDefinition",
-             "name": model_definition.model_name,
-             "fields": {fname: TypeNode.from_type(ftype).to_json() for fname, ftype in model_definition.fields.items()}}
-        )
+        definition = self.modelizer.definition_from_json(model_definition_dict['definition'])
+        self.modelizer.new_definition(mod_name, definition.fields)
+        return definition
 
     def load_model(self, uid: str, max_depth: int) -> Model:
         mdict = self.db.get(uid)
@@ -147,10 +470,12 @@ class ModelStore(Base):
         mfields = mdict['data']
         stack = [{"fields": mfields, "parent": None, "parent_key": None, "type": model_definition}]
         pre_order = [stack[0]]
+        loaded_uids = {}
+
         while stack:
             stack_entry = stack.pop()
+            print("SE", stack_entry)
             if isinstance(stack_entry['type'], ModelDefinition):
-                #print("SE modddef", stack_entry)
                 for fname, ftype in stack_entry['type'].fields.items():
                     if ftype not in (str, int, bool, float):
                         stack.append(
@@ -160,51 +485,104 @@ class ModelStore(Base):
                              "type": ftype
                              }
                         )
-                        #pre_order.insert(0, stack[-1])
             elif TypeNode.from_type(stack_entry['type']) == TypeNode.from_type(TDict[str, ANY]):
-                for k, v in stack_entry['fields'][fname].items():
+                for k, v in stack_entry['fields'].items():
                     stack.append(
-                        {"fields": stack_entry['fields'][fname][k],
+                        {"fields": stack_entry['fields'][k],
                          "parent": stack_entry['fields'],
-                         "parent_key": fname,
+                         "parent_key": k,
                          "type": stack_entry['type']._args[1]
                          }
                     )
                     pre_order.insert(0, stack[-1])
             elif TypeNode.from_type(stack_entry['type']) == TypeNode.from_type(TList[ANY]):
-                for n, x in enumerate(stack_entry['fields'][fname]):
+                for n, x in enumerate(stack_entry['fields']):
                     stack.append(
-                        {"fields": stack_entry['fields'][fname][n],
+                        {"fields": stack_entry['fields'][n],
                          "parent": stack_entry['fields'],
-                         "parent_key": fname,
+                         "parent_key": n,
                          "type": stack_entry['type']._args[0]
                          }
                     )
+                    print("LIST ITEM", stack[-1])
                     pre_order.insert(0, stack[-1])
-            elif TypeNode.from_type(stack_entry['type']) == TypeNode.from_type(Ref[ANY]):
-                #print("SE ref", stack_entry)
-                rdict = self.db.get(stack_entry['fields'])
-                rmodel_definition = self.load_model_definition(rdict['model_name'])
-                rfields = rdict['data']
-                stack.append(
-                    {"fields": rfields,
-                     "parent": stack_entry['parent'],
-                     "parent_key": stack_entry['parent_key'],
-                     "type": rmodel_definition}
-                )
-                pre_order.insert(0, stack[-1])
+            elif isinstance(stack_entry['type'], DefRef):
+                print("LOAD DEFREF", stack_entry)
+                if not stack_entry['fields']:
+                    continue
+                if stack_entry['fields'] not in loaded_uids:
+                    rdict = self.db.get(stack_entry['fields'])
+                    loaded_uids[stack_entry['fields']] = rdict
+                    rmodel_definition = self.load_model_definition(rdict['model_name'])
+                    rfields = rdict['data']
+                    stack.append(
+                        {"fields": rfields,
+                         "parent": stack_entry['parent'],
+                         "parent_key": stack_entry['parent_key'],
+                         "type": rmodel_definition}
+                    )
+                    pre_order.insert(0, stack[-1])
+                else:
+                    rdict = loaded_uids[stack_entry['fields']]
+                    rfields = rdict['data']
+                    pre_order.insert(0,
+                        {"fields": rfields,
+                         "parent": stack_entry['parent'],
+                         "parent_key": stack_entry['parent_key'],
+                         "type": rmodel_definition}
+                    )
 
-        #print(pre_order)
-        #print("--")
+                # rmodel_definition = self.load_model_definition(rdict['model_name'])
+                # rfields = rdict['data']
+                # stack.append(
+                #     {"fields": rfields,
+                #      "parent": stack_entry['parent'],
+                #      "parent_key": stack_entry['parent_key'],
+                #      "type": rmodel_definition}
+                # )
+                # pre_order.insert(0, stack[-1])
+            elif isinstance(stack_entry['type'], DefBackRef):
+                print("LOAD DEFBACKREF", stack_entry)
+                if not stack_entry['fields']:
+                    continue
+                rmodel_definition = self.load_model_definition(stack_entry['type'].model_name)
+                rfields = rdict['data']
+                for n, uid in enumerate(stack_entry['fields']):
+                    if uid not in loaded_uids:
+                        rdict = self.db.get(uid)
+                        stack.append(
+                            {"fields": rdict['data'],
+                             "parent": stack_entry['fields'],
+                             "parent_key": n,
+                             "type": rmodel_definition
+                             }
+                        )
+                        pre_order.insert(0, stack[-1])
+                        loaded_uids[uid] = rdict
+                    else:
+                        rdict = loaded_uids[uid]
+                        pre_order.insert(0,
+                            {"fields": rdict['data'],
+                             "parent": stack_entry['fields'],
+                             "parent_key": n,
+                             "type": rmodel_definition
+                             }
+                        )
+
+        print("---- PREO ----")
+        for preoi in pre_order:
+            print("--")
+            print(preoi)
+        print("<<<<< PREO <<<<<<")
+
         root_model = None
         loaded_models = []
         model_by_uid = {}
         while pre_order:
             entry = pre_order.pop(0)
-            #print(entry)
+            print("PREO", entry)
             if isinstance(entry['type'], ModelDefinition):
-                #print("mod def")
-                modelcls = self.modelizer.model_from_definition(entry['type'])
+                modelcls = self.modelizer.model_from_schema(entry['type'].model_name)
                 if entry['parent']:
                     if entry['fields']['uid'] in model_by_uid:
                         model = model_by_uid[entry['fields']['uid']]
@@ -228,90 +606,50 @@ class ModelStore(Base):
         return (root_model, loaded_models)
 
 
-class ModelToDbForm(Traction):
-    i_model: In[Model]
-    i_model_definition: In[ModelDefinition]
-    o_model: Out[DB_COMPATIBLE] = Out[DB_COMPATIBLE](data=None)
-
-    def _run(self, on_update=None):
-        m_out = {}
-        out = {"type": "Model", "model_name": self.i_model_definition.data.name, "data": m_out}
-        stack = []
-        for f, ftype in self.in_model.data._fields.items():
-            if TypeNode.from_type(ftype) == TypeNode(TList[DB_COMPATIBLE]):
-                m_out[f] = []
-                for n, x in enumerate(getattr(self.in_model.data, f)):
-                    stack.append((x, n, m_out[f]))
-            elif TypeNode.from_type(ftype) == TypeNode(TDict[str, DB_COMPATIBLE]):
-                m_out[f] = {}
-                for k, v in getattr(self.in_model.data, f).items():
-                    stack.append((v, k, m_out[f]))
-            elif isinstance(f, Ref):
-                m_out[f] = getattr(self.in_model.data, f).model.uid
-            else:
-                m_out[f] = getattr(self.in_model.data, f)
-
-        while stack:
-            current, parent_key, c_out = stack.pop()
-            if TypeNode.from_type(type(current)) == TypeNode(TList[DB_COMPATIBLE]):
-                c_out[parent_key] = []
-                for n, x in enumerate(current):
-                    stack.append((x, n, c_out[parent_key]))
-            elif TypeNode.from_type(ftype) == TypeNode(TDict[str, DB_COMPATIBLE]):
-                for k, v in current.items():
-                    stack.append((v, k, c_out[parent_key]))
-            elif isinstance(current, Ref):
-                c_out[parent_key] = current.model.uid
-            else:
-                c_out[parent_key] = current
-
-        self.out_model.data = out
-
-
 modelizer = Modelizer()
 
-DateDef = ModelDefinition(
-    model_name="Date",
-    fields=TDict[str, ANY]({
-        "date": str
-    })
-)
-Date = modelizer.model_from_definition(DateDef)
+modelizer.new_definition("Date", fields=TDict[str, ANY]({
+        "date": defstr
+    }))
+modelizer.new_definition("Organization", fields=TDict[str, ANY]({
+        "name": defstr,
+        "created": DefRef(model_name="Date")
+    }))
+modelizer.new_definition('Person', fields=TDict[str, ANY]({
+        "name": defstr,
+        "organization": DefRef(model_name="Organization"),
+        "created": DefRef(model_name="Date")
+}))
+modelizer.new_definition('Project', fields=TDict[str, ANY]({
+        "name": defstr,
+        "organization": DefRef(model_name="Organization"),
+        "created": DefRef(model_name="Date"),
+        "engineers": DefList(dtype=DefRef(model_name="Person"))
+}))
 
-OrganizationDef = ModelDefinition(
-    model_name="Organization",
-    fields=TDict[str, ANY]({
-        "name": str,
-        "created": Ref[Date]
-    })
-)
-Organization = modelizer.model_from_definition(OrganizationDef)
+Project = modelizer.model_from_schema('Project')
+Person = modelizer.model_from_schema('Person')
+Organization = modelizer.model_from_schema('Organization')
+Date = modelizer.model_from_schema('Organization')
 
-PersonDef = ModelDefinition(
-    model_name="Person",
-    fields=TDict[str, ANY]({
-        "name": str,
-        "organization": Ref[Organization],
-        "created": Ref[Date],
-    })
-)
-Person = modelizer.model_from_definition(PersonDef)
+print(Date._fields.items())
+print("--")
+
+org1 = Organization(name='Umbrela')
+org2 = Organization(name='RainCoat')
+p1 = Person(name='John Doe', organization=org1)
+p1.organization = org2
+print(p1.organization)
 
 model_store = ModelStore(uri="http://admin:password@localhost:5984", modelizer=modelizer)
-model_store.store_model_definition(DateDef)
-model_store.store_model_definition(OrganizationDef)
-model_store.store_model_definition(PersonDef)
-
-print("--1--")
-
-d1 = Date(date="2023-01-01T11:20:00")
-o1 = Organization(name='Organization 1', created=Ref[Date](model=d1))
-p1 = Person(name="John Doe", organization=Ref[Organization](model=o1), created=Ref[Date](model=d1))
-
-model_store.store_model(d1)
-model_store.store_model(o1)
+model_store.store_model_definition("Date")
+model_store.store_model_definition("Project")
+model_store.store_model_definition("Person")
+model_store.store_model_definition("Organization")
 model_store.store_model(p1)
+model_store.store_model(org1)
+model_store.store_model(org2)
 
+p1loaded = model_store.load_model(p1.uid, max_depth=10)
+print(p1loaded)
 
-p11 = model_store.load_model(p1.uid, 10)
-print(p11)
