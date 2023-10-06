@@ -23,8 +23,9 @@ class AModel(Base):
 
 class Ref(Base):
     _model_name: str = ""
-    #uid: str
+    uid: str = ""
     _model: Optional[AModel] = None
+
 
 class RefDefault:
     def __init__(self, model_name):
@@ -38,6 +39,7 @@ class RefDefault:
 
 class BackRef(Base):
     _model_name: str = ""
+    uid: str = ""
     _model: Optional[AModel] = None
 
 
@@ -59,7 +61,6 @@ class Model(AModel):
             return super().__setattr__(name, value)
         if name not in self._fields:
             raise AttributeError("Cannot set attribute {} on model {}".format(name, self.model_name))
-        #print('setttr', self.__class__, name, value)
         if self._fields[name] == Optional[Ref]:
             # inital setattr
             if not _hasattr(self, name):
@@ -73,18 +74,17 @@ class Model(AModel):
                     object.__setattr__(self, name, self.__dataclass_fields__[name].default_factory())
                     object.__getattribute__(self, name)._model = value
                     if self not in [bref._model for bref in getattr(value, f'backref_{self.model_name}')]:
-                        getattr(value, f'backref_{self.model_name}').append(BackRef(_model=self))
+                        getattr(value, f'backref_{self.model_name}').append(BackRef(_model=self, _model_name=self.model_name))
                     return
                 else:
                     object.__setattr__(self, name, self.__dataclass_fields__[name].default_factory())
 
             if value is None:
                 # if model is already set
-                print("HAS ATTR", name, _hasattr(self, name))
                 if object.__getattribute__(self, name)._model is not None:
                     # remove back reference from value model first
                     omodel = object.__getattribute__(self, name)._model
-                    getattr(omodel, f'backref_{self.model_name}').remove(BackRef(_model=self))
+                    getattr(omodel, f'backref_{self.model_name}').remove(BackRef(_model=self, _model_name=self.model_name))
                 object.__getattribute__(self, name)._model = value
 
                 return
@@ -97,10 +97,10 @@ class Model(AModel):
             if object.__getattribute__(self, name)._model is not None:
                 # remove back reference from value model first
                 omodel = object.__getattribute__(self, name)._model
-                getattr(omodel, f'backref_{self.model_name}').remove(BackRef(_model=self))
+                getattr(omodel, f'backref_{self.model_name}').remove(BackRef(_model=self, _model_name=self.model_name))
             object.__getattribute__(self, name)._model = value
             if self not in [bref._model for bref in getattr(value, f'backref_{self.model_name}')]:
-                getattr(value, f'backref_{self.model_name}').append(BackRef(_model=self))
+                getattr(value, f'backref_{self.model_name}').append(BackRef(_model=self, _model_name=self.model_name))
             return
         else:
             return super().__setattr__(name, value)
@@ -234,30 +234,38 @@ class Modelizer(Base):
         while stack:
             stack_entry = stack.pop()
             current, parent, parent_key, stype = stack_entry['current'], stack_entry['parent'], stack_entry['parent_key'], stack_entry['stype']
+            if isinstance(parent, dict):
+                _setter = lambda x, key, val: x.__setitem__(key, val)
+            else:
+                _setter = lambda x, key, val: x.__setattr__(key, val)
             if isinstance(current, dict):
                 if current['type'] == 'Model':
-                    parent[parent_key] = DefRef(model_name=current['name'])
+                    _setter(parent, parent_key, DefRef(model_name=current['name']))
                 elif current['type'] == 'BackRef':
-                    parent[parent_key] = DefBackRef(model_name=current['name'], field_name=current['field_name'])
+                    _setter(parent, parent_key, DefBackRef(model_name=current['name'], field_name=current['field_name']))
                 elif current['type'] in ('List', 'Dict'):
                     if current['type']:
                         dtypei = DefList(dtype=None)
                     else:
                         dtypei = DefDict(dtype=None)
-                    if stype == 'field':
-                        parent[parent_key] = dtypei
-                    else:
-                        setattr(parent, parent_key, dtypei)
+                    #if stype == 'field':
+                    _setter(parent, parent_key, dtypei)
+                    #else:
+                    #    setattr(parent, parent_key, dtypei)
                     stack.append({'current': current['dtype'], 'parent': dtypei, 'parent_key': 'dtype', 'stype': 'dtype'})
             else:
                 if current == 'str':
-                    parent[parent_key] = defstr
+                    #parent[parent_key] = defstr
+                    _setter(parent, parent_key, defstr)
                 elif current == 'int':
-                    parent[parent_key] = defint
+                    #parent[parent_key] = defint
+                    _setter(parent, parent_key, defint)
                 elif current == 'float':
-                    parent[parent_key] = deffloat
+                    #parent[parent_key] = deffloat
+                    _setter(parent, parent_key, deffloat)
                 elif current == 'bool':
-                    parent[parent_key] = defbool
+                    #parent[parent_key] = defbool
+                    _setter(parent, parent_key, defbool)
 
         return ModelDefinition(model_name=model_name, fields=TDict[str, DefObj](mod_fields))
 
@@ -370,7 +378,6 @@ class Modelizer(Base):
                  "uid": dataclasses.field(default_factory=lambda: str(uuid4().hex))
         }
         attrs.update(defaults)
-        print("MODEL", model_name, attrs)
         self._models[model_name] = type(
             model_name, (Model,), attrs
         )
@@ -413,7 +420,6 @@ class ModelStore(Base):
         m_out = {}
         out = {"type": "Model", "model_name": model.model_name, "data": m_out}
         stack = []
-        #print("STORING", model)
         for f, ftype in model._fields.items():
             if TypeNode.from_type(ftype) == TypeNode(TList[ANY]):
                 m_out[f] = [None]*len(getattr(model, f))
@@ -424,7 +430,6 @@ class ModelStore(Base):
                 for k, v in getattr(model, f).items():
                     stack.append((v, k, m_out[f]))
             elif TypeNode.from_type(ftype) == TypeNode(Ref):
-                #print("store", "\n\t", f, "\n\t", ftype, "\n\t", getattr(model, f))
                 if getattr(model, f) is not None:
                     m_out[f] = getattr(model, f).uid
                 else:
@@ -448,10 +453,8 @@ class ModelStore(Base):
                 else:
                     c_out[parent_key] = None
             elif isinstance(current, BackRef):
-                #print("BR", c_out, parent_key)
                 c_out[parent_key] = current._model.uid
             else:
-                #print("PK", parent_key, c_out)
                 c_out[parent_key] = current
         out['_id'] = out['data']['uid']
         _id, rev = self.db.save(out)
@@ -471,10 +474,10 @@ class ModelStore(Base):
         stack = [{"fields": mfields, "parent": None, "parent_key": None, "type": model_definition}]
         pre_order = [stack[0]]
         loaded_uids = {}
+        backrefs = {}
 
         while stack:
             stack_entry = stack.pop()
-            print("SE", stack_entry)
             if isinstance(stack_entry['type'], ModelDefinition):
                 for fname, ftype in stack_entry['type'].fields.items():
                     if ftype not in (str, int, bool, float):
@@ -504,10 +507,8 @@ class ModelStore(Base):
                          "type": stack_entry['type']._args[0]
                          }
                     )
-                    print("LIST ITEM", stack[-1])
                     pre_order.insert(0, stack[-1])
             elif isinstance(stack_entry['type'], DefRef):
-                print("LOAD DEFREF", stack_entry)
                 if not stack_entry['fields']:
                     continue
                 if stack_entry['fields'] not in loaded_uids:
@@ -524,6 +525,7 @@ class ModelStore(Base):
                     pre_order.insert(0, stack[-1])
                 else:
                     rdict = loaded_uids[stack_entry['fields']]
+                    rmodel_definition = self.load_model_definition(rdict['model_name'])
                     rfields = rdict['data']
                     pre_order.insert(0,
                         {"fields": rfields,
@@ -531,22 +533,11 @@ class ModelStore(Base):
                          "parent_key": stack_entry['parent_key'],
                          "type": rmodel_definition}
                     )
-
-                # rmodel_definition = self.load_model_definition(rdict['model_name'])
-                # rfields = rdict['data']
-                # stack.append(
-                #     {"fields": rfields,
-                #      "parent": stack_entry['parent'],
-                #      "parent_key": stack_entry['parent_key'],
-                #      "type": rmodel_definition}
-                # )
-                # pre_order.insert(0, stack[-1])
             elif isinstance(stack_entry['type'], DefBackRef):
-                print("LOAD DEFBACKREF", stack_entry)
-                if not stack_entry['fields']:
+                if stack_entry['fields'] is None:
                     continue
                 rmodel_definition = self.load_model_definition(stack_entry['type'].model_name)
-                rfields = rdict['data']
+                #rfields = rdict['data']
                 for n, uid in enumerate(stack_entry['fields']):
                     if uid not in loaded_uids:
                         rdict = self.db.get(uid)
@@ -559,28 +550,22 @@ class ModelStore(Base):
                         )
                         pre_order.insert(0, stack[-1])
                         loaded_uids[uid] = rdict
+                        backrefs.setdefault(stack_entry['parent']['uid'], {})
+                        backrefs[stack_entry['parent']['uid']].setdefault(stack_entry['parent_key'], {})
+                        backrefs[stack_entry['parent']['uid']][stack_entry['parent_key']] = {n: uid}
                     else:
                         rdict = loaded_uids[uid]
-                        pre_order.insert(0,
-                            {"fields": rdict['data'],
-                             "parent": stack_entry['fields'],
-                             "parent_key": n,
-                             "type": rmodel_definition
-                             }
-                        )
-
-        print("---- PREO ----")
-        for preoi in pre_order:
-            print("--")
-            print(preoi)
-        print("<<<<< PREO <<<<<<")
+                        backrefs.setdefault(stack_entry['parent']['uid'], {})
+                        backrefs[stack_entry['parent']['uid']].setdefault(stack_entry['parent']['parent_key'], {})
+                        backrefs[stack_entry['parent']['uid']][stack_entry['parent']['parent_key']] = {n: uid}
+                stack_entry['parent'][stack_entry['parent_key']] = TList[BackRef]()
+                    
 
         root_model = None
-        loaded_models = []
+        loaded_models = {}
         model_by_uid = {}
         while pre_order:
             entry = pre_order.pop(0)
-            print("PREO", entry)
             if isinstance(entry['type'], ModelDefinition):
                 modelcls = self.modelizer.model_from_schema(entry['type'].model_name)
                 if entry['parent']:
@@ -589,8 +574,8 @@ class ModelStore(Base):
                     else:
                         model=modelcls(**entry['fields'])
                         model_by_uid[entry['fields']['uid']] = model
-                    loaded_models.append(model)
-                    entry['parent'][entry['parent_key']] =  Ref[modelcls](model=model)
+                    loaded_models[model.uid] = model
+                    entry['parent'][entry['parent_key']] =  Ref(_model=model, _model_name=entry['type'].model_name)
                 else:
                     root_model=modelcls(**entry['fields']) 
             elif TypeNode.from_type(entry['type']) == TypeNode.from_type(TList[ANY]):
@@ -602,6 +587,17 @@ class ModelStore(Base):
             else:
                 if entry['parent']:
                     entry['parent'][entry['parent_key']] = entry['fields']
+
+        for puid, bfields in backrefs.items():
+            pmodel = loaded_models[puid]
+            for bfield, brefs in bfields.items():
+                pfield = getattr(pmodel, bfield)
+                for n, refuid in sorted(brefs.items(), key=lambda x: x[0]):
+                    if refuid in loaded_models:
+                        refmodel = loaded_models[refuid]
+                        pfield.append(BackRef(_model=refmodel, _model_name=refmodel.model_name))
+                    else:
+                        pfield.append(BackRef(uid=refuid))
 
         return (root_model, loaded_models)
 
@@ -639,7 +635,7 @@ org1 = Organization(name='Umbrela')
 org2 = Organization(name='RainCoat')
 p1 = Person(name='John Doe', organization=org1)
 p1.organization = org2
-print(p1.organization)
+print(p1)
 
 model_store = ModelStore(uri="http://admin:password@localhost:5984", modelizer=modelizer)
 model_store.store_model_definition("Date")
@@ -650,6 +646,7 @@ model_store.store_model(p1)
 model_store.store_model(org1)
 model_store.store_model(org2)
 
-p1loaded = model_store.load_model(p1.uid, max_depth=10)
+p1loaded, other_models = model_store.load_model(p1.uid, max_depth=10)
 print(p1loaded)
+print(p1==p1loaded)
 
