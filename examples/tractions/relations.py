@@ -164,6 +164,8 @@ class DefBackRef(DefObj):
 
 
 class ModelDefinition(Base):
+    _uid: str = dataclasses.field(default_factory=lambda: str(uuid4().hex))
+    _rev: str = ""
     model_name: str
     fields: TDict[str, DefObj]
 
@@ -172,8 +174,12 @@ class Modelizer(Base):
     definitions: TDict[str, ModelDefinition] = TDict[str, ModelDefinition]({})
     _models: TDict[str, Type[Model]] = TDict[str, Type[Model]]({})
 
-    def new_definition(self, mod_name, fields: TDict[str, ANY]):
-        self.definitions[mod_name] = ModelDefinition(model_name=mod_name, fields=fields)
+    def new_definition(self, mod_name, fields: TDict[str, ANY], rev="", uid=""):
+        if uid:
+            self.definitions[mod_name] = ModelDefinition(model_name=mod_name, fields=fields, _uid=uid, _rev=rev)
+        else:
+            self.definitions[mod_name] = ModelDefinition(model_name=mod_name, fields=fields, _rev=rev)
+
         model_definition = self.definitions[mod_name]
         root = {"type": "ModelDefinition",
                 "name": model_definition.model_name,
@@ -198,6 +204,9 @@ class Modelizer(Base):
         model_definition = self.definitions[mod_name]
         root = {"type": "ModelDefinition",
                 "name": model_definition.model_name,
+                'uid': model_definition._uid,
+                '_id': model_definition._uid,
+                "_rev": model_definition._rev,
                 "fields": {}}
         stack = []
         for fname, f in model_definition.fields.items():
@@ -225,8 +234,9 @@ class Modelizer(Base):
         return root
 
     def definition_from_json(self, root):
-        model_name = root['name']
-        root_fields = root['fields']
+        definition = root['definition']
+        model_name = definition['name']
+        root_fields = definition['fields']
         mod_fields = {}
         stack = []
         for fname, f in root_fields.items():
@@ -267,7 +277,7 @@ class Modelizer(Base):
                     #parent[parent_key] = defbool
                     _setter(parent, parent_key, defbool)
 
-        return ModelDefinition(model_name=model_name, fields=TDict[str, DefObj](mod_fields))
+        return ModelDefinition(model_name=model_name, _uid=root['_id'], _rev=root['_rev'], fields=TDict[str, DefObj](mod_fields))
 
     def consistency_check(self):
         found_definitions = []
@@ -409,11 +419,14 @@ class ModelStore(Base):
 
     def store_model_definition(self, model_name):
         json_def = self.modelizer.definition_to_json(model_name)
-        self.db.create(
-            {"type": "ModelDefinition",
+        print(json_def)
+        to_store = {"type": "ModelDefinition",
              "name": model_name,
-             "definition": json_def}
-        )
+             "definition": json_def,
+             "_id": json_def['uid']}
+        if json_def['_rev']:
+             to_store['_rev'] = json_def['_rev']
+        self.db.save(to_store)
 
 
     def store_model(self, model: Model):
@@ -462,8 +475,8 @@ class ModelStore(Base):
 
     def load_model_definition(self, mod_name):
         model_definition_dict = next(self.db.find({'selector': {'type': 'ModelDefinition', 'name': mod_name}}))
-        definition = self.modelizer.definition_from_json(model_definition_dict['definition'])
-        self.modelizer.new_definition(mod_name, definition.fields)
+        definition = self.modelizer.definition_from_json(model_definition_dict)
+        self.modelizer.new_definition(mod_name, definition.fields, rev=definition._rev, uid=definition._uid)
         return definition
 
     def load_model(self, uid: str, max_depth: int) -> Model:
@@ -601,27 +614,93 @@ class ModelStore(Base):
 
         return (root_model, loaded_models)
 
+    def get_model_defs(self) -> List[ModelDefinition]:
+            # Fetch all documents with type "ModelDefinition"
+        mango = {
+            "selector": {
+                "type": "ModelDefinition",
+            }
+        }
+        
+        rets = [row for row in self.db.find(mango)]
+        defs = []
+        for ret in rets:
+            defs.append(self.modelizer.definition_from_json(ret['definition']))
+        return defs
+
+    def get_model_def_names(self) -> List[str]:
+            # Fetch all documents with type "ModelDefinition"
+        mango = {
+            "selector": {
+                "type": "ModelDefinition",
+            },
+            "fields": ["name"]
+        }
+        
+        rets = [row for row in self.db.find(mango)]
+        defs = []
+        for ret in rets:
+            defs.append(ret['name'])
+        return defs
+
+    def get_model_def(self, def_name) -> Optional[ModelDefinition]:
+            # Fetch all documents with type "ModelDefinition"
+        mango = {
+            "selector": {
+                "type": "ModelDefinition",
+                "name": def_name
+            }
+        }
+        
+        rets = [row for row in self.db.find(mango)]
+        if not rets:
+            return None
+        ret = rets[0]
+        return self.modelizer.definition_from_json(ret['definition'])
+
 
 modelizer = Modelizer()
+model_store = ModelStore(uri="http://admin:password@localhost:5984", modelizer=modelizer)
+existing_definitions = model_store.get_model_def_names()
+if 'Date' not in existing_definitions:
+    modelizer.new_definition("Date", fields=TDict[str, ANY]({
+            "date": defstr
+        }))
+else:
+    model_store.load_model_definition("Date")
 
-modelizer.new_definition("Date", fields=TDict[str, ANY]({
-        "date": defstr
+if 'Organization' not in existing_definitions:
+    modelizer.new_definition("Organization", fields=TDict[str, ANY]({
+            "name": defstr,
+            "created": DefRef(model_name="Date")
+        }))
+else:
+    model_store.load_model_definition("Organization")
+
+if 'Person' not in existing_definitions:
+    modelizer.new_definition('Person', fields=TDict[str, ANY]({
+            "name": defstr,
+            "organization": DefRef(model_name="Organization"),
+            "created": DefRef(model_name="Date")
     }))
-modelizer.new_definition("Organization", fields=TDict[str, ANY]({
-        "name": defstr,
-        "created": DefRef(model_name="Date")
+else:
+    model_store.load_model_definition("Person")
+
+if 'Project' not in existing_definitions:
+    modelizer.new_definition('Project', fields=TDict[str, ANY]({
+            "name": defstr,
+            "organization": DefRef(model_name="Organization"),
+            "created": DefRef(model_name="Date"),
+            "engineers": DefList(dtype=DefRef(model_name="Person"))
     }))
-modelizer.new_definition('Person', fields=TDict[str, ANY]({
-        "name": defstr,
-        "organization": DefRef(model_name="Organization"),
-        "created": DefRef(model_name="Date")
-}))
-modelizer.new_definition('Project', fields=TDict[str, ANY]({
-        "name": defstr,
-        "organization": DefRef(model_name="Organization"),
-        "created": DefRef(model_name="Date"),
-        "engineers": DefList(dtype=DefRef(model_name="Person"))
-}))
+else:
+    model_store.load_model_definition("Project")
+
+
+model_store.store_model_definition("Date")
+model_store.store_model_definition("Organization")
+model_store.store_model_definition("Person")
+model_store.store_model_definition("Project")
 
 Project = modelizer.model_from_schema('Project')
 Person = modelizer.model_from_schema('Person')
@@ -637,11 +716,6 @@ p1 = Person(name='John Doe', organization=org1)
 p1.organization = org2
 print(p1)
 
-model_store = ModelStore(uri="http://admin:password@localhost:5984", modelizer=modelizer)
-model_store.store_model_definition("Date")
-model_store.store_model_definition("Project")
-model_store.store_model_definition("Person")
-model_store.store_model_definition("Organization")
 model_store.store_model(p1)
 model_store.store_model(org1)
 model_store.store_model(org2)
@@ -649,4 +723,5 @@ model_store.store_model(org2)
 p1loaded, other_models = model_store.load_model(p1.uid, max_depth=10)
 print(p1loaded)
 print(p1==p1loaded)
+print(model_store.get_model_def_names())
 

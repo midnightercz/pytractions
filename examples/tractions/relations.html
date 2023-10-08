@@ -1,0 +1,256 @@
+<html>
+<head>
+    <title>Relations</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<script>
+function renderDialog(schema) {
+  const dialog = document.createElement('div');
+  const title = document.createElement('h3');
+  title.textContent = schema.title;
+  dialog.appendChild(title);
+
+  const form = document.createElement('form');
+
+  schema.fields.forEach(field => {
+    const wrapper = document.createElement('div');
+    wrapper.style = 'margin-bottom: 10px;';
+
+    const label = document.createElement('label');
+    label.textContent = field.label;
+    label.htmlFor = field.name;
+    const label_span = document.createElement('span');
+    label_span.style='padding-left:10px;padding-right:10px;';
+    label_span.appendChild(label);
+
+
+    let inputElement;
+
+    switch (field.type) {
+      case 'text':
+      case 'number':
+        inputElement = document.createElement('input');
+        inputElement.type = field.type;
+        inputElement.name = field.name;
+        break;
+      case 'select':
+        inputElement = document.createElement('select');
+        field.options.forEach(optionValue => {
+          const option = document.createElement('option');
+          option.value = optionValue;
+          option.textContent = optionValue;
+          inputElement.appendChild(option);
+        });
+        inputElement.name = field.name;
+        break;
+      case 'textarea':
+        inputElement = document.createElement('textarea');
+        inputElement.name = field.name;
+        break;
+      default:
+        console.error(`Unsupported field type: ${field.type}`);
+        return;
+    }
+
+    wrapper.appendChild(label_span);
+    wrapper.appendChild(inputElement);
+
+    form.appendChild(wrapper);
+  });
+
+  schema.actions.forEach(action => {
+    const button = document.createElement('button');
+    button.textContent = action.label;
+    
+    if (action.type === 'submit') {
+      button.type = 'submit';
+    } else if (action.action === 'close') {
+      button.onclick = () => {
+        document.body.removeChild(dialog);
+      };
+    }
+
+    form.appendChild(button);
+  });
+
+  dialog.appendChild(form);
+
+  // Style the dialog
+  dialog.style.position = 'fixed';
+  dialog.style.top = '50%';
+  dialog.style.left = '50%';
+  dialog.style.transform = 'translate(-50%, -50%)';
+  dialog.style.background = '#f9f9f9';
+  dialog.style.padding = '20px';
+  dialog.style.border = '1px solid #ccc';
+  dialog.style.borderRadius = '5px';
+  dialog.style.width = '300px';
+  dialog.style.boxShadow = '0 0 10px rgba(0, 0, 0, 0.1)';
+
+  document.body.appendChild(dialog);
+}
+
+function makeMenu(options, callback) {
+    const menu = document.createElement('div');
+    menu.id = 'contextMenu';
+    menu.classList.add('context-menu');
+
+    const menuList = document.createElement('ul');
+    menu.appendChild(menuList);
+
+    const options = ['Option 1', 'Option 2', 'Option 3'];
+
+    options.forEach(option => {
+        const listItem = document.createElement('li');
+        const anchor = document.createElement('a');
+        anchor.href = '#';
+        anchor.textContent = option;
+
+        listItem.appendChild(anchor);
+        menuList.appendChild(listItem);
+    });
+
+    // Event listener for right-click
+    document.addEventListener("contextmenu", function(e) {
+        e.preventDefault();
+        
+        menu.style.display = 'block';
+        menu.style.left = e.pageX + 'px';
+        menu.style.top = e.pageY + 'px';
+
+        return false;
+    }, false);
+
+    // Event listener for left-click to close the menu
+    document.addEventListener("click", function(e) {
+
+        if (menu.style.display === 'block') {
+            menu.style.display = 'none';
+        }
+    });
+
+}
+
+function createSchema(schema) {
+  const dialog = document.createElement('div');
+  const title = document.createElement('h3');
+  title.textContent = 'Add new schema';
+  dialog.appendChild(title);
+
+  const form = document.createElement('form');
+  const plusdiv = document.createElement('div');
+  const button = document.createElement('button');
+  button.textContent = '+';
+  plusdiv.appendChild(button);
+  form.appendChild(plusdiv);
+
+  schema.fields.forEach(field => {
+    const wrapper = document.createElement('div');
+    wrapper.style = 'margin-bottom: 10px;';
+
+    const label = document.createElement('label');
+    label.textContent = field.label;
+    label.htmlFor = field.name;
+    const label_span = document.createElement('span');
+    label_span.style='padding-left:10px;padding-right:10px;';
+    label_span.appendChild(label);
+
+
+    let inputElement;
+
+    switch (field.type) {
+      case 'text':
+      case 'number':
+        inputElement = document.createElement('input');
+        inputElement.type = field.type;
+        inputElement.name = field.name;
+        break;
+      case 'select':
+        inputElement = document.createElement('select');
+        field.options.forEach(optionValue => {
+          const option = document.createElement('option');
+          option.value = optionValue;
+          option.textContent = optionValue;
+          inputElement.appendChild(option);
+        });
+        inputElement.name = field.name;
+        break;
+      case 'textarea':
+        inputElement = document.createElement('textarea');
+        inputElement.name = field.name;
+        break;
+      default:
+        console.error(`Unsupported field type: ${field.type}`);
+        return;
+    }
+
+    wrapper.appendChild(label_span);
+    wrapper.appendChild(inputElement);
+
+    form.appendChild(wrapper);
+  });
+
+  schema.actions.forEach(action => {
+    const button = document.createElement('button');
+    button.textContent = action.label;
+    
+    if (action.type === 'submit') {
+      button.type = 'submit';
+    } else if (action.action === 'close') {
+      button.onclick = () => {
+        document.body.removeChild(dialog);
+      };
+    }
+
+    form.appendChild(button);
+  });
+
+  dialog.appendChild(form);
+
+  // Style the dialog
+  dialog.style.position = 'fixed';
+  dialog.style.top = '50%';
+  dialog.style.left = '50%';
+  dialog.style.transform = 'translate(-50%, -50%)';
+  dialog.style.background = '#f9f9f9';
+  dialog.style.padding = '20px';
+  dialog.style.border = '1px solid #ccc';
+  dialog.style.borderRadius = '5px';
+  dialog.style.width = '300px';
+  dialog.style.boxShadow = '0 0 10px rgba(0, 0, 0, 0.1)';
+
+  document.body.appendChild(dialog);
+}
+const dialogSchema = {
+  title: 'User Information',
+  fields: [
+    { type: 'text', label: 'Name', name: 'name' },
+    { type: 'number', label: 'Age', name: 'age' },
+    {
+      type: 'select',
+      label: 'Favorite Color',
+      name: 'color',
+      options: ['Red', 'Green', 'Blue']
+    },
+    { type: 'textarea', label: 'Bio', name: 'bio' }
+  ],
+  actions: [
+    { type: 'submit', label: 'Submit' },
+    { type: 'button', label: 'Cancel', action: 'close' }
+  ]
+};
+
+// Render the dialog on the page
+schema = {fields: [], actions: [{type: 'button', label: 'Add new schema', action: 'close'}]};
+createSchema(schema);
+
+
+
+// Render the dialog on the page
+</script>
+    <div>
+    <div>
+</body>
+</html>
+
