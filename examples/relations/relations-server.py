@@ -93,6 +93,12 @@ def post_model_definition():
     model_store.store_model_definition(data['name'])
     return jsonify({"status": "success", "message": "Model definition saved successfully"}), 201
 
+@app.route('/model_definition/<string:model_name>', methods=['GET'])
+def get_model_definition(model_name):
+    model_store.load_model_definition(model_name)
+    data = modelizer.definition_to_json(model_name)
+    return jsonify(data), 200
+
 
 @app.route('/')
 def index():

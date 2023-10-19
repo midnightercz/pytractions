@@ -214,6 +214,7 @@ class Modelizer(Base):
         while stack:
             stack_entry = stack.pop()
             current, parent, parent_key = stack_entry['current'], stack_entry['parent'], stack_entry['parent_key']
+            o
             if isinstance(current, DefRef):
                 parent[parent_key] = {"type": "Model",
                                       "name": current.model_name}
@@ -470,10 +471,10 @@ class ModelStore(Base):
             else:
                 c_out[parent_key] = current
         out['_id'] = out['data']['uid']
-        _id, rev = self.db.save(out)
+        _id, rev = self.db.save(out)//
         model.uid = _id
 
-    def load_model_definition(self, mod_name):
+    def load_model_definition(self, mod_name) -> ModelDefinition:
         model_definition_dict = next(self.db.find({'selector': {'type': 'ModelDefinition', 'name': mod_name}}))
         definition = self.modelizer.definition_from_json(model_definition_dict)
         self.modelizer.new_definition(mod_name, definition.fields, rev=definition._rev, uid=definition._uid)
@@ -488,6 +489,7 @@ class ModelStore(Base):
         pre_order = [stack[0]]
         loaded_uids = {}
         backrefs = {}
+
 
         while stack:
             stack_entry = stack.pop()

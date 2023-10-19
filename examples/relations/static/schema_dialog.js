@@ -318,7 +318,7 @@ function loadModels(models, success_callback, error_callback) {
     })
 }
 
-function createSchemaDialog(schema, submit_action) {
+function createNewSchemaDialog(schema, submit_action) {
   const dialog = document.createElement('div');
   dialog.classList.add('dialog');
   closediv = document.createElement('div');
@@ -404,6 +404,90 @@ function createSchemaDialog(schema, submit_action) {
   document.body.appendChild(dialog);
 }
 
+
+function createEditSchemaDialog(schema, submit_action) {
+  const dialog = document.createElement('div');
+  dialog.classList.add('dialog');
+  closediv = document.createElement('div');
+  closediv.style.textAlign = 'right';
+  closeb = makeCloseButton((e) => { document.body.removeChild(dialog)});
+  closediv.appendChild(closeb);
+  dialog.appendChild(closediv);
+
+  const title = document.createElement('h3');
+  title.textContent = 'Edit model type';
+  dialog.appendChild(title);
+
+  const form = document.createElement('form');
+  form.action = submit_action;
+  form.method = 'POST';
+
+  const plusdiv = document.createElement('div');
+  plusdiv.style = 'text-align: right;';
+  const plusbutton = document.createElement('button');
+  plusbutton.textContent = '+';
+  var models = [];
+  plusbutton.addEventListener('click', (e) => {
+     loadModels(models, 
+		  (data) => {document.body.appendChild(createSchemaMenu(e.clientX, e.clientY, ['int number', 'float number', 'text', 'switch', 'list', 'map'], models, formdiv, schema, createSchemaEntry))}, 
+		  (error) => {document.body.appendChild(createErrorDialog('Failed to load models'))});
+  })
+
+  plusbutton.classList.add('label-button');
+  plusdiv.appendChild(plusbutton);
+  const formdiv = document.createElement('div');
+  formdiv.style = 'border: 1px solid black; padding: 10px; margin: 10px;';
+
+  const namediv = document.createElement('div');
+  namediv.style = 'margin-bottom: 10px;';
+  const namelabel = document.createElement('label');
+  namelabel.textContent = 'Name';
+  namelabel.style = 'margin-left: 10px; margin-right: 10px;';
+  namediv.appendChild(namelabel);
+  const namevalue = document.createElement('label');
+  namevalue.type = 'text';
+  namevalue.textContent = schema.name;
+
+  namediv.appendChild(namevalue);
+  formdiv.appendChild(namediv);
+  dialog.appendChild(plusdiv);
+
+  const button = document.createElement('button');
+  button.addEventListener('click', (e) => {
+    console.log(schema);
+    validateSchema(schema, models);
+    const eschema = evalSchema(schema);
+    fetch('/model_definition', 
+      {
+        method: 'POST',
+	headers: {
+	  'Content-Type': 'application/json'
+	},
+	body: JSON.stringify(eschema)
+      })
+      .then(response => response.json())  // assuming server responds with json
+      .then(data => {
+        console.log('Success:', data);
+        notification = createNotification('Model "'+schema.name()+'" created');
+        loadModels(models);
+        document.body.appendChild(notification);
+        document.body.removeChild(dialog);
+      })
+      .catch((error) => {
+        createErrorDialog('Failed to create model "'+schema.name()+'"', 'error');
+        console.error('Error:', error);
+        document.body.removeChild(dialog);
+      });
+  });
+  button.textContent = 'Save';
+  button.classList.add('label-button');
+  form.appendChild(button);
+
+  dialog.appendChild(formdiv);
+  dialog.appendChild(form);
+  document.body.appendChild(dialog);
+}
+
 function modelsDialog(schema, submit_action) {
   const dialog = document.createElement('div');
   dialog.classList.add('dialog');
@@ -426,6 +510,25 @@ function modelsDialog(schema, submit_action) {
     model_label = document.createElement('label');
     model_label.textContent = model;
     model_edit_button = document.createElement('button');
+    model_edit_button.addEventListener('click', (e) => {
+    fetch('/model_definition/' + model, 
+      {
+        method: 'GET',
+	headers: {
+	  'Content-Type': 'application/json'
+	},
+    })
+      .then(response => response.json())  // assuming server responds with json
+      .then(data => {
+        createEditSchemaDialog(data, submit_action)
+      })
+      .catch((error) => {
+        createErrorDialog('Failed to load model definition"' + schema.name() + '"', 'error');
+        console.error('Error:', error);
+        document.body.removeChild(dialog);
+      });
+    });
+
     model_edit_button.textContent = 'Edit';
     model_edit_button.classList.add('label-button');
     model_remove_button = document.createElement('button');
