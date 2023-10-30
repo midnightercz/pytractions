@@ -214,7 +214,6 @@ class Modelizer(Base):
         while stack:
             stack_entry = stack.pop()
             current, parent, parent_key = stack_entry['current'], stack_entry['parent'], stack_entry['parent_key']
-            o
             if isinstance(current, DefRef):
                 parent[parent_key] = {"type": "Model",
                                       "name": current.model_name}
@@ -471,7 +470,7 @@ class ModelStore(Base):
             else:
                 c_out[parent_key] = current
         out['_id'] = out['data']['uid']
-        _id, rev = self.db.save(out)//
+        _id, rev = self.db.save(out)
         model.uid = _id
 
     def load_model_definition(self, mod_name) -> ModelDefinition:

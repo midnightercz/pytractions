@@ -190,14 +190,15 @@ function createEntryType(parent, schema, type, models) {
 
 
 function createSchemaEntry(form, schema, type, models) {
-  entry = {name: () => {return entrylabel.value}, type: viewType2JsonType(type)};
-  schema.fields.push(entry);
 
   entrydiv = document.createElement('div');
-  entrylabel = document.createElement('input');
+  var entrylabel = document.createElement('input');
   entrylabel.type = 'text';
   entrylabel.placeholder = 'Field name';
   entrylabel.style = 'margin-right: 10px; margin-left: 10px;';
+
+  entry = {name: () => {return entrylabel.value}, type: viewType2JsonType(type)};
+  schema.fields.push(entry);
 
 
   if (type != 'list' && type != 'map') {
@@ -288,6 +289,8 @@ function evalSchema(schema) {
   new_schema.name = schema.name();
   new_schema.fields = [];
   schema.fields.forEach((field) => {
+    console.log('eval field');
+    console.log(field);
     new_schema.fields.push({type: field.type, name: field.name()});
   });
   return new_schema;
@@ -370,9 +373,10 @@ function createNewSchemaDialog(schema, submit_action) {
   const button = document.createElement('button');
   button.type = 'button';
   button.addEventListener('click', (e) => {
-    console.log(schema);
     validateSchema(schema, models);
     const eschema = evalSchema(schema);
+    console.log('eschema');
+    console.log(eschema);
     fetch('/model_definition', 
       {
         method: 'POST',
@@ -406,6 +410,7 @@ function createNewSchemaDialog(schema, submit_action) {
 
 
 function createEditSchemaDialog(schema, submit_action) {
+  console.log(schema);
   const dialog = document.createElement('div');
   dialog.classList.add('dialog');
   closediv = document.createElement('div');
@@ -447,10 +452,34 @@ function createEditSchemaDialog(schema, submit_action) {
   const namevalue = document.createElement('label');
   namevalue.type = 'text';
   namevalue.textContent = schema.name;
-
   namediv.appendChild(namevalue);
   formdiv.appendChild(namediv);
   dialog.appendChild(plusdiv);
+
+  Object.keys(schema.fields).forEach((field_name) => {
+    field = schema.fields[field_name];
+    entrydiv = document.createElement('div');
+    entrylabel = document.createElement('label');
+    entrylabel.type = 'text';
+    entrylabel.textContent = field_name
+    entrylabel.style = 'margin-right: 10px; margin-left: 10px;';
+    valuelabel = document.createElement('label');
+    valuelabel.textContent = field;
+    removebutton = document.createElement('button');
+    removebutton.textContent = '-';
+    removebutton.classList.add('label-button');
+    removebutton.addEventListener('click', (e) => {
+      form.removeChild(entrydiv);
+      schema.fields = schema.fields.filter((field) => {
+        field.name != entrylabel.value;
+      });
+    });
+    entrydiv.appendChild(removebutton);
+    entrydiv.appendChild(entrylabel);
+    entrydiv.appendChild(valuelabel);
+    formdiv.appendChild(entrydiv);
+  });
+
 
   const button = document.createElement('button');
   button.addEventListener('click', (e) => {
@@ -479,7 +508,7 @@ function createEditSchemaDialog(schema, submit_action) {
         document.body.removeChild(dialog);
       });
   });
-  button.textContent = 'Save';
+  button.textContent = 'Update';
   button.classList.add('label-button');
   form.appendChild(button);
 
