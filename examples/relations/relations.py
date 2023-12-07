@@ -10,6 +10,7 @@ import pytraction.base
 from pytraction.base import Base, Traction, TDict, TList, In, Out, Res, Arg, TypeNode, ANY
 from pytraction.tractor import Tractor
 
+from tclimber import Tree, TResult
 
 import couchdb
 
@@ -113,7 +114,6 @@ class Model(AModel):
         return attr
 
 
-
 class DefObj(Base):
     pass
 
@@ -154,7 +154,7 @@ class DefList(DefObj):
     dtype: Optional[DefObj]
 
 
-class DefDict(Base):
+class DefDict(DefObj):
     dtype: Optional[DefObj]
 
 
@@ -170,6 +170,126 @@ class ModelDefinition(Base):
     fields: TDict[str, DefObj]
 
 
+class UpdateBackRefResult(TResult):
+    def __init__(self, definitions, mod_name):
+        self.definitions = definitions
+        self.updated_refs = []
+        self.mod_name = mod_name
+
+    def on_leaf(self, key, parent, leaf, stack):
+        if isinstance(leaf, DefRef):
+            edef = self.definitions[leaf.model_name]
+            edef.fields['backref_' + self.mod_name] = DefBackRef(model_name=self.mod_name, field_name=key)
+            self.updated_refs.append(edef)
+        elif isinstance(leaf, DefList):
+            #stack.append({"field": field.dtype, "fieldname": fieldname})
+            self.add_to_stack(stack, None, key, leaf.dtype)
+        elif isinstance(leaf, DefDict):
+            #stack.append({"field": leaf.dtype, "fieldname": fieldname})
+            self.add_to_stack(stack, None, key, leaf.dtype)
+
+
+class CollectBackRefResult(TResult):
+    def __init__(self):
+        self.back_refs = []
+
+    def on_leaf(self, key, parent, leaf, stack):
+        if isinstance(leaf, DefRef):
+            self.back_refs.append(leaf.model_name)
+        elif isinstance(leaf, DefList):
+            #stack.append({"field": field.dtype, "fieldname": fieldname})
+            self.add_to_stack(stack, None, key, leaf.dtype)
+        elif isinstance(leaf, DefDict):
+            #stack.append({"field": leaf.dtype, "fieldname": fieldname})
+            self.add_to_stack(stack, None, key, leaf.dtype)
+
+
+class DefinitionToJsonTResult(TResult):
+    def __init__(self, result):
+        self.result = {}
+
+    def on_leaf(self, key, leaf, stack):
+        if isinstance(leaf, DefRef):
+            self.result[key] = {"type": "Model", "name": leaf.model_name}
+        elif isinstance(leaf, DefBackRef):
+            self.result[key] = {"type": "BackRef", "name": leaf.model_name, "field_name": leaf.field_name}
+        elif isinstance(leaf, DefList):
+            self.result[key] = {"type": "List", "dtype": None}
+            self.add_to_stack(stack, leaf, key, leaf.dtype, DefinitionTResult(self.result[key]))
+        elif isinstance(leaf, DefDict):
+            # parent[key] = {"type": "Dict", "dtype": None}
+            # stack.append({"current": current.dtype, "parent": parent[parent_key], "parent_key": "dtype"})
+            self.result[key] = {"type": "Dict", "dtype": None}
+            self.add_to_stack(stack, leaf, key, leaf.dtype, DefinitionTResult(self.result[key]))
+        else:
+            self.result[key] = leaf._TNAME
+
+
+class DefinitionFromJsonTree(TResult):
+    def __init__(self, result):
+        self.result = {}
+
+    def on_branch(self, parent, parent_key, current, stack):
+        #print("Definion form json tree", parent, parent_key, current, stack)
+        if isinstance(parent, dict):
+            _setter = lambda x, key, val: x.__setitem__(key, val)
+        else:
+            _setter = lambda x, key, val: x.__setattr__(key, val)
+        if current['type'] == 'Model':
+            _setter(self.result, parent_key, DefRef(model_name=current['name']))
+        elif current['type'] == 'BackRef':
+            _setter(self.result, parent_key, DefBackRef(model_name=current['name'], field_name=current['field_name']))
+        elif current['type'] in ('List', 'Dict'):
+            if current['type']:
+                dtypei = DefList(dtype=None)
+            else:
+                dtypei = DefDict(dtype=None)
+            _setter(self.result, parent_key, dtypei)
+            self.add_to_stack(stack, dtypei, 'dtype', current['dtype'])
+        return DefinitionFromJsonTree(self.result[parent_key])
+
+    def on_leaf(self, key, leaf, stack):
+        if isinstance(self.result, dict):
+            _setter = lambda x, key, val: x.__setitem__(key, val)
+        else:
+            _setter = lambda x, key, val: x.__setattr__(key, val)
+
+        if leaf == 'str':
+            _setter(self.result, key, defstr)
+        elif leaf == 'int':
+            _setter(self.result, key, defint)
+        elif leaf == 'float':
+            _setter(self.result, key, deffloat)
+        elif leaf == 'bool':
+            _setter(self.result, key, defbool)
+
+
+class DefinitionToJsonResult(TResult):
+    def __init__(self, result):
+        self.result = {}
+
+    def on_leaf(self, key, parent, leaf, stack):
+        print("Definition to json result", "'", key, "'", leaf, stack)
+        if isinstance(leaf, DefRef):
+            return {"type": "Model", "name": leaf.model_name}
+        elif isinstance(leaf, DefBackRef):
+            return {"type": "BackRef", "name": leaf.model_name, "field_name": leaf.field_name}
+        elif isinstance(leaf, DefList):
+            ret = {"type": "List", "dtype": None}
+            self.add_to_stack(stack, ret, 'dtype', leaf.dtype)
+            return ret
+        elif isinstance(leaf, DefDict):
+            # parent[key] = {"type": "Dict", "dtype": None}
+            # stack.append({"current": current.dtype, "parent": parent[parent_key], "parent_key": "dtype"})
+            ret = {"type": "Dict", "dtype": None}
+            self.add_to_stack(stack, ret, 'dtype', leaf.dtype)
+            return ret
+        else:
+            return leaf._TNAME
+        #print("----")
+        #print(self.result)
+
+
 class Modelizer(Base):
     definitions: TDict[str, ModelDefinition] = TDict[str, ModelDefinition]({})
     _models: TDict[str, Type[Model]] = TDict[str, Type[Model]]({})
@@ -179,26 +299,63 @@ class Modelizer(Base):
             self.definitions[mod_name] = ModelDefinition(model_name=mod_name, fields=fields, _uid=uid, _rev=rev)
         else:
             self.definitions[mod_name] = ModelDefinition(model_name=mod_name, fields=fields, _rev=rev)
+        self.update_back_refs(mod_name)
 
+    def update_back_refs(self, mod_name):
         model_definition = self.definitions[mod_name]
-        root = {"type": "ModelDefinition",
-                "name": model_definition.model_name,
-                "fields": {}}
-        stack = []
-        for fname, f in model_definition.fields.items():
-            if isinstance(f, DefObj):
-                stack.append({"fieldname": fname, "field": f})
-        while stack:
-            stack_entry = stack.pop()
-            fieldname, field = stack_entry['fieldname'], stack_entry['field']
-            if isinstance(field, DefRef):
-                edef = self.definitions[field.model_name]
-                edef.fields['backref_' + mod_name] = DefBackRef(model_name=mod_name, field_name=fieldname)
-            elif isinstance(field, DefList):
-                stack.append({"field": field.dtype, "fieldname": fieldname})
-            elif isinstance(field, DefDict):
-                stack.append({"field": field.dtype, "fieldname": fieldname})
+        # root = {"type": "ModelDefinition",
+        #         "name": model_definition.model_name,
+        #         "fields": {}}
+        # updated_refs = []
+        # stack = []
+        # for fname, f in model_definition.fields.items():
+        #     if isinstance(f, DefObj):
+        #         stack.append({"fieldname": fname, "field": f})
+        #
+        t = Tree.from_json(model_definition.fields)
+        res = UpdateBackRefResult(self.definitions, mod_name)
+        t.harvest(res)
+
+        # while stack:
+        #     stack_entry = stack.pop()
+        #     fieldname, field = stack_entry['fieldname'], stack_entry['field']
+        #     if isinstance(field, DefRef):
+        #         edef = self.definitions[field.model_name]
+        #         edef.fields['backref_' + mod_name] = DefBackRef(model_name=mod_name, field_name=fieldname)
+        #         updated_refs.append(edef)
+        #     elif isinstance(field, DefList):
+        #         stack.append({"field": field.dtype, "fieldname": fieldname})
+        #     elif isinstance(field, DefDict):
+        #         stack.append({"field": field.dtype, "fieldname": fieldname})
+
         self.consistency_check()
+        return res.updated_refs
+
+    def gather_back_refs(self, mod_name):
+        model_definition = self.definitions[mod_name]
+        # root = {"type": "ModelDefinition",
+        #         "name": model_definition.model_name,
+        #         "fields": {}}
+
+        t = Tree.from_json(model_definition.fields)
+        res = CollectBackRefResult()
+        t.harvest(res)
+
+        # back_refs = []
+        # stack = []
+        # for fname, f in model_definition.fields.items():
+        #     if isinstance(f, DefObj):
+        #         stack.append({"fieldname": fname, "field": f})
+        # while stack:
+        #     stack_entry = stack.pop()
+        #     fieldname, field = stack_entry['fieldname'], stack_entry['field']
+        #     if isinstance(field, DefRef):
+        #         back_refs.append(field.model_name)
+        #     elif isinstance(field, DefList):
+        #         stack.append({"field": field.dtype, "fieldname": fieldname})
+        #     elif isinstance(field, DefDict):
+        #         stack.append({"field": field.dtype, "fieldname": fieldname})
+        return res.back_refs
 
     def definition_to_json(self, mod_name):
         model_definition = self.definitions[mod_name]
@@ -208,29 +365,38 @@ class Modelizer(Base):
                 '_id': model_definition._uid,
                 "_rev": model_definition._rev,
                 "fields": {}}
-        stack = []
-        for fname, f in model_definition.fields.items():
-            stack.append({"current": f, "parent": root['fields'], "parent_key": fname})
-        while stack:
-            stack_entry = stack.pop()
-            current, parent, parent_key = stack_entry['current'], stack_entry['parent'], stack_entry['parent_key']
-            if isinstance(current, DefRef):
-                parent[parent_key] = {"type": "Model",
-                                      "name": current.model_name}
-            elif isinstance(current, DefBackRef):
-                parent[parent_key] = {"type": "BackRef",
-                                      "name": current.model_name,
-                                      "field_name": current.field_name}
-            elif isinstance(current, DefList):
-                parent[parent_key] = {"type": "List",
-                                      "dtype": None}
-                stack.append({"current": current.dtype, "parent": parent[parent_key], "parent_key": "dtype"})
-            elif isinstance(current, DefDict):
-                parent[parent_key] = {"type": "Dict",
-                                      "dtype": None}
-                stack.append({"current": current.dtype, "parent": parent[parent_key], "parent_key": "dtype"})
-            else:
-                parent[parent_key] = current._TNAME
+
+        t = Tree.from_json(model_definition.fields)
+        res = DefinitionToJsonResult(root)
+        fields = t.to_json(res)
+        #print("DEF TO JSON", res.result)
+        root['fields'] = fields
+        print("ROOT", root)
+        print("----")
+
+        # stack = []
+        # for fname, f in model_definition.fields.items():
+        #     stack.append({"current": f, "parent": root['fields'], "parent_key": fname})
+        # while stack:
+        #     stack_entry = stack.pop()
+        #     current, parent, parent_key = stack_entry['current'], stack_entry['parent'], stack_entry['parent_key']
+        #     if isinstance(current, DefRef):
+        #         parent[parent_key] = {"type": "Model",
+        #                               "name": current.model_name}
+        #     elif isinstance(current, DefBackRef):
+        #         parent[parent_key] = {"type": "BackRef",
+        #                               "name": current.model_name,
+        #                               "field_name": current.field_name}
+        #     elif isinstance(current, DefList):
+        #         parent[parent_key] = {"type": "List",
+        #                               "dtype": None}
+        #         stack.append({"current": current.dtype, "parent": parent[parent_key], "parent_key": "dtype"})
+        #     elif isinstance(current, DefDict):
+        #         parent[parent_key] = {"type": "Dict",
+        #                               "dtype": None}
+        #         stack.append({"current": current.dtype, "parent": parent[parent_key], "parent_key": "dtype"})
+        #     else:
+        #         parent[parent_key] = current._TNAME
         return root
 
     def definition_from_json(self, root):
@@ -258,23 +424,16 @@ class Modelizer(Base):
                         dtypei = DefList(dtype=None)
                     else:
                         dtypei = DefDict(dtype=None)
-                    #if stype == 'field':
                     _setter(parent, parent_key, dtypei)
-                    #else:
-                    #    setattr(parent, parent_key, dtypei)
                     stack.append({'current': current['dtype'], 'parent': dtypei, 'parent_key': 'dtype', 'stype': 'dtype'})
             else:
                 if current == 'str':
-                    #parent[parent_key] = defstr
                     _setter(parent, parent_key, defstr)
                 elif current == 'int':
-                    #parent[parent_key] = defint
                     _setter(parent, parent_key, defint)
                 elif current == 'float':
-                    #parent[parent_key] = deffloat
                     _setter(parent, parent_key, deffloat)
                 elif current == 'bool':
-                    #parent[parent_key] = defbool
                     _setter(parent, parent_key, defbool)
 
         return ModelDefinition(model_name=model_name, _uid=root['_id'], _rev=root['_rev'], fields=TDict[str, DefObj](mod_fields))
@@ -393,6 +552,10 @@ class Modelizer(Base):
         )
         return self._models[model_name]
 
+    def set_model_definition(self, model_name, definition):
+        self.definitions[model_name] = definition
+        self.consistency_check()
+
 
 class ModelStore(Base):
     _server: Optional[couchdb.Server] = None
@@ -419,8 +582,8 @@ class ModelStore(Base):
 
     def store_model_definition(self, model_name):
         json_def = self.modelizer.definition_to_json(model_name)
-        print(json_def)
-        to_store = {"type": "ModelDefinition",
+        to_store = {
+            "type": "ModelDefinition",
              "name": model_name,
              "definition": json_def,
              "_id": json_def['uid']}
@@ -428,6 +591,37 @@ class ModelStore(Base):
              to_store['_rev'] = json_def['_rev']
         self.db.save(to_store)
 
+    def update_model_definition(self, new_model_def: ModelDefinition):
+        old_model_def = self.load_model_definition(new_model_def.model_name)
+        new_fields = {}
+        removed_fields = {}
+        diff_fields = {}
+        for field_name, field in new_model_def.fields.items():
+            if field_name not in old_model_def.fields:
+                new_fields[field_name] = field
+            elif old_model_def.fields[field_name] != field:
+                diff_fields[field_name] = field
+        for field_name, field in old_model_def.fields.items():
+            if field_name not in new_model_def.fields:
+                removed_fields[field_name] = field
+
+        res = self.db.find({'selector': {'model_name': new_model_def.model_name}})
+        for mod in res:
+            for missing in removed_fields:
+                mod.pop(missing)
+            for diff, dfield in diff_fields.items():
+                mod[diff] = dfield
+            for newf, dfield in new_fields.items():
+                mod[newf] = dfield
+        self.db.update(res)
+        self.modelizer.set_model_definition(new_model_def.model_name, new_model_def)
+        back_refs_to_load = self.modelizer.gather_back_refs(new_model_def.model_name)
+        for ref in back_refs_to_load:
+            self.load_model_definition(ref)
+        updated_refs = self.modelizer.update_back_refs(new_model_def.model_name)
+        for ref in updated_refs:
+            self.store_model_definition(ref.model_name)
+        self.store_model_definition(new_model_def.model_name)
 
     def store_model(self, model: Model):
         m_out = {}
@@ -476,7 +670,9 @@ class ModelStore(Base):
     def load_model_definition(self, mod_name) -> ModelDefinition:
         model_definition_dict = next(self.db.find({'selector': {'type': 'ModelDefinition', 'name': mod_name}}))
         definition = self.modelizer.definition_from_json(model_definition_dict)
-        self.modelizer.new_definition(mod_name, definition.fields, rev=definition._rev, uid=definition._uid)
+        self.modelizer.set_model_definition(mod_name, definition)
+        print("DEFINITION", definition)
+        #self.modelizer.new_definition(mod_name, definition.fields, rev=definition._rev, uid=definition._uid)
         return definition
 
     def load_model(self, uid: str, max_depth: int) -> Model:
@@ -488,7 +684,6 @@ class ModelStore(Base):
         pre_order = [stack[0]]
         loaded_uids = {}
         backrefs = {}
-
 
         while stack:
             stack_entry = stack.pop()
@@ -660,69 +855,70 @@ class ModelStore(Base):
         return self.modelizer.definition_from_json(ret['definition'])
 
 
-# modelizer = Modelizer()
-# model_store = ModelStore(uri="http://admin:password@localhost:5984", modelizer=modelizer)
-# existing_definitions = model_store.get_model_def_names()
-# if 'Date' not in existing_definitions:
-#     modelizer.new_definition("Date", fields=TDict[str, ANY]({
-#             "date": defstr
-#         }))
-# else:
-#     model_store.load_model_definition("Date")
-#
-# if 'Organization' not in existing_definitions:
-#     modelizer.new_definition("Organization", fields=TDict[str, ANY]({
-#             "name": defstr,
-#             "created": DefRef(model_name="Date")
-#         }))
-# else:
-#     model_store.load_model_definition("Organization")
-#
-# if 'Person' not in existing_definitions:
-#     modelizer.new_definition('Person', fields=TDict[str, ANY]({
-#             "name": defstr,
-#             "organization": DefRef(model_name="Organization"),
-#             "created": DefRef(model_name="Date")
-#     }))
-# else:
-#     model_store.load_model_definition("Person")
-#
-# if 'Project' not in existing_definitions:
-#     modelizer.new_definition('Project', fields=TDict[str, ANY]({
-#             "name": defstr,
-#             "organization": DefRef(model_name="Organization"),
-#             "created": DefRef(model_name="Date"),
-#             "engineers": DefList(dtype=DefRef(model_name="Person"))
-#     }))
-# else:
-#     model_store.load_model_definition("Project")
-#
-#
-# model_store.store_model_definition("Date")
-# model_store.store_model_definition("Organization")
-# model_store.store_model_definition("Person")
-# model_store.store_model_definition("Project")
-#
-# Project = modelizer.model_from_schema('Project')
-# Person = modelizer.model_from_schema('Person')
-# Organization = modelizer.model_from_schema('Organization')
-# Date = modelizer.model_from_schema('Organization')
-#
-# print(Date._fields.items())
-# print("--")
-#
-# org1 = Organization(name='Umbrela')
-# org2 = Organization(name='RainCoat')
-# p1 = Person(name='John Doe', organization=org1)
-# p1.organization = org2
-# print(p1)
-#
-# model_store.store_model(p1)
-# model_store.store_model(org1)
-# model_store.store_model(org2)
-#
-# p1loaded, other_models = model_store.load_model(p1.uid, max_depth=10)
-# print(p1loaded)
-# print(p1==p1loaded)
-# print(model_store.get_model_def_names())
-#
+modelizer = Modelizer()
+model_store = ModelStore(uri="http://admin:password@localhost:5984", modelizer=modelizer)
+existing_definitions = model_store.get_model_def_names()
+if 'Date' not in existing_definitions:
+    modelizer.new_definition("Date", fields=TDict[str, ANY]({
+            "date": defstr
+        }))
+else:
+    model_store.load_model_definition("Date")
+
+if 'Organization' not in existing_definitions:
+    modelizer.new_definition("Organization", fields=TDict[str, ANY]({
+            "name": defstr,
+            "created": DefRef(model_name="Date")
+        }))
+else:
+    model_store.load_model_definition("Organization")
+
+if 'Person' not in existing_definitions:
+    modelizer.new_definition('Person', fields=TDict[str, ANY]({
+            "name": defstr,
+            "organization": DefRef(model_name="Organization"),
+            "created": DefRef(model_name="Date")
+    }))
+else:
+    model_store.load_model_definition("Person")
+
+if 'Project' not in existing_definitions:
+    modelizer.new_definition('Project', fields=TDict[str, ANY]({
+            "name": defstr,
+            "organization": DefRef(model_name="Organization"),
+            "created": DefRef(model_name="Date"),
+            "engineers": DefList(dtype=DefRef(model_name="Person"))
+    }))
+else:
+    model_store.load_model_definition("Project")
+
+
+model_store.store_model_definition("Date")
+model_store.store_model_definition("Organization")
+model_store.store_model_definition("Person")
+model_store.store_model_definition("Project")
+
+Project = modelizer.model_from_schema('Project')
+Person = modelizer.model_from_schema('Person')
+Organization = modelizer.model_from_schema('Organization')
+Date = modelizer.model_from_schema('Organization')
+
+print(Organization)
+print(Date._fields.items())
+print("--")
+
+org1 = Organization(name='Umbrela')
+org2 = Organization(name='RainCoat')
+p1 = Person(name='John Doe', organization=org1)
+p1.organization = org2
+print(p1)
+
+model_store.store_model(p1)
+model_store.store_model(org1)
+model_store.store_model(org2)
+
+p1loaded, other_models = model_store.load_model(p1.uid, max_depth=10)
+print(p1loaded)
+print(p1==p1loaded)
+print(model_store.get_model_def_names())
+
