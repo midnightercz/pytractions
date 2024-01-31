@@ -684,17 +684,8 @@ class TList(Base, Generic[T]):
                         break
                 else:
                     stack.append((parent_args, parent_key, data, type(None), type_args))
-
-            elif hasattr(type_, "__qualname__") and type_.__qualname__ == "Union":
-                if isinstance(data, dict):
-                    data_type = data.get("$type", None)
-                else:
-                    data_type = TypeNode.from_type(data.__class__).to_json()
-                for uarg in get_args(type_):
-                    if TypeNode.from_type(uarg).to_json() == data_type:
-                        stack.append((parent_args, parent_key, data, uarg, type_args))
-                        break
-            elif TypeNode.from_type(type_) == TypeNode.from_type(TList[ANY]):
+            elif TypeNode.from_type(type_) == TypeNode.from_type(TList[ANY]) or\
+                 TypeNode.from_type(type_) == TypeNode.from_type(TDict[ANY]):
                 parent_args[parent_key] = type_.from_json(data)
             elif type_ not in (int, str, bool, float, type(None)):
                 for key in type_._fields:
@@ -864,6 +855,67 @@ class TDict(Base, Generic[TK, TV]):
                 current_parent[parent_key] = current
         return pre_order['root']
 
+    @classmethod
+    def from_json(cls, json_data) -> Self:
+        stack = []
+        post_order = []
+        self_type_json = TypeNode.from_type(cls).to_json()
+        root_args: Dict[str, Any] = {"root": None}
+        if TypeNode.from_json(json_data['$type']) != TypeNode.from_type(cls):
+            raise ValueError(f"Cannot load {json_data['$type']} to {self_type_json}")
+
+        root_type_args = {"iterable": {}}
+        for k, v in json_data['$data'].items():
+            root_type_args['iterable'][k] = None
+            if not isinstance(v, (int, str, bool, float, type(None))):
+                item_type = TypeNode.from_json(item['$type']).to_type(types_cache=cls._generic_cache)
+            else:
+                item_type = cls._params[0]
+            stack.append((root_type_args["iterable"], k, v, item_type, {}))
+
+        while stack:
+            parent_args, parent_key, data, type_, type_args = stack.pop(0)
+            if hasattr(type_, "__qualname__") and type_.__qualname__ in ("Optional", "Union"):
+                if isinstance(data, dict):
+                    data_type = data.get("$type", None)
+                else:
+                    data_type = TypeNode.from_type(data.__class__).to_json()
+                for uarg in get_args(type_):
+                    if TypeNode.from_json(data_type) == TypeNode.from_type(uarg):
+                        stack.append((parent_args, parent_key, data, uarg, type_args))
+                        break
+                    if data_type == TypeNode.from_type(uarg).to_json():
+                        stack.append((parent_args, parent_key, data, uarg, type_args))
+                        break
+                else:
+                    stack.append((parent_args, parent_key, data, type(None), type_args))
+            elif TypeNode.from_type(type_) == TypeNode.from_type(TList[ANY]) or\
+                 TypeNode.from_type(type_) == TypeNode.from_type(TDict[ANY]):
+                parent_args[parent_key] = type_.from_json(data)
+            elif type_ not in (int, str, bool, float, type(None)):
+                for key in type_._fields:
+                    field_args = {}
+                    if '$data' in data:
+                        stack.append((type_args, key, data['$data'].get(key), type_._fields[key], field_args))
+                    else:
+                        stack.append((type_args, key, data.get(key), type_._fields[key], field_args))
+
+                post_order.insert(0, (parent_args, parent_key, type_, type_args))
+            else:
+                parent_args[parent_key] = data
+
+        for (parent_args, parent_key, type_, type_args) in post_order:
+            init_fields = {}
+            for k, v in type_args.items():
+                if type_.__dataclass_fields__[k].init:
+                    init_fields[k] = v
+            parent_args[parent_key] = type_(**init_fields)
+            for k, v in type_args.items():
+                if not type_.__dataclass_fields__[k].init:
+                    setattr(parent_args[parent_key], k, v)
+
+        root_args['root'] = cls(root_type_args['iterable'])
+        return root_args['root']
 
 class IOStore:
     def data(self, key: str) -> Any:
