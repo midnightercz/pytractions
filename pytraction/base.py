@@ -106,7 +106,7 @@ class DefaultOut:
 
 
 def _hash(obj):
-    return hashlib.sha256(json.dumps(obj.to_json(), sort_keys=True)).hexdigest()
+    return int(hashlib.sha256(json.dumps(obj.to_json(), sort_keys=True).encode('utf-8')).hexdigest(), base=16)
 
 
 class BaseMeta(type):
@@ -524,6 +524,7 @@ class Base(ABase, metaclass=BaseMeta):
 
         return root_args['root']
 
+
 T = TypeVar("T")
 TK = TypeVar("TK")
 TV = TypeVar("TV")
@@ -567,7 +568,8 @@ class TList(Base, Generic[T]):
         return self._list.__getitem__(x)
 
     def __iter__(self):
-        return self._list.__iter__()
+        for x in self._list:
+            yield x
 
     def __len__(self):
         return self._list.__len__()
@@ -786,9 +788,10 @@ class TDict(Base, Generic[TK, TV]):
         return self.__class__(new_d)
 
     def get(self, key: TK, default=None):
-        if TypeNode.from_type(type(key)) != TypeNode.from_type(TK):
+        _tk = self._params[0]
+        if TypeNode.from_type(type(key)) != TypeNode.from_type(_tk):
             raise TypeError(f"Cannot get item by key {key} of type {type(key)} in dict of type TDict[{self._params}]")
-        return self._dict.get(key, default=default)
+        return self._dict.get(key, default)
 
     def items(self):
         return self._dict.items()
@@ -948,15 +951,11 @@ class _DefaultIOStore:
 DefaultIOStore = _DefaultIOStore()
 
 
-class In(Base, Generic[T]):
-    """Class used for input of a Traction instance. Once connected it redirect all
-    calls to internal _ref variable which is connected output, therefore it's not possible to
-    access the original class.
-    Class needs to be used with specific type as generic Typevar
-
-    Example: In[str](data='foo')
+class STMDSingleIn(Base, Generic[T]):
+    """Special input class which works like regular `In` class, however when
+    used in `STMD` class definition. It's not processes as list of inputs but as
+    single input used as constant input over STMD Tractions.
     """
-
     _TYPE: str = "IN"
 
     _ref: Optional[T] = None
@@ -1020,16 +1019,19 @@ class In(Base, Generic[T]):
             return self.data
 
 
-class STMDSingleIn(In, Generic[T]):
-    """Special input class which works like regular `In` class, however when
-    used in `STMD` class definition. It's not processes as list of inputs but as
-    single input used as constant input over STMD Tractions.
+class In(STMDSingleIn, Generic[T]):
+    """Class used for input of a Traction instance. Once connected it redirect all
+    calls to internal _ref variable which is connected output, therefore it's not possible to
+    access the original class.
+    Class needs to be used with specific type as generic Typevar
+
+    Example: In[str](data='foo')
     """
 
     data: Optional[T]
 
 
-class Out(STMDSingleIn, Generic[T]):
+class Out(In, Generic[T]):
     """Class used to define Traction output. Output can be connected only to a Traction input `In` or
     `STMDSingleIn`
     """
@@ -1303,7 +1305,7 @@ be overwritten
             vtype = value.__class__
             tt1 = TypeNode.from_type(vtype)
             tt2 = TypeNode.from_type(self._fields[name])
-            if tt1 != tt2:
+            if tt1 != tt2:# and tt2 != tt1:
                 raise TypeError(f"Cannot set attribute {self.__class__}.{name} to type {vtype}, expected  {self._fields[name]}")
 
         if name.startswith("i_"):
@@ -1480,8 +1482,6 @@ If an exception is raised during the execution:
         for o, oval in outs.items():
             setattr(ret, o, oval)
         return ret
-
-
 
 
 class STMDMeta(TractionMeta):
