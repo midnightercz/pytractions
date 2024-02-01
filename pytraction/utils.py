@@ -48,6 +48,7 @@ class OType:
         return f"OType({self.origins}, {self.args}, {self.parameters})"
 
     def __eq__(self, other):
+        print("OType.__eq__")
         return (
             self.origins == other.origins
             and self.args == other.args
@@ -203,6 +204,7 @@ class Node:
         return post_order
 
     def __eq__(self, other):
+        print("Node __eq__")
         if type(other) != Node:
             return False
 

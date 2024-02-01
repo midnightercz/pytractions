@@ -110,6 +110,14 @@ def _hash(obj):
 
 
 class BaseMeta(type):
+    """Metaclass for Base class.
+    Metaclass does following:
+    - It replaces standard __setattr__ with __setattr__ with type validation (if set in config)
+    - It forbids user to define public attributes which are not type of int, float, string, None, Base
+    - It force all public properties to be annotated
+
+
+    """
     def __repr__(cls):
         qname = cls.__orig_qualname__ if hasattr(cls, "__orig_qualname__") else cls.__qualname__ 
         if cls._params:
@@ -467,7 +475,12 @@ class Base(ABase, metaclass=BaseMeta):
         stack: List[Tuple[Dict[str, JSON_COMPATIBLE], str, Dict[str, JSON_COMPATIBLE], Type[Optional[Self]], Dict[str, ANY]]] = []
         post_order = []
         root_args: Dict[str, Any] = {"root": None}
-        stack.append((root_args, 'root', json_data, cls, {}))
+        if json_data.get('$type'):
+            json_cls = TypeNode.from_json(json_data.get('$type')).to_type()
+        else:
+            json_cls = cls
+
+        stack.append((root_args, 'root', json_data, json_cls, {}))
 
         while stack:
             parent_args, parent_key, data, type_, type_args = stack.pop(0)
@@ -955,10 +968,17 @@ class STMDSingleIn(Base, Generic[T]):
     """Special input class which works like regular `In` class, however when
     used in `STMD` class definition. It's not processes as list of inputs but as
     single input used as constant input over STMD Tractions.
+
+    Whole class contains all logic for `Input` class. There's no different in behaviour
+    for `STMDSingleIn`. Only difference how `STMD` handles this type as mentioned above.
+    Reason why `STMDSingleIn` is base class and `In` inherits from it is to enable assignment
+    of STMDSinglein input defined in tractor to input of a traction in the tractor as to input
+    you can only assign subclass of it. Therefore to Out you can assign `Out`, `In`, `STMDSingleIn`
+    and to `In` you can only assign `STMDSingleIn` and `In`
     """
     _TYPE: str = "IN"
 
-    _ref: Optional[T] = None
+    _ref: Optional[T] = dataclasses.field(repr=False, init=False, default=None, compare=False)
     # data here are actually not used after input is assigned to some output
     # it's just to deceive mypy
     data: Optional[T]
@@ -1002,7 +1022,8 @@ class STMDSingleIn(Base, Generic[T]):
         if name == 'data':
             return object.__getattribute__(self, '_io_store').data(self.uid)
         else:
-            return object.__getattribute__(self, name)
+            ret = object.__getattribute__(self, name)
+            return ret
 
     @property
     def uid(self):
@@ -1326,7 +1347,8 @@ be overwritten
             # in the case input is not set, initialize it
             elif not hasattr(self, name):
                 super().__setattr__(name, value)
-            self.__getattribute_orig__(name)._ref = value
+
+            super().__getattribute__(name)._ref = value
             return
 
         elif name.startswith("o_"):

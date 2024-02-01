@@ -194,8 +194,8 @@ class Tractor(Traction, metaclass=TractorMeta):
     def _init_traction(self, traction_name, traction):
         init_fields = {}
         for ft, field in traction.__dataclass_fields__.items():
-            # set all inputs for the traction to outputs of traction copy
-            # created bellow
+            # set all inputs for the traction created at the end of this method 
+            # to outputs of traction copy in self.tractions
             if ft.startswith("i_"):
                 if (traction_name, ft) in self._io_map:
                     source, o_name = self._io_map[(traction_name, ft)]
@@ -208,27 +208,26 @@ class Tractor(Traction, metaclass=TractorMeta):
                 init_fields[ft] = getattr(self, self_field)
             elif ft.startswith("a_"):
                 # First check if whole argument can be found in map
+                # of global tractor arguments
                 if (traction_name, ft) in self._args_map:
-                    #print("TRACTION ARG", traction_name, ft)
                     self_field = self._args_map[(traction_name, ft)]
                     if isinstance(self_field, tuple):
                         init_fields[ft] = getattr(getattr(self, self_field[0]), self_field[1])
                     else:
                         init_fields[ft] = getattr(self, self_field)
-
+                # handle MultiArg type
                 elif TypeNode.from_type(field.type, subclass_check=True) == TypeNode.from_type(MultiArg):
                     ma_init_fields = {}
                     for maf, _ in field.type._fields.items():
-                        #print(ma_init_fields, self._margs_map)
                         if (traction_name, ft, maf) in self._margs_map:
                             self_field = self._margs_map[(traction_name, ft, maf)]
                             ma_init_fields[maf] = getattr(self, self_field)
                     init_fields[ft] = field.type(**ma_init_fields)
-                    #print("multiarg traction init", traction_name, ft, init_fields[ft])
+                # if argument is not found in arg mapping, use default value
                 elif (traction_name, ft) not in self._args_map:
-                    #print("default traction init", traction_name, ft, getattr(traction, ft))
                     init_fields[ft] = getattr(traction, ft)
             elif ft == 'uid':
+                # change uid to be tractor.uid::traction.uid 
                 init_fields[ft] = "%s::%s" % (self.uid, getattr(traction, ft))
             # if field doesn't start with _ include it in init_fields to
             # initialize the traction copy
@@ -240,17 +239,14 @@ class Tractor(Traction, metaclass=TractorMeta):
 
     def __post_init__(self):
         self.tractions = TDict[str, Traction]({})
-        #self.tractions.clear()
         for f in self._fields:
             # Copy all tractions
             if f.startswith("t_"):
                 traction = getattr(self, f)
                 new_traction = self._init_traction(f, traction)
                 self.tractions[f] = new_traction
-
-                ### also put new traction in tractions list used in run
-                ## #self.tractions.append(new_traction)
         for f in self._fields:
+            # set tractor output to outputs of copied tractions
             if f.startswith("o_"):
                 # regular __setattr__ don't overwrite whole output model but just
                 # data in it to keep connection, so need to use _no_validate_setattr
@@ -260,19 +256,13 @@ class Tractor(Traction, metaclass=TractorMeta):
                 # for MulArgs which are mapped to args, overwrite them
                 fo = getattr(self, f)
                 if isinstance(fo, MultiArg):
-                    #print("post init ma", f, self._margs_map)
                     for maf in fo._fields:
                         if ("#", f, maf) in self._margs_map:
                             setattr(fo, maf, getattr(self, self._margs_map[("#", f, maf)]))
 
-        #print("--")
-        #print("Traction waves", self._traction_waves)
-
     def _run(self, on_update: Optional[OnUpdateCallable] = None) -> Self:  # pragma: no cover
         for tname, traction in self.tractions.items():
-            #print("Running traction", traction.fullname)
             traction.run(on_update=on_update)
-            #setattr(self, list(self._tractions.keys())[n], traction)
             if on_update:
                 on_update(self)
             if traction.state == TractionState.ERROR:

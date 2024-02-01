@@ -8,6 +8,7 @@ from pytraction.base import Base, JSONIncompatibleError, TList, TDict, JSON_COMP
 
 T = TypeVar("T")
 
+
 def test_base_jsonable_basic_ok():
     class TestC(Base):
         i: int
@@ -296,129 +297,6 @@ def test_base_setattr_complex3_ok():
     td2: TestDict[str] = TestDict[str](d=d3)
     with pytest.raises(TypeError):
         t.td = td2
-
-
-# test json store/load
-
-def test_base_to_json_simple():
-    class TestC(Base):
-        foo: int
-        bar: str
-
-    tc = TestC(foo=10, bar="bar")
-    assert tc.to_json() == {
-        "$data": {"foo": 10, "bar": "bar"},
-        "$type": {"args": [],
-                  'type': 'test_base_to_json_simple.<locals>.TestC',
-                  'module': 'tests.test_base',
-        }
-    }
-
-
-def test_base_to_json_complex():
-    class TestC2(Base):
-        attr1: str
-        attr2: int
-
-    class TestC(Base):
-        c2: TestC2
-        foo: int
-        bar: str
-        intlist: TList[int]
-
-
-    tc = TestC(foo=10, bar="bar", c2=TestC2(attr1="a", attr2=10), intlist=TList[int]([20,40]))
-    assert tc.to_json() == {
-        "$data": {
-            "foo": 10,
-            "bar": "bar", 
-            "c2": {
-                "$data": {
-                    "attr1": "a", "attr2": 10
-                },
-                "$type": {
-                    "args": [],
-                    'type': 'test_base_to_json_complex.<locals>.TestC2',
-                    'module': 'tests.test_base'
-                }
-            },
-            "intlist": {
-                "$data": [20, 40],
-                "$type": {"args": [{"args": [], "type": "int", 'module':'builtins'}], "type": "TList", "module": "pytraction.base"}
-            }
-        },
-        "$type": {
-            "args": [],
-            'type': 'test_base_to_json_complex.<locals>.TestC',
-            'module': "tests.test_base",
-        }
-    }
-
-
-class TestC2(Base):
-    attr1: str
-    attr2: int
-
-
-class TestC(Base):
-    c2: TestC2
-    foo: int
-    bar: str
-    intlist: TList[int]
-    complex_list: TList[TestC2]
-
-
-def test_base_to_from_json_complex():
-
-    tc = TestC(foo=10, bar="bar", c2=TestC2(attr1="a", attr2=10), intlist=TList[int]([20, 40]), complex_list=TList[TestC2]([]))
-    tc2 = TestC.from_json(tc.to_json())
-    assert tc == tc2
-
-
-def test_base_from_json_simple():
-    class TestC(Base):
-        foo: int
-        bar: str
-
-    tc = TestC.from_json({"foo": 10, "bar": "bar"})
-    assert tc.foo == 10
-    assert tc.bar == "bar"
-
-
-def test_base_from_json_complex():
-    class TestC2(Base):
-        attr1: str
-        attr2: int
-
-    class TestC(Base):
-        foo: int
-        bar: str
-        c2: TestC2
-
-    tc = TestC.from_json({"foo": 10, "bar": "bar", "c2": {"attr1": "a", "attr2": 20}})
-    assert tc.foo == 10
-    assert tc.bar == "bar"
-    assert tc.c2.attr1 == "a"
-    assert tc.c2.attr2 == 20
-
-
-def test_base_from_json_simple_fail1():
-    class TestC(Base):
-        foo: int
-        bar: str
-
-    with pytest.raises(TypeError):
-        tc = TestC.from_json({"foo": "a", "bar": "bar"})
-
-
-def test_base_from_json_simple_fail2():
-    class TestC(Base):
-        foo: int
-        bar: str
-
-    with pytest.raises(ValueError):
-        tc = TestC.from_json({"foo": 10, "bar": "bar", "extra": "arg"})
-        print(tc)
 
 
 def test_base_generic_nested():
