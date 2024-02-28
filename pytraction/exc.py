@@ -15,3 +15,9 @@ class DuplicateTractorError(Exception):
 
 class TractionFailedError(Exception):
     """Exception indidating failure of a step."""
+
+
+class UninitiatedResource(Exception):
+    """Exception indidating resource is not initiated."""
+    def __init__(self, msg):
+        self.msg = msg

@@ -163,6 +163,8 @@ class BaseMeta(type):
                 _setattr = find_attr(bases, '_no_validate_setattr_')
             attrs['__setattr__'] = attrs['_no_validate_setattr_']
 
+
+
         annotations = attrs.get('__annotations__', {})
         for attr, attrv in attrs.items():
             # skip annotation check for methods and functions
@@ -198,6 +200,8 @@ class BaseMeta(type):
                         default = attrs[attr].default_factory
                 elif type(attrs[attr]) in (str, int, None, float):
                     default = attrs[attr]
+                elif TypeNode.from_type(attrs[attr]) == TypeNode.from_type(Optional[ANY]):
+                    default = None
                 else:
                     default = type(attrs[attr])
 
@@ -360,8 +364,8 @@ class Base(ABase, metaclass=BaseMeta):
 
             if not tn.json_compatible():
                 raise JSONIncompatibleError(f"Attribute  {attr}: {new_type} is not json compatible")
-            if attr not in kwds:
-                kwds[attr] = new_type
+            #if attr not in kwds:
+            #    kwds[attr] = new_type
             kwds["__annotations__"][attr] = new_type
 
         for k, kf in kwds.items():
@@ -537,6 +541,13 @@ class Base(ABase, metaclass=BaseMeta):
 
         return root_args['root']
 
+    def __eq__(self, other):
+        if TypeNode.from_type(type(self)) != TypeNode.from_type(type(other)):
+            return False
+        for f in self._fields:
+            if getattr(self, f) != getattr(other, f):
+                return False
+        return True
 
 T = TypeVar("T")
 TK = TypeVar("TK")
@@ -861,8 +872,11 @@ class TDict(Base, Generic[TK, TV]):
         pre_order['root'] = {}
         stack: List[Tuple[Base, Dict[str, Any], str]] = []
         for k, v in self._dict.items():
-            pre_order['root'][k] = None
-            stack.append((v, pre_order['root'], k))
+            jsonk = k 
+            if not isinstance(k, (str, int, float, bool, type(None))):
+                jsonk = json.dumps(k.content_to_json(), sort_keys=True)
+            pre_order['root'][jsonk] = None
+            stack.append((v, pre_order['root'], jsonk))
         while stack:
             current, current_parent, parent_key = stack.pop(0)
             if isinstance(current, (TList, TDict, Base)):
@@ -981,7 +995,7 @@ class STMDSingleIn(Base, Generic[T]):
     _ref: Optional[T] = dataclasses.field(repr=False, init=False, default=None, compare=False)
     # data here are actually not used after input is assigned to some output
     # it's just to deceive mypy
-    data: Optional[T]
+    data: Optional[T] = None
     _name: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
     _owner: Optional[_Traction] = dataclasses.field(repr=False, init=False, default=None, compare=False)
     _io_store: IOStore = dataclasses.field(repr=False, init=False, compare=False)
@@ -1049,7 +1063,7 @@ class In(STMDSingleIn, Generic[T]):
     Example: In[str](data='foo')
     """
 
-    data: Optional[T]
+    data: Optional[T] = None
 
 
 class Out(In, Generic[T]):
@@ -1060,7 +1074,7 @@ class Out(In, Generic[T]):
     _TYPE: str = "OUT"
 
     _io_store: IOStore = dataclasses.field(repr=False, init=False, compare=False)
-    data: Optional[T]
+    data: Optional[T] = None
     _uid: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
 
     def __post_init__(self):
@@ -1099,6 +1113,18 @@ class Res(Base, Generic[T]):
 
     _TYPE: str = "RES"
     r: T
+
+class TRes(Res, Generic[T]):
+    """Class represeting Traction resources.
+
+    Usage: Res[GithubClient](r=gh_client)
+    """
+
+    _TYPE: str = "RES"
+    r: Optional[T] = None
+
+    def __post_init__(self):
+        self._no_validate_setattr_("r", None)
 
 
 class Arg(Base, Generic[T]):
@@ -1648,8 +1674,11 @@ class STMD(Traction, metaclass=STMDMeta):
         ret = traction(**init_fields)
 
         for ft in traction._fields:
-            if ft.startswith("o_"):
-                getattr(self, ft).data[index] = getattr(ret, ft)
+            try:
+                if ft.startswith("o_"):
+                    getattr(self, ft).data[index] = getattr(ret, ft)
+            except Exception as e:
+                raise RuntimeError(f"Failed to copy traction {self._traction}. Field {ft}") from e
 
         if not connect_inputs:
             return ret
@@ -1692,7 +1721,7 @@ class STMD(Traction, metaclass=STMDMeta):
                 break
 
         if not first_in:
-            raise RuntimeError("Cannot have STMD with only SingleIn inputs")
+            raise RuntimeError("Cannot have STMD with only STMDSingleIn inputs")
 
         for key in inputs:
             if inputs[key].data is None:

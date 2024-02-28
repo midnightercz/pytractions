@@ -7,9 +7,10 @@ from typing_extensions import Self
 from .base import (
     Traction, TractionStats, TractionState, TList, TDict, TractionMeta, Arg, MultiArg, In, Out, Res, ANY, TypeNode,
     OnUpdateCallable, OnErrorCallable, on_update_empty, TractionFailedError,
-    NoData, isodate_now
+    NoData, TRes, isodate_now
 
 )
+from .exc import UninitiatedResource
 
 
 class TractorMeta(TractionMeta):
@@ -259,6 +260,10 @@ class Tractor(Traction, metaclass=TractorMeta):
                     for maf in fo._fields:
                         if ("#", f, maf) in self._margs_map:
                             setattr(fo, maf, getattr(self, self._margs_map[("#", f, maf)]))
+            if f.startswith("r_"):
+                fo = getattr(self, f)
+                if isinstance(fo, TRes):
+                    raise UninitiatedResource(f"{f}")
 
     def _run(self, on_update: Optional[OnUpdateCallable] = None) -> Self:  # pragma: no cover
         for tname, traction in self.tractions.items():
