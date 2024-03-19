@@ -38,7 +38,8 @@ setup(
         "dill",
         "mypy",
         "typing_inspect",
-        "dataclasses_json"
+        "dataclasses_json",
+        "pyyaml"
     ],
     include_package_data=True,
 )

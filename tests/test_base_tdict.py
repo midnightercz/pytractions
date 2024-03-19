@@ -198,3 +198,166 @@ def test_base_dict_items():
 def test_base_dict_popitem():
     d: TDict[int, int] = TDict[int, int]({10: 10, 20: 20})
     assert d.popitem() == (20, 20)
+
+
+def test_base_dict_to_json_simple():
+    d: TDict[int, int] = TDict[int, int]({10: 10, 20: 20})
+    assert d.to_json() == {
+        '$type': {
+            'args': [
+                {'args': [],
+                 'module': 'builtins',
+                 'type': 'int',
+                },
+                {
+                 'args': [],
+                 'module': 'builtins',
+                 'type': 'int',
+                },
+            ],
+            'module': 'pytraction.base',
+            'type': 'TDict',
+        },
+        "$data": {
+            10: 10,
+            20: 20
+        }
+    }
+
+
+def test_base_dict_to_json_complex():
+    d: TDict[int, int] = TDict[int, TDict[str, int]]({10: TDict[str, int]({'a': 10}), 20: TDict[str, int]({"b": 20})})
+    assert d.to_json() == {
+        '$type': {
+            'args': [
+                {
+                    'args': [],
+                    'module': 'builtins',
+                    'type': 'int',
+                },
+                {
+                    'args': [
+                        {
+                            'args': [],
+                            'module': 'builtins',
+                            'type': 'str',
+                        },
+                        {
+                            'args': [],
+                            'module': 'builtins',
+                            'type': 'int',
+                        },
+                    ],
+                    'module': 'pytraction.base',
+                    'type': 'TDict',
+                },
+            ],
+            'module': 'pytraction.base',
+            'type': 'TDict',
+        },
+        "$data": {
+             10: {
+                 '$data': {
+                     'a': 10,
+                 },
+                 '$type': {
+                     'args': [
+                         {
+                             'args': [],
+                             'module': 'builtins',
+                             'type': 'str',
+                         },
+                         {
+                             'args': [],
+                             'module': 'builtins',
+                             'type': 'int',
+                         },
+                     ],
+                     'module': 'pytraction.base',
+                     'type': 'TDict',
+                 },
+             },
+             20: {
+                 '$data': {
+                     'b': 20,
+                 },
+                 '$type': {
+                     'args': [
+                         {
+                             'args': [],
+                             'module': 'builtins',
+                             'type': 'str',
+                         },
+                         {
+                             'args': [],
+                             'module': 'builtins',
+                             'type': 'int',
+                         },
+                     ],
+                     'module': 'pytraction.base',
+                     'type': 'TDict',
+                 },
+             },
+        }
+    }
+
+def test_base_dict_to_json_complex_key():
+    key1: TList[str] = TList[str](["a", "b", "c"])
+    key2: TList[str] = TList[str](["d", "e", "f"])
+    d: TDict[int, int] = TDict[TList[str], int]({key1: 10, key2: 20})
+    assert d.to_json() == {
+         '$data': {
+             '{"$data": ["a", "b", "c"], "$type": {"args": [{"args": [], "module": "builtins", "type": "str"}], "module": "pytraction.base", "type": "TList"}}': 10,
+             '{"$data": ["d", "e", "f"], "$type": {"args": [{"args": [], "module": "builtins", "type": "str"}], "module": "pytraction.base", "type": "TList"}}': 20,
+         },
+         '$type': {
+             'args': [
+                 {
+                     'args': [
+                         { 
+                             'args': [],
+                             'module': 'builtins',
+                             'type': 'str',
+                         },
+                     ],
+                     'module': 'pytraction.base',
+                     'type': 'TList',
+                 },
+                 {
+                     'args': [],
+                     'module': 'builtins',
+                     'type': 'int',
+                 },
+             ],
+             'module': 'pytraction.base',
+             'type': 'TDict',
+        }
+    }
+
+
+
+
+def test_base_dict_from_json_simple():
+    json_dict = {
+        '$type': {
+            'args': [
+                {'args': [],
+                 'module': 'builtins',
+                 'type': 'int',
+                },
+                {
+                 'args': [],
+                 'module': 'builtins',
+                 'type': 'int',
+                },
+            ],
+            'module': 'pytraction.base',
+            'type': 'TDict',
+        },
+        "$data": {
+            10: 10,
+            20: 20
+        }
+    }
+    d: TDict[int, int] = TDict[int,int].from_json(json_dict)
+    assert d == TDict[int, int]({10: 10, 20: 20})

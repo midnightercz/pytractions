@@ -24,7 +24,7 @@ from typing import (
     Tuple,
     Type,
     Callable,
-    get_args
+    get_args,
 )
 from typing_extensions import Self
 
@@ -79,13 +79,18 @@ class DefaultOut:
     def copy(self, generic_cache):
         return DefaultOut(
             type_=TypeNode.from_type(self.type_).to_type(types_cache=generic_cache),
-            params=(TypeNode.from_type(self.params[0]).to_type(types_cache=generic_cache),)
+            params=(
+                TypeNode.from_type(self.params[0]).to_type(types_cache=generic_cache),
+            ),
         )
 
     def __call__(self):
         # handling Optional
-        if get_origin(self.type_) == Union and len(get_args(self.type_)) == 2 and \
-           get_args(self.type_)[-1] == type(None):
+        if (
+            get_origin(self.type_) == Union
+            and len(get_args(self.type_)) == 2
+            and get_args(self.type_)[-1] == type(None)
+        ):
             ret = Out[self.params]()
         else:
             ret = Out[self.params]()
@@ -106,7 +111,12 @@ class DefaultOut:
 
 
 def _hash(obj):
-    return int(hashlib.sha256(json.dumps(obj.to_json(), sort_keys=True).encode('utf-8')).hexdigest(), base=16)
+    return int(
+        hashlib.sha256(
+            json.dumps(obj.to_json(), sort_keys=True).encode("utf-8")
+        ).hexdigest(),
+        base=16,
+    )
 
 
 class BaseMeta(type):
@@ -118,18 +128,30 @@ class BaseMeta(type):
 
 
     """
+
     def __repr__(cls):
-        qname = cls.__orig_qualname__ if hasattr(cls, "__orig_qualname__") else cls.__qualname__ 
+        qname = (
+            cls.__orig_qualname__
+            if hasattr(cls, "__orig_qualname__")
+            else cls.__qualname__
+        )
         if cls._params:
             params = []
             for p in cls._params:
                 if get_origin(p) is Union:
-                    uparams = ",".join([repr(up) if up is not type(None) else 'NoneType' for up in sorted(get_args(p), key=lambda x: repr(x))])
+                    uparams = ",".join(
+                        [
+                            repr(up) if up is not type(None) else "NoneType"
+                            for up in sorted(get_args(p), key=lambda x: repr(x))
+                        ]
+                    )
                     params.append(f"Union[{uparams}]")
                 elif isinstance(p, cls):
                     params.append(repr(p))
                 else:
-                    params.append(p.__qualname__ if hasattr(p, "__qualname__") else p.__name__)
+                    params.append(
+                        p.__qualname__ if hasattr(p, "__qualname__") else p.__name__
+                    )
             params_str = ",".join(params)
             return f"{qname}[{params_str}]"
         else:
@@ -139,10 +161,14 @@ class BaseMeta(type):
     def _before_new(cls, name, attrs, bases):
         pass
 
+    @classmethod
+    def _attributes_preparation(cls, name, attrs, bases):
+        return attrs
+
     def __new__(cls, name, bases, attrs):
-        if '_config' in attrs:
+        if "_config" in attrs:
             assert TypeNode.from_type(type(attrs["_config"])) == TypeNode(BaseConfig)
-            config = attrs['_config']
+            config = attrs["_config"]
         else:
             # if not, provide default config
             config = BaseConfig()
@@ -151,28 +177,28 @@ class BaseMeta(type):
         if config.validate_set_attr:
             # if setter validation is on, use _validate_setattr_
             # or find it in class bases
-            if '_validate_setattr_' in attrs:
-                _setattr = attrs['_validate_setattr_']
+            if "_validate_setattr_" in attrs:
+                _setattr = attrs["_validate_setattr_"]
             else:
-                _setattr = find_attr(bases, '_validate_setattr_')
-            attrs['__setattr__'] = _setattr
+                _setattr = find_attr(bases, "_validate_setattr_")
+            attrs["__setattr__"] = _setattr
         else:
-            if '_no_validate_setattr_' in attrs:
-                _setattr = attrs['_no_validate_setattr_']
+            if "_no_validate_setattr_" in attrs:
+                _setattr = attrs["_no_validate_setattr_"]
             else:
-                _setattr = find_attr(bases, '_no_validate_setattr_')
-            attrs['__setattr__'] = attrs['_no_validate_setattr_']
+                _setattr = find_attr(bases, "_no_validate_setattr_")
+            attrs["__setattr__"] = attrs["_no_validate_setattr_"]
 
-
-
-        annotations = attrs.get('__annotations__', {})
+        annotations = attrs.get("__annotations__", {})
         for attr, attrv in attrs.items():
             # skip annotation check for methods and functions
-            if inspect.ismethod(attrv) or \
-                    inspect.isfunction(attrv) or \
-                    isinstance(attrv, classmethod) or \
-                    isinstance(attrv, property) or \
-                    isinstance(attrv, staticmethod):
+            if (
+                inspect.ismethod(attrv)
+                or inspect.isfunction(attrv)
+                or isinstance(attrv, classmethod)
+                or isinstance(attrv, property)
+                or isinstance(attrv, staticmethod)
+            ):
                 continue
             # attr starting with _ is considered to be private, there no checks
             # are applied
@@ -190,7 +216,9 @@ class BaseMeta(type):
                 continue
             # Check if type of attribute is json-compatible
             if not TypeNode.from_type(annotations[attr]).json_compatible():
-                raise JSONIncompatibleError(f"Attribute {attr} is not json compatible {annotations[attr]}")
+                raise JSONIncompatibleError(
+                    f"Attribute {attr} is not json compatible {annotations[attr]}"
+                )
             if attr in attrs:
                 if type(attrs[attr]) == dataclasses.Field:
                     default = dataclasses.MISSING
@@ -200,7 +228,9 @@ class BaseMeta(type):
                         default = attrs[attr].default_factory
                 elif type(attrs[attr]) in (str, int, None, float):
                     default = attrs[attr]
-                elif TypeNode.from_type(attrs[attr]) == TypeNode.from_type(Optional[ANY]):
+                elif TypeNode.from_type(attrs[attr]) == TypeNode.from_type(
+                    Optional[ANY]
+                ):
                     default = None
                 else:
                     default = type(attrs[attr])
@@ -209,8 +239,8 @@ class BaseMeta(type):
                     default = type(default())
 
                 defaults[attr] = default
-                #TODO: fix
-                #if default != dataclasses._MISSING_TYPE\
+                # TODO: fix
+                # if default != dataclasses._MISSING_TYPE\
                 #   and not isinstance(default, dataclasses._MISSING_TYPE)\
                 #   and TypeNode.from_type(type_) != TypeNode.from_type(default):
                 #    raise TypeError(f"Annotation for {attr} is {type_} but default is {default}")
@@ -225,17 +255,33 @@ class BaseMeta(type):
 
         for base in bases:
             for f, ft in fields.items():
-                if hasattr(base, "__dataclass_fields__") and f in base.__dataclass_fields__:
+                if (
+                    hasattr(base, "__dataclass_fields__")
+                    and f in base.__dataclass_fields__
+                ):
                     if base.__dataclass_fields__[f].default is not dataclasses.MISSING:
-                        defaults[f] = dataclasses.field(default=base.__dataclass_fields__[f].default)
-                    elif base.__dataclass_fields__[f].default_factory is not dataclasses.MISSING:
-                        defaults[f] = dataclasses.field(default_factory=base.__dataclass_fields__[f].default_factory)
+                        defaults[f] = dataclasses.field(
+                            default=base.__dataclass_fields__[f].default
+                        )
+                    elif (
+                        base.__dataclass_fields__[f].default_factory
+                        is not dataclasses.MISSING
+                    ):
+                        defaults[f] = dataclasses.field(
+                            default_factory=base.__dataclass_fields__[f].default_factory
+                        )
 
             for f, ft in getattr(base, "__annotations__", {}).items():
                 if f in fields:
                     all_annotations[f] = ft
 
-        fields.update({k: v for k, v in attrs.get('__annotations__', {}).items() if not k.startswith("_")})
+        fields.update(
+            {
+                k: v
+                for k, v in attrs.get("__annotations__", {}).items()
+                if not k.startswith("_")
+            }
+        )
         all_annotations.update(annotations)
         attrs["__annotations__"] = all_annotations
 
@@ -243,12 +289,12 @@ class BaseMeta(type):
             if default not in attrs:
                 attrs[default] = defval
 
-        attrs['_fields'] = fields
-        attrs['__hash__'] = _hash
+        attrs["_fields"] = fields
+        attrs["__hash__"] = _hash
 
         cls._before_new(name, attrs, bases)
-
         ret = super().__new__(cls, name, bases, attrs)
+
         ret = dataclasses.dataclass(ret, kw_only=True)
         return ret
 
@@ -275,17 +321,29 @@ class Base(ABase, metaclass=BaseMeta):
 
     def _validate_setattr_(self, name: str, value: Any) -> None:
         if not name.startswith("_"):  # do not check for private attrs
-            properties = dict(inspect.getmembers(self.__class__, lambda o: isinstance(o, property)))
+            properties = dict(
+                inspect.getmembers(self.__class__, lambda o: isinstance(o, property))
+            )
 
-            if name not in self._fields and not self._config.allow_extra and name not in properties:
+            if (
+                name not in self._fields
+                and not self._config.allow_extra
+                and name not in properties
+            ):
                 raise AttributeError(f"{self.__class__} doesn't have attribute {name}")
 
             if name not in properties:
-                vtype = value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
+                vtype = (
+                    value.__orig_class__
+                    if hasattr(value, "__orig_class__")
+                    else value.__class__
+                )
                 tt1 = TypeNode.from_type(vtype)
                 tt2 = TypeNode.from_type(self._fields[name])
                 if tt1 != tt2:
-                    raise TypeError(f"Cannot set attribute {self.__class__}.{name} to {value}({vtype}), expected {self._fields[name]}")
+                    raise TypeError(
+                        f"Cannot set attribute {self.__class__}.{name} to {value}({vtype}), expected {self._fields[name]}"
+                    )
             else:
                 getattr(self.__class__, name).setter(value)
                 return
@@ -312,7 +370,9 @@ class Base(ABase, metaclass=BaseMeta):
                 if get_origin(p) is Optional:
                     stack.insert(0, ("Optional", get_args(p)))
                 if get_origin(p) is Union:
-                    stack.insert(0, ("Union", sorted(get_args(p), key=lambda x: repr(x))))
+                    stack.insert(
+                        0, ("Union", sorted(get_args(p), key=lambda x: repr(x)))
+                    )
                 elif hasattr(p, "_params"):
                     if hasattr(p, "__orig_qualname__"):
                         stack.insert(0, (p.__orig_qualname__, p._params))
@@ -339,14 +399,18 @@ class Base(ABase, metaclass=BaseMeta):
 
         # param ids for caching as TypeVars are class instances
         # therefore has to compare with id() to get good param replacement
-        _param_ids = tuple([id(p) for p in param]) if isinstance(param, tuple) else (id(param),)
+        _param_ids = (
+            tuple([id(p) for p in param]) if isinstance(param, tuple) else (id(param),)
+        )
         qname = cls._make_qualname(cls, _params)
         # if there's already existing class, return it instead
         if qname in sys.modules[cls.__module__].__dict__:
             ret = sys.modules[cls.__module__].__dict__[qname]
             return ret
 
-        bases = [x for x in resolve_bases([cls] + list(cls.__bases__)) if x is not Generic]
+        bases = [
+            x for x in resolve_bases([cls] + list(cls.__bases__)) if x is not Generic
+        ]
         attrs = {k: v for k, v in cls._attrs.items() if k not in ("_attrs", "_fields")}
 
         meta, ns, kwds = prepare_class(f"{cls.__name__}[{param}]", bases, attrs)
@@ -360,11 +424,15 @@ class Base(ABase, metaclass=BaseMeta):
             tn = TypeNode.from_type(type_)
             # field params needs to be replaced as field can also reffer to TypeVar
             tn.replace_params(_params_map)
-            new_type = tn.to_type(types_cache=cls._generic_cache, params_map=_params_map)
+            new_type = tn.to_type(
+                types_cache=cls._generic_cache, params_map=_params_map
+            )
 
             if not tn.json_compatible():
-                raise JSONIncompatibleError(f"Attribute  {attr}: {new_type} is not json compatible")
-            #if attr not in kwds:
+                raise JSONIncompatibleError(
+                    f"Attribute  {attr}: {new_type} is not json compatible"
+                )
+            # if attr not in kwds:
             #    kwds[attr] = new_type
             kwds["__annotations__"][attr] = new_type
 
@@ -379,17 +447,22 @@ class Base(ABase, metaclass=BaseMeta):
                 hash=kf.hash,
                 compare=kf.compare,
                 metadata=kf.metadata,
-                kw_only=kf.kw_only)
+                kw_only=kf.kw_only,
+            )
 
             if hasattr(new_kf.default_factory, "replace_params"):
-                new_default_factory = new_kf.default_factory.copy(generic_cache=cls._generic_cache)
+                new_default_factory = new_kf.default_factory.copy(
+                    generic_cache=cls._generic_cache
+                )
                 new_default_factory.replace_params(_params_map, cls._generic_cache)
                 new_kf.default_factory = new_default_factory
             else:
                 if new_kf.default_factory is not dataclasses.MISSING:
                     new_default_factory = TypeNode.from_type(new_kf.default_factory)
                     new_default_factory.replace_params(_params_map)
-                    new_default_factory = new_default_factory.to_type(types_cache=cls._generic_cache)
+                    new_default_factory = new_default_factory.to_type(
+                        types_cache=cls._generic_cache
+                    )
                     new_kf.default_factory = new_default_factory
 
             kwds[k] = new_kf
@@ -400,10 +473,10 @@ class Base(ABase, metaclass=BaseMeta):
         else:
             kwds["_orig_cls"] = cls
 
-        kwds['__orig_qualname__'] = kwds.get('__orig_qualname__', kwds['__qualname__'])
-        kwds['__qualname__'] = cls._make_qualname(cls, _params)
+        kwds["__orig_qualname__"] = kwds.get("__orig_qualname__", kwds["__qualname__"])
+        kwds["__qualname__"] = cls._make_qualname(cls, _params)
 
-        ret = meta(kwds['__qualname__'], tuple(bases), kwds)
+        ret = meta(kwds["__qualname__"], tuple(bases), kwds)
 
         sys.modules[ret.__module__].__dict__[ret.__qualname__] = ret
 
@@ -420,75 +493,179 @@ class Base(ABase, metaclass=BaseMeta):
         stack: List[Tuple[Base, Dict[str, Any], str]] = [(self, pre_order, "root")]
         while stack:
             current, current_parent, parent_key = stack.pop(0)
-            if not isinstance(current, (int, str, bool, float, type(None), TList, TDict)):
-                current_parent[parent_key] = {"$type": TypeNode.from_type(current.__class__).to_json(), "$data": {}}
+            if not isinstance(
+                current, (int, str, bool, float, type(None), TList, TDict)
+            ):
+                current_parent[parent_key] = {
+                    "$type": TypeNode.from_type(current.__class__).to_json(),
+                    "$data": {},
+                }
                 for f in current._fields:
-                    stack.append((getattr(current, f), current_parent[parent_key]['$data'], f))
+                    stack.append(
+                        (getattr(current, f), current_parent[parent_key]["$data"], f)
+                    )
             elif isinstance(current, (TList, TDict)):
                 current_parent[parent_key] = current.to_json()
             else:
                 current_parent[parent_key] = current
-        return pre_order['root']
+        return pre_order["root"]
 
     def content_to_json(self) -> Dict[str, Any]:
         """Similar to `Base.to_json` method, but doesn't include information of type of the object.
-        Only it's content. This is exit only method. Output if this method cannot be used as 
+        Only it's content. This is exit only method. Output if this method cannot be used as
         input for any 'load' method.
         """
         pre_order: Dict[str, Any] = {"root": {}}
         stack: List[Tuple[Base, Dict[str, Any], str]] = []
         for f in self._fields:
-            stack.append((getattr(self, f), pre_order['root'], f))
+            stack.append((getattr(self, f), pre_order["root"], f))
         while stack:
             current, current_parent, parent_key = stack.pop(0)
             if isinstance(current, (TList, TDict, Base)):
                 current_parent[parent_key] = current.content_to_json()
             else:
                 current_parent[parent_key] = current
-        return pre_order['root']
+        return pre_order["root"]
+
+    @classmethod
+    def content_from_json(cls, json_dict: Dict[str, Any]):
+        root_init_fields = {}
+        stack: List[
+            Tuple[
+                Type[ANY],  # parent class
+                Union[Optional[str], Optional[int]],  # parent field
+                Union[
+                    TList[JSON_COMPATIBLE], Dict[str, JSON_COMPATIBLE]
+                ],  # parent_init_fields
+                Dict[str, ANY],  # json_data
+            ]
+        ] = []
+        order: List[
+            Tuple[Type[Any], Dict[str, JSON_COMPATIBLE], Union[str, int], JSON_COMPATIBLE]
+
+        ] = []
+        stack.append((cls, 'root', json_dict, root_init_fields))
+
+        # for f, fval in cls._fields.items():
+        #    if f in json_dict:
+        #        stack.append((cls, root_init_fields, f, json_dict[f]))
+        while stack:
+            (
+                parent_cls,
+                parent_key,
+                _json_dict,
+                parent_init_fields
+            ) = stack.pop(0)
+            if TypeNode.from_type(parent_cls) == TypeNode.from_type(TList[ANY]):
+                init_fields = [None for x in range(len(_json_dict))]
+                if parent_cls._params[0] in (str, int, float, type(None)):
+                    for n, value in enumerate(_json_dict):
+                        init_fields[n] = value
+                else:
+                    for n, value in enumerate(_json_dict):
+                        stack.append((parent_cls._params[0], n, value, init_fields))
+                order.insert(0, (parent_cls, parent_init_fields, parent_key, init_fields))
+            elif TypeNode.from_type(parent_cls) == TypeNode.from_type(TDict[ANY, ANY]):
+                init_fields = {}
+                if parent_cls._params[1] in (str, int, float, type(None)):
+                    for k, v in _json_dict.items():
+                        init_fields[k] = v
+                else:
+                    for k, v in _json_dict.items():
+                        stack.append((parent_cls._params[1], k, v, init_fields))
+                order.insert(0, (parent_cls, parent_init_fields, parent_key, init_fields))
+            else:
+                init_fields = {}
+                for f, ftype in parent_cls._fields.items():
+                    if ftype in (str, int, float, type(None)):
+                        init_fields[f] = _json_dict[f]
+                    else:
+                        stack.append((ftype, f, _json_dict[f], init_fields))
+                order.insert(0, (parent_cls, parent_init_fields, parent_key, init_fields))
+        for (_cls, parent_init_fields, parent_key, init_fields) in order:
+            if TypeNode.from_type(_cls) == TypeNode.from_type(TList[ANY]) or\
+               TypeNode.from_type(_cls) == TypeNode.from_type(TDict[ANY, ANY]):
+                parent_init_fields[parent_key] = _cls(init_fields)
+            else:
+                parent_init_fields[parent_key] = _cls(**init_fields)
+        return root_init_fields["root"]
+
 
     @classmethod
     def type_to_json(cls) -> Dict[str, Any]:
-        """Similar to `Base.to_json` method, but dumps information only of type of the object
-        """
+        """Similar to `Base.to_json` method, but dumps information only of type of the object"""
         pre_order: Dict[str, Any] = {}
         # stack is list of (current_cls_to_process, current_parent, current_key, current_default)
-        stack: List[Tuple[Type[Base], Dict[str, Any], str, Optional[JSON_COMPATIBLE]]] = [(cls, pre_order, "root", None)]
+        stack: List[
+            Tuple[Type[Base], Dict[str, Any], str, Optional[JSON_COMPATIBLE]]
+        ] = [(cls, pre_order, "root", None)]
         while stack:
             current, current_parent, parent_key, current_default = stack.pop(0)
             if hasattr(current, "_TYPE"):
-                current_parent['_TYPE'] = current._TYPE
-            if hasattr(current, "_CUSTOM_TYPE_TO_JSON") and current._CUSTOM_TYPE_TO_JSON and current != cls:
+                current_parent["_TYPE"] = current._TYPE
+            if (
+                hasattr(current, "_CUSTOM_TYPE_TO_JSON")
+                and current._CUSTOM_TYPE_TO_JSON
+                and current != cls
+            ):
                 current_parent[parent_key] = current.type_to_json()
             elif hasattr(current, "_fields"):
-                current_parent[parent_key] = {"$type": TypeNode.from_type(current).to_json()}
+                current_parent[parent_key] = {
+                    "$type": TypeNode.from_type(current).to_json()
+                }
                 for f, ftype in current._fields.items():
-                    if type(current.__dataclass_fields__[f].default) in (str, int, float, None):
-                        stack.append((ftype, current_parent[parent_key], f, current.__dataclass_fields__[f].default))
+                    if type(current.__dataclass_fields__[f].default) in (
+                        str,
+                        int,
+                        float,
+                        None,
+                    ):
+                        stack.append(
+                            (
+                                ftype,
+                                current_parent[parent_key],
+                                f,
+                                current.__dataclass_fields__[f].default,
+                            )
+                        )
                     else:
                         stack.append((ftype, current_parent[parent_key], f, None))
             else:
-                current_parent[parent_key] = {"$type": TypeNode.from_type(current).to_json(), "default": current_default}
-        return pre_order['root']
+                current_parent[parent_key] = {
+                    "$type": TypeNode.from_type(current).to_json(),
+                    "default": current_default,
+                }
+        return pre_order["root"]
 
     @classmethod
     def from_json(cls, json_data: JSON_COMPATIBLE) -> Self:
-        """ Oposite to `Base.to_json` method. Method returns dumped instance of a Base class filled with
+        """Oposite to `Base.to_json` method. Method returns dumped instance of a Base class filled with
         data provided on the input.
         """
-        stack: List[Tuple[Dict[str, JSON_COMPATIBLE], str, Dict[str, JSON_COMPATIBLE], Type[Optional[Self]], Dict[str, ANY]]] = []
+        stack: List[
+            Tuple[
+                Dict[str, JSON_COMPATIBLE],
+                str,
+                Dict[str, JSON_COMPATIBLE],
+                Type[Optional[Self]],
+                Dict[str, ANY],
+            ]
+        ] = []
         post_order = []
         root_args: Dict[str, Any] = {"root": None}
-        if json_data.get('$type'):
-            json_cls = TypeNode.from_json(json_data.get('$type')).to_type()
+        if json_data.get("$type"):
+            json_cls = TypeNode.from_json(json_data.get("$type")).to_type()
         else:
             json_cls = cls
 
-        stack.append((root_args, 'root', json_data, json_cls, {}))
+        stack.append((root_args, "root", json_data, json_cls, {}))
 
         while stack:
             parent_args, parent_key, data, type_, type_args = stack.pop(0)
-            if hasattr(type_, "__qualname__") and type_.__qualname__ in ("Optional", "Union"):
+            if hasattr(type_, "__qualname__") and type_.__qualname__ in (
+                "Optional",
+                "Union",
+            ):
                 if isinstance(data, dict):
                     data_type = data.get("$type", None)
                 else:
@@ -506,26 +683,51 @@ class Base(ABase, metaclass=BaseMeta):
                 else:
                     data_type = TypeNode.from_type(data.__class__).to_json()
                 for uarg in get_args(type_):
-                    if TypeNode.from_type(uarg).to_json() == TypeNode.from_json(data_type).to_json():
+                    if (
+                        TypeNode.from_type(uarg).to_json()
+                        == TypeNode.from_json(data_type).to_json()
+                    ):
                         stack.append((parent_args, parent_key, data, uarg, type_args))
                         break
             elif TypeNode.from_type(type_) == TypeNode.from_type(TList[ANY]):
                 parent_args[parent_key] = type_.from_json(data)
-            elif type_ not in (int, str, bool, float, type(None)):
+            elif type_ not in (int, str, bool, float, type(None)) and not issubclass(
+                type_, enum.Enum
+            ):
                 for key in type_._fields:
                     field_args = {}
-                    if '$data' in data:
-                        stack.append((type_args, key, data['$data'].get(key), type_._fields[key], field_args))
+                    if "$data" in data:
+                        stack.append(
+                            (
+                                type_args,
+                                key,
+                                data["$data"].get(key),
+                                type_._fields[key],
+                                field_args,
+                            )
+                        )
                     else:
-                        stack.append((type_args, key, data.get(key), type_._fields[key], field_args))
-                if '$data' in data:
-                    extra = data.get('$data', {}).keys() - type_._fields.keys()
+                        stack.append(
+                            (
+                                type_args,
+                                key,
+                                data.get(key),
+                                type_._fields[key],
+                                field_args,
+                            )
+                        )
+                if "$data" in data:
+                    extra = data.get("$data", {}).keys() - type_._fields.keys()
                 else:
                     extra = data.keys() - type_._fields.keys()
                 if extra:
-                    raise ValueError(f"There are extra attributes uknown to type {type_}: {extra}")
+                    raise ValueError(
+                        f"There are extra attributes uknown to type {type_}: {extra}"
+                    )
 
                 post_order.insert(0, (parent_args, parent_key, type_, type_args))
+            elif issubclass(type_, enum.Enum):
+                parent_args[parent_key] = type_(data)
             else:
                 parent_args[parent_key] = data
 
@@ -539,7 +741,7 @@ class Base(ABase, metaclass=BaseMeta):
                 if not type_.__dataclass_fields__[k].init:
                     setattr(parent_args[parent_key], k, v)
 
-        return root_args['root']
+        return root_args["root"]
 
     def __eq__(self, other):
         if TypeNode.from_type(type(self)) != TypeNode.from_type(type(other)):
@@ -548,6 +750,7 @@ class Base(ABase, metaclass=BaseMeta):
             if getattr(self, f) != getattr(other, f):
                 return False
         return True
+
 
 T = TypeVar("T")
 TK = TypeVar("TK")
@@ -565,14 +768,18 @@ class TList(Base, Generic[T]):
 
     def __new__(cls, *args, **kwargs):
         if not cls._params:
-            raise TypeError("Cannot create TList without subtype, construct with TList[<type>]")
+            raise TypeError(
+                "Cannot create TList without subtype, construct with TList[<type>]"
+            )
         return Base.__new__(cls)
 
     def __init__(self, iterable=[]):
         self._list = []
         for item in iterable:
             if TypeNode.from_type(type(item)) != TypeNode.from_type(self._params[0]):
-                raise TypeError(f"Cannot assign item {type(item)} to list of type {self._params[0]}")
+                raise TypeError(
+                    f"Cannot assign item {type(item)} to list of type {self._params[0]}"
+                )
         list.__init__(self._list, iterable)
 
     def __add__(self, value):
@@ -582,7 +789,9 @@ class TList(Base, Generic[T]):
 
     def __contains__(self, value):
         if TypeNode.from_type(type(value)) != TypeNode.from_type(self._params[0]):
-            raise TypeError(f"Cannot call __contains__ on {self._params[0]} with {type(value)}")
+            raise TypeError(
+                f"Cannot call __contains__ on {self._params[0]} with {type(value)}"
+            )
         return self._list.__contains__(value)
 
     def __delitem__(self, x):
@@ -603,12 +812,16 @@ class TList(Base, Generic[T]):
 
     def __setitem__(self, key, value):
         if TypeNode.from_type(type(value)) != TypeNode.from_type(self._params[0]):
-            raise TypeError(f"Cannot assign item {type(value)} to list of type {self._params[0]}")
+            raise TypeError(
+                f"Cannot assign item {type(value)} to list of type {self._params[0]}"
+            )
         self._list.__setitem__(key, value)
 
     def append(self, obj: T) -> None:
         if TypeNode.from_type(type(obj)) != TypeNode.from_type(self._params[0]):
-            raise TypeError(f"Cannot assign item {type(obj)} to list of type {self._params[0]}")
+            raise TypeError(
+                f"Cannot assign item {type(obj)} to list of type {self._params[0]}"
+            )
         self._list.append(obj)
 
     def clear(self):
@@ -619,7 +832,9 @@ class TList(Base, Generic[T]):
 
     def extend(self, iterable):
         if TypeNode.from_type(type(iterable)) != TypeNode.from_type(type(self)):
-            raise TypeError(f"Cannot extend list {self.__class__.__name__} with {iterable.__class__.__name__}")
+            raise TypeError(
+                f"Cannot extend list {self.__class__.__name__} with {iterable.__class__.__name__}"
+            )
         self._list.extend(iterable._list)
 
     def index(self, value, start=0, stop=-1):
@@ -627,7 +842,9 @@ class TList(Base, Generic[T]):
 
     def insert(self, index, obj):
         if TypeNode.from_type(type(obj)) != TypeNode.from_type(self._params[0]):
-            raise TypeError(f"Cannot assign item {type(obj)} to list of type {type(self._params[0])}")
+            raise TypeError(
+                f"Cannot assign item {type(obj)} to list of type {type(self._params[0])}"
+            )
         self._list.insert(index, obj)
 
     def pop(self, *args, **kwargs):
@@ -644,37 +861,47 @@ class TList(Base, Generic[T]):
 
     def to_json(self) -> Dict[str, Any]:
         pre_order: Dict[str, Any] = {}
-        pre_order['root'] = {"$type": TypeNode.from_type(self.__class__).to_json(), "$data": []}
+        pre_order["root"] = {
+            "$type": TypeNode.from_type(self.__class__).to_json(),
+            "$data": [],
+        }
         stack: List[Tuple[Base, Dict[str, Any], str]] = []
         for n, item in enumerate(self._list):
-            pre_order['root']["$data"].append(None)
-            stack.append((item, pre_order['root']["$data"], n))
+            pre_order["root"]["$data"].append(None)
+            stack.append((item, pre_order["root"]["$data"], n))
         while stack:
             current, current_parent, parent_key = stack.pop(0)
-            if not isinstance(current, (int, str, bool, float, type(None), TList, TDict)):
-                current_parent[parent_key] = {"$type": TypeNode.from_type(current.__class__).to_json(), "$data": {}}
+            if not isinstance(
+                current, (int, str, bool, float, type(None), TList, TDict)
+            ):
+                current_parent[parent_key] = {
+                    "$type": TypeNode.from_type(current.__class__).to_json(),
+                    "$data": {},
+                }
                 for f in current._fields:
-                    stack.append((getattr(current, f), current_parent[parent_key]['$data'], f))
+                    stack.append(
+                        (getattr(current, f), current_parent[parent_key]["$data"], f)
+                    )
             elif isinstance(current, (TList, TDict)):
                 current_parent[parent_key] = current.to_json()
             else:
                 current_parent[parent_key] = current
-        return pre_order['root']
+        return pre_order["root"]
 
     def content_to_json(self) -> Dict[str, Any]:
         pre_order: Dict[str, Any] = {}
-        pre_order['root'] = []
+        pre_order["root"] = []
         stack: List[Tuple[Base, Dict[str, Any], str]] = []
         for n, item in enumerate(self._list):
-            pre_order['root'].append(None)
-            stack.append((item, pre_order['root'], n))
+            pre_order["root"].append(None)
+            stack.append((item, pre_order["root"], n))
         while stack:
             current, current_parent, parent_key = stack.pop(0)
             if isinstance(current, (TList, TDict, Base)):
                 current_parent[parent_key] = current.content_to_json()
             else:
                 current_parent[parent_key] = current
-        return pre_order['root']
+        return pre_order["root"]
 
     @classmethod
     def from_json(cls, json_data) -> Self:
@@ -682,21 +909,26 @@ class TList(Base, Generic[T]):
         post_order = []
         self_type_json = TypeNode.from_type(cls).to_json()
         root_args: Dict[str, Any] = {"root": None}
-        if TypeNode.from_json(json_data['$type']) != TypeNode.from_type(cls):
+        if TypeNode.from_json(json_data["$type"]) != TypeNode.from_type(cls):
             raise ValueError(f"Cannot load {json_data['$type']} to {self_type_json}")
 
         root_type_args = {"iterable": []}
-        for n, item in enumerate(json_data['$data']):
-            root_type_args['iterable'].append(None)
+        for n, item in enumerate(json_data["$data"]):
+            root_type_args["iterable"].append(None)
             if not isinstance(item, (int, str, bool, float, type(None))):
-                item_type = TypeNode.from_json(item['$type']).to_type(types_cache=cls._generic_cache)
+                item_type = TypeNode.from_json(item["$type"]).to_type(
+                    types_cache=cls._generic_cache
+                )
             else:
                 item_type = cls._params[0]
             stack.append((root_type_args["iterable"], n, item, item_type, {}))
 
         while stack:
             parent_args, parent_key, data, type_, type_args = stack.pop(0)
-            if hasattr(type_, "__qualname__") and type_.__qualname__ in ("Optional", "Union"):
+            if hasattr(type_, "__qualname__") and type_.__qualname__ in (
+                "Optional",
+                "Union",
+            ):
                 if isinstance(data, dict):
                     data_type = data.get("$type", None)
                 else:
@@ -710,18 +942,39 @@ class TList(Base, Generic[T]):
                         break
                 else:
                     stack.append((parent_args, parent_key, data, type(None), type_args))
-            elif TypeNode.from_type(type_) == TypeNode.from_type(TList[ANY]) or\
-                 TypeNode.from_type(type_) == TypeNode.from_type(TDict[ANY]):
+            elif TypeNode.from_type(type_) == TypeNode.from_type(
+                TList[ANY]
+            ) or TypeNode.from_type(type_) == TypeNode.from_type(TDict[ANY, ANY]):
                 parent_args[parent_key] = type_.from_json(data)
-            elif type_ not in (int, str, bool, float, type(None)):
+            elif type_ not in (int, str, bool, float, type(None)) and not issubclass(
+                type_, enum.Enum
+            ):
                 for key in type_._fields:
                     field_args = {}
-                    if '$data' in data:
-                        stack.append((type_args, key, data['$data'].get(key), type_._fields[key], field_args))
+                    if "$data" in data:
+                        stack.append(
+                            (
+                                type_args,
+                                key,
+                                data["$data"].get(key),
+                                type_._fields[key],
+                                field_args,
+                            )
+                        )
                     else:
-                        stack.append((type_args, key, data.get(key), type_._fields[key], field_args))
+                        stack.append(
+                            (
+                                type_args,
+                                key,
+                                data.get(key),
+                                type_._fields[key],
+                                field_args,
+                            )
+                        )
 
                 post_order.insert(0, (parent_args, parent_key, type_, type_args))
+            elif issubclass(type_, enum.Enum):
+                parent_args[parent_key] = type_(data)
             else:
                 parent_args[parent_key] = data
 
@@ -735,8 +988,11 @@ class TList(Base, Generic[T]):
                 if not type_.__dataclass_fields__[k].init:
                     setattr(parent_args[parent_key], k, v)
 
-        root_args['root'] = cls(root_type_args['iterable'])
-        return root_args['root']
+        root_args["root"] = cls(root_type_args["iterable"])
+        return root_args["root"]
+
+
+ANY_LIST_TYPE_NODE = TypeNode.from_type(TList[ANY])
 
 
 class TDict(Base, Generic[TK, TV]):
@@ -750,28 +1006,36 @@ class TDict(Base, Generic[TK, TV]):
 
     def __new__(cls, *args, **kwargs):
         if not cls._params:
-            raise TypeError("Cannot create TDict without subtype, construct with TDict[<type>]")
+            raise TypeError(
+                "Cannot create TDict without subtype, construct with TDict[<type>]"
+            )
         return Base.__new__(cls)
 
     def __contains__(self, key: TK) -> bool:
         _tk = self._params[0]
         _tv = self._params[1]
         if TypeNode.from_type(type(key)) != TypeNode.from_type(_tk):
-            raise TypeError(f"Cannot check key {key} of type {type(key)} in dict of type {Dict[_tk, _tv]}")
+            raise TypeError(
+                f"Cannot check key {key} of type {type(key)} in dict of type {Dict[_tk, _tv]}"
+            )
         return self._dict.__contains__(key)
 
     def __delitem__(self, key: TK):
         _tk = self._params[0]
         _tv = self._params[1]
         if TypeNode.from_type(type(key)) != TypeNode.from_type(_tk):
-            raise TypeError(f"Cannot remove key {key} of type {type(key)} in dict of type {Dict[_tk, _tv]}")
+            raise TypeError(
+                f"Cannot remove key {key} of type {type(key)} in dict of type {Dict[_tk, _tv]}"
+            )
         self._dict.__delitem__(key)
 
     def __getitem__(self, key: TK) -> TV:
         _tk = self._params[0]
         _tv = self._params[1]
         if TypeNode.from_type(type(key)) != TypeNode.from_type(_tk):
-            raise TypeError(f"Cannot get item by key {key} of type {type(key)} in dict of type {Dict[_tk, _tv]}")
+            raise TypeError(
+                f"Cannot get item by key {key} of type {type(key)} in dict of type {Dict[_tk, _tv]}"
+            )
         return self._dict.__getitem__(key)
 
     def __init__(self, d={}):
@@ -792,9 +1056,13 @@ class TDict(Base, Generic[TK, TV]):
         _tk = self._params[0]
         _tv = self._params[1]
         if TypeNode.from_type(type(k)) != TypeNode.from_type(_tk):
-            raise TypeError(f"Cannot set item by key {k} of type {type(k)} in dict of type {Dict[_tk, _tv]}")
+            raise TypeError(
+                f"Cannot set item by key {k} of type {type(k)} in dict of type {Dict[_tk, _tv]}"
+            )
         if TypeNode.from_type(type(v)) != TypeNode.from_type(_tv):
-            raise TypeError(f"Cannot set item {v} of type {type(v)} in dict of type {Dict[_tk, _tv]}")
+            raise TypeError(
+                f"Cannot set item {v} of type {type(v)} in dict of type {Dict[_tk, _tv]}"
+            )
         self._dict.__setitem__(k, v)
 
     def clear(self):
@@ -805,16 +1073,22 @@ class TDict(Base, Generic[TK, TV]):
         _tv = self._params[1]
         for key in iterable:
             if TypeNode.from_type(type(key)) != TypeNode.from_type(_tk):
-                raise TypeError(f"Cannot set item by key {key} of type {type(key)} in dict of type {Dict[_tk, _tv]}")
+                raise TypeError(
+                    f"Cannot set item by key {key} of type {type(key)} in dict of type {Dict[_tk, _tv]}"
+                )
         if TypeNode.from_type(type(value)) != TypeNode.from_type(_tv):
-            raise TypeError(f"Cannot set item {value} of type {type(value)} in dict of type {Dict[_tk, _tv]}")
+            raise TypeError(
+                f"Cannot set item {value} of type {type(value)} in dict of type {Dict[_tk, _tv]}"
+            )
         new_d = self._dict.fromkeys(iterable, value)
         return self.__class__(new_d)
 
     def get(self, key: TK, default=None):
         _tk = self._params[0]
         if TypeNode.from_type(type(key)) != TypeNode.from_type(_tk):
-            raise TypeError(f"Cannot get item by key {key} of type {type(key)} in dict of type TDict[{self._params}]")
+            raise TypeError(
+                f"Cannot get item by key {key} of type {type(key)} in dict of type TDict[{self._params}]"
+            )
         return self._dict.get(key, default)
 
     def items(self):
@@ -827,7 +1101,9 @@ class TDict(Base, Generic[TK, TV]):
         _tk = self._params[0]
         _tv = self._params[1]
         if TypeNode.from_type(type(k)) != TypeNode.from_type(_tk):
-            raise TypeError(f"Cannot pop item by key {k} of type {type(k)} in dict of type {Dict[_tk, _tv]}")
+            raise TypeError(
+                f"Cannot pop item by key {k} of type {type(k)} in dict of type {Dict[_tk, _tv]}"
+            )
         return self._dict.pop(k, d)
 
     def popitem(self) -> Tuple[TK, TV]:
@@ -837,12 +1113,20 @@ class TDict(Base, Generic[TK, TV]):
         _tk = self._params[0]
         _tv = self._params[1]
         if TypeNode.from_type(type(key)) != TypeNode.from_type(_tk):
-            raise TypeError(f"Cannot setdefault for key {key} of type {type(key)} in dict of type {Dict[_tk, _tv]}")
+            raise TypeError(
+                f"Cannot setdefault for key {key} of type {type(key)} in dict of type {Dict[_tk, _tv]}"
+            )
+        if TypeNode.from_type(type(default)) != TypeNode.from_type(_tv):
+            raise TypeError(
+                f"Cannot setdefault '{default}' of type {type(default)} in dict of type {Dict[_tk, _tv]}"
+            )
         return self._dict.setdefault(key, default)
 
     def update(self, other):
         if TypeNode.from_type(type(other)) != TypeNode.from_type(type(self)):
-            raise TypeError(f"Cannot update dict {Dict[TK, TV]} with type {type(other)}")
+            raise TypeError(
+                f"Cannot update dict {Dict[TK, TV]} with type {type(other)}"
+            )
         self._dict.update(other)
 
     def values(self):
@@ -850,40 +1134,53 @@ class TDict(Base, Generic[TK, TV]):
 
     def to_json(self) -> Dict[str, Any]:
         pre_order: Dict[str, Any] = {}
-        pre_order['root'] = {"$type": TypeNode.from_type(self.__class__).to_json(), "$data": {}}
+        pre_order["root"] = {
+            "$type": TypeNode.from_type(self.__class__).to_json(),
+            "$data": {},
+        }
         stack: List[Tuple[Base, Dict[str, Any], str]] = []
         for k, v in self._dict.items():
-            pre_order['root']["$data"][k] = None
-            stack.append((v, pre_order['root']["$data"], k))
+            jsonk = k
+            if not isinstance(k, (str, int, float, bool, type(None))):
+                jsonk = json.dumps(k.to_json(), sort_keys=True)
+            pre_order["root"]["$data"][jsonk] = None
+            stack.append((v, pre_order["root"]["$data"], jsonk))
         while stack:
             current, current_parent, parent_key = stack.pop(0)
-            if not isinstance(current, (int, str, bool, float, type(None), TDict, TList)):
-                current_parent[parent_key] = {"$type": TypeNode.from_type(current.__class__).to_json(), "$data": {}}
+            if not isinstance(
+                current, (int, str, bool, float, type(None), TDict, TList)
+            ):
+                current_parent[parent_key] = {
+                    "$type": TypeNode.from_type(current.__class__).to_json(),
+                    "$data": {},
+                }
                 for f in current._fields:
-                    stack.append((getattr(current, f), current_parent[parent_key]['$data'], f))
+                    stack.append(
+                        (getattr(current, f), current_parent[parent_key]["$data"], f)
+                    )
             elif isinstance(current, (TList, TDict)):
                 current_parent[parent_key] = current.to_json()
             else:
                 current_parent[parent_key] = current
-        return pre_order['root']
+        return pre_order["root"]
 
     def content_to_json(self) -> Dict[str, Any]:
         pre_order: Dict[str, Any] = {}
-        pre_order['root'] = {}
+        pre_order["root"] = {}
         stack: List[Tuple[Base, Dict[str, Any], str]] = []
         for k, v in self._dict.items():
-            jsonk = k 
+            jsonk = k
             if not isinstance(k, (str, int, float, bool, type(None))):
                 jsonk = json.dumps(k.content_to_json(), sort_keys=True)
-            pre_order['root'][jsonk] = None
-            stack.append((v, pre_order['root'], jsonk))
+            pre_order["root"][jsonk] = None
+            stack.append((v, pre_order["root"], jsonk))
         while stack:
             current, current_parent, parent_key = stack.pop(0)
             if isinstance(current, (TList, TDict, Base)):
                 current_parent[parent_key] = current.content_to_json()
             else:
                 current_parent[parent_key] = current
-        return pre_order['root']
+        return pre_order["root"]
 
     @classmethod
     def from_json(cls, json_data) -> Self:
@@ -891,21 +1188,30 @@ class TDict(Base, Generic[TK, TV]):
         post_order = []
         self_type_json = TypeNode.from_type(cls).to_json()
         root_args: Dict[str, Any] = {"root": None}
-        if TypeNode.from_json(json_data['$type']) != TypeNode.from_type(cls):
+        if TypeNode.from_json(json_data["$type"]) != TypeNode.from_type(cls):
             raise ValueError(f"Cannot load {json_data['$type']} to {self_type_json}")
 
-        root_type_args = {"iterable": {}}
-        for k, v in json_data['$data'].items():
-            root_type_args['iterable'][k] = None
+        root_type_args = {"iterable": cls({})}
+        for k, v in json_data["$data"].items():
             if not isinstance(v, (int, str, bool, float, type(None))):
-                item_type = TypeNode.from_json(item['$type']).to_type(types_cache=cls._generic_cache)
+                item_type = TypeNode.from_json(v["$type"]).to_type(
+                    types_cache=cls._generic_cache
+                )
             else:
-                item_type = cls._params[0]
-            stack.append((root_type_args["iterable"], k, v, item_type, {}))
+                item_type = cls._params[1]
+            # need to insert in reversed order as traversal reverse the dictionary
+            if type(k) != cls._params[0]:
+                json_key = cls._params[0].from_json(json.loads(k))
+            else:
+                json_key = k
+            stack.insert(0, (root_type_args["iterable"], json_key, v, item_type, {}))
 
         while stack:
             parent_args, parent_key, data, type_, type_args = stack.pop(0)
-            if hasattr(type_, "__qualname__") and type_.__qualname__ in ("Optional", "Union"):
+            if hasattr(type_, "__qualname__") and type_.__qualname__ in (
+                "Optional",
+                "Union",
+            ):
                 if isinstance(data, dict):
                     data_type = data.get("$type", None)
                 else:
@@ -919,23 +1225,50 @@ class TDict(Base, Generic[TK, TV]):
                         break
                 else:
                     stack.append((parent_args, parent_key, data, type(None), type_args))
-            elif TypeNode.from_type(type_) == TypeNode.from_type(TList[ANY]) or\
-                 TypeNode.from_type(type_) == TypeNode.from_type(TDict[ANY]):
+            elif TypeNode.from_type(type_) == ANY_LIST_TYPE_NODE or TypeNode.from_type(
+                type_
+            ) == TypeNode.from_type(TDict[ANY, ANY]):
                 parent_args[parent_key] = type_.from_json(data)
-            elif type_ not in (int, str, bool, float, type(None)):
+            elif type_ not in (int, str, bool, float, type(None)) and not issubclass(
+                type_, enum.Enum
+            ):
                 for key in type_._fields:
                     field_args = {}
-                    if '$data' in data:
-                        stack.append((type_args, key, data['$data'].get(key), type_._fields[key], field_args))
+                    if "$data" in data:
+                        # need to take type from data, in the case of subclass is used instead of generic
+                        # type
+                        data_type = (
+                            TypeNode.from_json(data["$type"]).to_type()._fields[key]
+                        )
+                        stack.append(
+                            (
+                                type_args,
+                                key,
+                                data["$data"].get(key),
+                                data_type,
+                                field_args,
+                            )
+                        )
                     else:
-                        stack.append((type_args, key, data.get(key), type_._fields[key], field_args))
+                        stack.append(
+                            (
+                                type_args,
+                                key,
+                                data.get(key),
+                                type_._fields[key],
+                                field_args,
+                            )
+                        )
 
                 post_order.insert(0, (parent_args, parent_key, type_, type_args))
+            elif issubclass(type_, enum.Enum):
+                parent_args[parent_key] = type_(data)
             else:
                 parent_args[parent_key] = data
 
         for (parent_args, parent_key, type_, type_args) in post_order:
             init_fields = {}
+
             for k, v in type_args.items():
                 if type_.__dataclass_fields__[k].init:
                     init_fields[k] = v
@@ -944,8 +1277,9 @@ class TDict(Base, Generic[TK, TV]):
                 if not type_.__dataclass_fields__[k].init:
                     setattr(parent_args[parent_key], k, v)
 
-        root_args['root'] = cls(root_type_args['iterable'])
-        return root_args['root']
+        root_args["root"] = cls(root_type_args["iterable"])
+        return root_args["root"]
+
 
 class IOStore:
     def data(self, key: str) -> Any:
@@ -955,18 +1289,25 @@ class IOStore:
         pass
 
 
+class NoData(Base):
+    pass
+
+
 class MemoryIOStore(IOStore):
     def __init__(self):
         self._data = {}
 
     def data(self, key: str) -> Any:
-        return self._data.get(key, None)
+        print("MEMORY STORE GET", key, self._data.get(key))
+
+        return self._data.get(key, NoData())
 
     def move_data(self, old_key: str, new_key: str) -> Any:
         data = self._data.pop(old_key, None)
         self._data[new_key] = data
 
     def set_data(self, key: str, val: Any):
+        print("MEMORY STORE SET", key, val)
         self._data[key] = val
 
 
@@ -990,14 +1331,19 @@ class STMDSingleIn(Base, Generic[T]):
     you can only assign subclass of it. Therefore to Out you can assign `Out`, `In`, `STMDSingleIn`
     and to `In` you can only assign `STMDSingleIn` and `In`
     """
+
     _TYPE: str = "IN"
 
-    _ref: Optional[T] = dataclasses.field(repr=False, init=False, default=None, compare=False)
+    _ref: Optional[T] = dataclasses.field(
+        repr=False, init=False, default=None, compare=False
+    )
     # data here are actually not used after input is assigned to some output
     # it's just to deceive mypy
     data: Optional[T] = None
     _name: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
-    _owner: Optional[_Traction] = dataclasses.field(repr=False, init=False, default=None, compare=False)
+    _owner: Optional[_Traction] = dataclasses.field(
+        repr=False, init=False, default=None, compare=False
+    )
     _io_store: IOStore = dataclasses.field(repr=False, init=False, compare=False)
     _uid: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
 
@@ -1010,31 +1356,47 @@ class STMDSingleIn(Base, Generic[T]):
             self._uid = None
             object.__setattr__(self, name, value)
             new_uid = self.uid
-            self._io_store.move_data(old_uid, new_uid)
+            # self._io_store.move_data(old_uid, new_uid)
             return
 
         if not name.startswith("_"):  # do not check for private attrs
-            properties = dict(inspect.getmembers(self.__class__, lambda o: isinstance(o, property)))
-            if name not in self._fields and not self._config.allow_extra and name not in properties:
+            properties = dict(
+                inspect.getmembers(self.__class__, lambda o: isinstance(o, property))
+            )
+            if (
+                name not in self._fields
+                and not self._config.allow_extra
+                and name not in properties
+            ):
                 raise AttributeError(f"{self.__class__} doesn't have attribute {name}")
             if name == "data":
                 if not hasattr(self, "_io_store"):
                     self._io_store = DefaultIOStore.io_store
-                return self._io_store.set_data(self.uid, value)
+                object.__setattr__(self, name, value)
+                # getattr(self.__class__, name).setter(value)
+                return
+                # return self._io_store.set_data(self.uid, value)
             elif name not in properties:
-                vtype = value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
+                vtype = (
+                    value.__orig_class__
+                    if hasattr(value, "__orig_class__")
+                    else value.__class__
+                )
                 tt1 = TypeNode.from_type(vtype)
                 tt2 = TypeNode.from_type(self._fields[name])
                 if tt1 != tt2:
-                    raise TypeError(f"Cannot set attribute {self.__class__}.{name} to type {value}({vtype}), expected {self._fields[name]}")
+                    raise TypeError(
+                        f"Cannot set attribute {self.__class__}.{name} to type {value}({vtype}), expected {self._fields[name]}"
+                    )
             else:
                 getattr(self.__class__, name).setter(value)
                 return
         return object.__setattr__(self, name, value)
 
     def __getattribute__(self, name) -> Any:
-        if name == 'data':
-            return object.__getattribute__(self, '_io_store').data(self.uid)
+        if name == "data":
+            return object.__getattribute__(self, "data")
+            # return object.__getattribute__(self, '_io_store').data(self.uid)
         else:
             ret = object.__getattribute__(self, name)
             return ret
@@ -1044,7 +1406,9 @@ class STMDSingleIn(Base, Generic[T]):
         if not self._name:
             self._name = str(uuid.uuid4())
         if self._uid is None:
-            self._uid = (self._owner.fullname if self._owner else "") + "::" + self._name
+            self._uid = (
+                (self._owner.fullname if self._owner else "") + "::" + self._name
+            )
         return self._uid
 
     def content_to_json(self) -> Dict[str, Any]:
@@ -1066,6 +1430,20 @@ class In(STMDSingleIn, Generic[T]):
     data: Optional[T] = None
 
 
+class TIn(In, Generic[T]):
+    """Class used for input of a Tractor instance. It's same as `In` class but
+    tractions won't set owner to input to self.
+    Class needs to be used with specific type as generic Typevar
+
+    Example: TIn[str](data='foo')
+    """
+
+    data: Optional[T] = None
+
+
+ANY_IN_TYPE_NODE = TypeNode.from_type(In[ANY])
+
+
 class Out(In, Generic[T]):
     """Class used to define Traction output. Output can be connected only to a Traction input `In` or
     `STMDSingleIn`
@@ -1085,22 +1463,27 @@ class Out(In, Generic[T]):
         if not self._name:
             self._name = str(uuid.uuid4())
         if self._uid is None:
-            self._uid = (self._owner.fullname if self._owner else "") + "::" + self._name
+            self._uid = (
+                (self._owner.fullname if self._owner else "") + "::" + self._name
+            )
         return self._uid
 
 
+ANY_OUT_TYPE_NODE = TypeNode.from_type(Out[ANY])
+
+
 class NoOut(Out, Generic[T]):
-    """Special type of output indicating output hasn't been set yet.
-    """
+    """Special type of output indicating output hasn't been set yet."""
 
     data: Optional[T] = None
-    _owner: Optional[_Traction] = dataclasses.field(repr=False, init=False, default=None, compare=False)
+    _owner: Optional[_Traction] = dataclasses.field(
+        repr=False, init=False, default=None, compare=False
+    )
     _name: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
 
 
 class NoData(In, Generic[T]):
-    """Special type of input indicating input hasn't been connected to any output.
-    """
+    """Special type of input indicating input hasn't been connected to any output."""
 
     data: Optional[T] = None
 
@@ -1114,6 +1497,7 @@ class Res(Base, Generic[T]):
     _TYPE: str = "RES"
     r: T
 
+
 class TRes(Res, Generic[T]):
     """Class represeting Traction resources.
 
@@ -1125,6 +1509,9 @@ class TRes(Res, Generic[T]):
 
     def __post_init__(self):
         self._no_validate_setattr_("r", None)
+
+
+ANY_RES_TYPE_NODE = TypeNode.from_type(Res[ANY])
 
 
 class Arg(Base, Generic[T]):
@@ -1143,12 +1530,17 @@ class Arg(Base, Generic[T]):
             return self.a
 
 
+ANY_ARG_TYPE_NODE = TypeNode.from_type(Arg[ANY])
+
+
 class MultiArgMeta(BaseMeta):
     @classmethod
     def _attribute_check(cls, attr, type_, all_attrs):
         if attr.startswith("a_"):
-            if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(Arg[ANY]):
-                raise TypeError(f"Attribute {attr} has to be type Arg[ANY], but is {type_}")
+            if TypeNode.from_type(type_, subclass_check=False) != ANY_ARG_TYPE_NODE:
+                raise TypeError(
+                    f"Attribute {attr} has to be type Arg[ANY], but is {type_}"
+                )
         else:
             raise TypeError(f"Attribute {attr} has start with i_, o_, a_ or r_")
 
@@ -1160,30 +1552,55 @@ class MultiArg(Base, metaclass=MultiArgMeta):
 class TractionMeta(BaseMeta):
     @classmethod
     def _attribute_check(cls, attr, type_, all_attrs):
-        if attr not in ('uid', 'state', 'skip', 'skip_reason', 'errors', 'stats', 'details'):
+        if attr not in (
+            "uid",
+            "state",
+            "skip",
+            "skip_reason",
+            "errors",
+            "stats",
+            "details",
+        ):
+            type_type_node = TypeNode.from_type(type_, subclass_check=False)
             if attr.startswith("i_"):
-                if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(In[ANY]):
-                    raise TypeError(f"Attribute {attr} has to be type In[ANY], but is {type_}")
+                if type_type_node != ANY_IN_TYPE_NODE:
+                    raise TypeError(
+                        f"Attribute {attr} has to be type In[ANY], but is {type_}"
+                    )
             elif attr.startswith("o_"):
-                if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(Out[ANY]):
-                    raise TypeError(f"Attribute {attr} has to be type Out[ANY], but is {type_}")
+                if type_type_node != ANY_OUT_TYPE_NODE:
+                    raise TypeError(
+                        f"Attribute {attr} has to be type Out[ANY], but is {type_}"
+                    )
             elif attr.startswith("a_"):
-                if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(Arg[ANY]) and\
-                   TypeNode.from_type(type_, subclass_check=True) != TypeNode.from_type(MultiArg):
-                    raise TypeError(f"Attribute {attr} has to be type Arg[ANY] or MultiArg, but is {type_}")
+                if type_type_node != ANY_ARG_TYPE_NODE and TypeNode.from_type(
+                    type_, subclass_check=True
+                ) != TypeNode.from_type(MultiArg):
+                    raise TypeError(
+                        f"Attribute {attr} has to be type Arg[ANY] or MultiArg, but is {type_}"
+                    )
             elif attr.startswith("r_"):
-                if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(Res[ANY]):
-                    raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
+                if type_type_node != ANY_RES_TYPE_NODE:
+                    raise TypeError(
+                        f"Attribute {attr} has to be type Res[ANY], but is {type_}"
+                    )
             elif attr.startswith("d_"):
-                if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(str):
-                    raise TypeError(f"Attribute {attr} has to be type str, but is {type_}")
-                if attr != 'd_' and attr.replace("d_", "", 1) not in all_attrs['__annotations__']:
-                    raise TypeError(f"Attribute {attr.replace('d_', '', 1)} is not defined for description {attr}: {all_attrs}")
+                if type_type_node != TypeNode.from_type(str):
+                    raise TypeError(
+                        f"Attribute {attr} has to be type str, but is {type_}"
+                    )
+                if (
+                    attr != "d_"
+                    and attr.replace("d_", "", 1) not in all_attrs["__annotations__"]
+                ):
+                    raise TypeError(
+                        f"Attribute {attr.replace('d_', '', 1)} is not defined for description {attr}: {all_attrs}"
+                    )
             else:
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or d_")
 
     def __new__(cls, name, bases, attrs):
-        annotations = attrs.get('__annotations__', {})
+        annotations = attrs.get("__annotations__", {})
         # check if all attrs are in supported types
         for attr, type_ in annotations.items():
             # skip private attributes
@@ -1191,25 +1608,36 @@ class TractionMeta(BaseMeta):
                 continue
             cls._attribute_check(attr, type_, attrs)
 
+        attrs = cls._attributes_preparation(name, attrs, bases)
+
         # record fields to private attribute
         attrs["_attrs"] = attrs
-        attrs['_fields'] = {k: v for k, v in attrs.get('__annotations__', {}).items() if not k.startswith("_")}
+        attrs["_fields"] = {
+            k: v
+            for k, v in attrs.get("__annotations__", {}).items()
+            if not k.startswith("_")
+        }
 
         for f, ftype in attrs["_fields"].items():
             # Do not include outputs in init
             if f.startswith("o_") and f not in attrs:
                 attrs[f] = dataclasses.field(
                     init=False,
-                    default_factory=DefaultOut(type_=ftype._params[0],
-                                               params=(ftype._params)))
+                    default_factory=DefaultOut(
+                        type_=ftype._params[0], params=(ftype._params)
+                    ),
+                )
             # Set all inputs to NoData after as default
             if f.startswith("i_") and f not in attrs:
                 attrs[f] = dataclasses.field(default_factory=NoData[ftype._params])
 
-        attrs['_fields'] = {k: v for k, v in attrs.get('__annotations__', {}).items() if not k.startswith("_")}
+        attrs["_fields"] = {
+            k: v
+            for k, v in attrs.get("__annotations__", {}).items()
+            if not k.startswith("_")
+        }
 
         cls._before_new(name, attrs, bases)
-
         ret = super().__new__(cls, name, bases, attrs)
         return ret
 
@@ -1242,69 +1670,68 @@ OnErrorCallable = Callable[[_Traction], None]
 
 class Traction(Base, metaclass=TractionMeta):
     """Class represeting basic processing element.
-Traction works with data provided on defined inputs, using provided resources and arguments and
-store output data to defined outputs.
+    Traction works with data provided on defined inputs, using provided resources and arguments and
+    store output data to defined outputs.
 
-Traction subclasses can have defined only 5 type of user attributes:
-inputs
-    every input name needs to start with ``i_``
-outputs
-    every output name needs to start with ``o_``
-resources
-    every resource name needs to start with ``r_``
-arguments
-    every argument name needs to start with ``a_``
-documentation
-    every documentation argument needs to start with ``d_``, also rest of the 
-    name must be already defined field. For example `i_in1` can be described in
-   ``d_i_in1``. With only ``d_`` is used as the field name, it should be used as
-   description of whole traction.
+    Traction subclasses can have defined only 5 type of user attributes:
+    inputs
+        every input name needs to start with ``i_``
+    outputs
+        every output name needs to start with ``o_``
+    resources
+        every resource name needs to start with ``r_``
+    arguments
+        every argument name needs to start with ``a_``
+    documentation
+        every documentation argument needs to start with ``d_``, also rest of the
+        name must be already defined field. For example `i_in1` can be described in
+       ``d_i_in1``. With only ``d_`` is used as the field name, it should be used as
+       description of whole traction.
 
-example of Traction subclass
+    example of Traction subclass
 
-.. code-block::
+    .. code-block::
 
-    class AVG(Traction):
-        a_len: Arg[int]
-        a_timeframe: Arg[str]
-        r_ticker_client: Res[TickerClient]
-        o_avg: Out[float]
+        class AVG(Traction):
+            a_len: Arg[int]
+            a_timeframe: Arg[str]
+            r_ticker_client: Res[TickerClient]
+            o_avg: Out[float]
 
-        d_a_len: str = "Size of the window for calculation."
-        d_a_timeframe: str = "Timeframe which used for calculation"
-        d_r_ticker_client: str = "Ticker client which provides market data"
-        d_o_avg: str = "Average value of fetched candles for selected timeframe and window"
-        d_: str = "Traction used to fetch last spx500 candles and calculates average of their close values"
+            d_a_len: str = "Size of the window for calculation."
+            d_a_timeframe: str = "Timeframe which used for calculation"
+            d_r_ticker_client: str = "Ticker client which provides market data"
+            d_o_avg: str = "Average value of fetched candles for selected timeframe and window"
+            d_: str = "Traction used to fetch last spx500 candles and calculates average of their close values"
 
-        def run(self, on_update: Optional[OnUpdateCallable]=None):
-            ret = self.r_ticker_client.r.fetch_spx_data(self.a_timeframe.a)
-            closes = [x['close'] for x in ret[:self.a_len.a]]
-            self.o_avg.data = sum(closes)/self.a_len.a
+            def run(self, on_update: Optional[OnUpdateCallable]=None):
+                ret = self.r_ticker_client.r.fetch_spx_data(self.a_timeframe.a)
+                closes = [x['close'] for x in ret[:self.a_len.a]]
+                self.o_avg.data = sum(closes)/self.a_len.a
 
-    tc = TickerClient(...)
-    avg = AVG(uid='spx-avg',
-              a_len=Arg[int](a=10),
-              a_timeframe=Arg[str](a='1H'),
-              r_ticker_client=Res[TickerClient](r=tc)
-    )
-    avg.run()
-    print(avg.o_avg.data)
+        tc = TickerClient(...)
+        avg = AVG(uid='spx-avg',
+                  a_len=Arg[int](a=10),
+                  a_timeframe=Arg[str](a='1H'),
+                  r_ticker_client=Res[TickerClient](r=tc)
+        )
+        avg.run()
+        print(avg.o_avg.data)
 
-In the following example, output is set to Out member data. However it's also
-possible to set output like this:
+    In the following example, output is set to Out member data. However it's also
+    possible to set output like this:
 
-.. code-block::
+    .. code-block::
 
-    self.o_avg = Out[float](data=1.0)
+        self.o_avg = Out[float](data=1.0)
 
-Traction class will internally set only data of the output, reference to the output itself will not
-be overwritten
-
-"""
+    Traction class will internally set only data of the output, reference to the output itself will not
+    be overwritten
+    """
 
     _TYPE: str = "TRACTION"
     _CUSTOM_TYPE_TO_JSON: bool = False
-    
+
     uid: str
     "Unique identifier of the current traction."
     state: TractionState = TractionState.READY
@@ -1318,12 +1745,17 @@ be overwritten
     here manually"""
     stats: TractionStats = dataclasses.field(default_factory=TractionStats)
     "Collection of traction stats"
-    details: TList[str] = dataclasses.field(default_factory=TList[str])
+    details: TDict[str, str] = dataclasses.field(default_factory=TDict[str, str])
     "List of details of the execution of the Traction. Inherited class can add details here manually"
 
     def __post_init__(self):
         for f in self._fields:
             if not f.startswith("o_") and not f.startswith("i_"):
+                continue
+            # do not set owner to tractor inputs
+            if TypeNode.from_type(getattr(self, f).__class__) == TypeNode.from_type(
+                TIn[ANY]
+            ):
                 continue
             if not getattr(self, f)._owner:
                 getattr(self, f)._name = f
@@ -1339,7 +1771,7 @@ be overwritten
                 raise AttributeError(f"{_class} doesn't have attribute {name}")
             if super().__getattribute__(name)._ref:
                 return super().__getattribute__(name)._ref
-            #else:
+            # else:
             #    return NoData[super().__getattribute__(name)._params]()
         return super().__getattribute__(name)
 
@@ -1350,10 +1782,12 @@ be overwritten
 
         if name.startswith("i_") or name.startswith("o_") or name.startswith("a_"):
             vtype = value.__class__
-            tt1 = TypeNode.from_type(vtype)
+            tt1 = TypeNode.from_type(vtype, subclass_check=True)
             tt2 = TypeNode.from_type(self._fields[name])
-            if tt1 != tt2:# and tt2 != tt1:
-                raise TypeError(f"Cannot set attribute {self.__class__}.{name} to type {vtype}, expected  {self._fields[name]}")
+            if tt1 != tt2:  # and tt2 != tt1:
+                raise TypeError(
+                    f"Cannot set attribute {self.__class__}.{name} to type {vtype}, expected  {self._fields[name]}"
+                )
 
         if name.startswith("i_"):
             # Need to check with hasattr first to make sure inputs can be initialized
@@ -1364,8 +1798,16 @@ be overwritten
                     self._no_validate_setattr_(name, value)
                     return
                 connected = (
-                    TypeNode.from_type(type(getattr(self, name)), subclass_check=False) != TypeNode.from_type(NoData[ANY]) and
-                    TypeNode.from_type(type(getattr(self, name)), subclass_check=False) != TypeNode.from_type(In[ANY])
+                    TypeNode.from_type(type(getattr(self, name)), subclass_check=False)
+                    != TypeNode.from_type(NoData[ANY])
+                    and TypeNode.from_type(
+                        type(getattr(self, name)), subclass_check=False
+                    )
+                    != ANY_IN_TYPE_NODE
+                    and TypeNode.from_type(
+                        type(getattr(self, name)), subclass_check=False
+                    )
+                    != TypeNode.from_type(TIn[ANY])
                 )
                 if connected:
                     raise AttributeError(f"Input {name} is already connected")
@@ -1381,14 +1823,17 @@ be overwritten
             if not hasattr(self, name):
                 # output is set for the first time
                 super().__setattr__(name, value)
-
-            self.__getattribute_orig__(name)._owner = self
-            self.__getattribute_orig__(name)._name = name
+            if not self.__getattribute_orig__(name)._owner:
+                self.__getattribute_orig__(name)._owner = self
+                self.__getattribute_orig__(name)._name = name
             # Do not overwrite whole output container, rather just copy update data
             self.__getattribute_orig__(name).data = value.data
             return
 
         super().__setattr__(name, value)
+
+    def add_details(self, detail):
+        self.details[datetime.utcnow().toisoformat()] = detail
 
     @property
     def fullname(self) -> str:
@@ -1399,8 +1844,14 @@ be overwritten
         ret = {}
         for f in self._fields:
             if f.startswith("i_"):
-                if hasattr(getattr(self, f), "_owner") and getattr(self, f)._owner and getattr(self, f)._owner != self:
-                    ret[f] = getattr(self, f)._owner.fullname + "#" + getattr(self, f)._name
+                if (
+                    hasattr(getattr(self, f), "_owner")
+                    and getattr(self, f)._owner
+                    and getattr(self, f)._owner != self
+                ):
+                    ret[f] = (
+                        getattr(self, f)._owner.fullname + "#" + getattr(self, f)._name
+                    )
                 else:
                     i_json = getattr(self, f).to_json()
                     ret[f] = i_json
@@ -1408,8 +1859,8 @@ be overwritten
                 ret[f] = getattr(self, f)
             else:
                 ret[f] = getattr(self, f).to_json()
-        ret['name'] = self.__class__.__name__
-        ret['type'] = self._TYPE
+        ret["name"] = self.__class__.__name__
+        ret["type"] = self._TYPE
         return ret
 
     def _getstate_to_json(self) -> Dict[str, Any]:
@@ -1427,27 +1878,25 @@ be overwritten
         on_error: Optional[OnErrorCallable] = None,
     ) -> Self:
         """Start execution of the Traction.
-* When traction is in `TractionState.READY` it runs the
-user defined _pre_run method where user can do some
-preparation before the run itself, potentially set `skip`
-attribute to True to skip the execution. After that, traction
-state is set to TractionState.PREP
+        * When traction is in `TractionState.READY` it runs the
+        user defined _pre_run method where user can do some
+        preparation before the run itself, potentially set `skip`
+        attribute to True to skip the execution. After that, traction
+        state is set to TractionState.PREP
 
-* When traction is in TractionState.PREP or TractionState.ERROR, if skip is set to True 
-  skipped attribute is set to True, and execution is finished.
+        * When traction is in TractionState.PREP or TractionState.ERROR, if skip is set to True
+          skipped attribute is set to True, and execution is finished.
 
-* When skip is not set to True, state is set to TractionState.RUNNING
-  and user defined _run method is executed.
-If an exception is raised during the execution:
-  * If exception is TractionFailedError, state is set to FAILED. This means
-    traction failed with defined failure and it's not possible to rerun it
+        * When skip is not set to True, state is set to TractionState.RUNNING
+          and user defined _run method is executed.
+        If an exception is raised during the execution:
+          * If exception is TractionFailedError, state is set to FAILED. This means
+            traction failed with defined failure and it's not possible to rerun it
 
-  * If unexpected exception is raised, traction state is set to ERROR which is
-    state from which it's possible to rerun the traction.
+          * If unexpected exception is raised, traction state is set to ERROR which is
+            state from which it's possible to rerun the traction.
 
- At the end of the execution traction stats are updated.
-"""
-
+         At the end of the execution traction stats are updated."""
 
         _on_update: OnUpdateCallable = on_update or on_update_empty
         _on_error: OnErrorCallable = on_error or on_update_empty
@@ -1500,7 +1949,9 @@ If an exception is raised during the execution:
         self.stats.skipped = self.skip
 
     @abc.abstractmethod
-    def _run(self, on_update: Optional[OnUpdateCallable] = None) -> None:  # pragma: no cover
+    def _run(
+        self, on_update: Optional[OnUpdateCallable] = None
+    ) -> None:  # pragma: no cover
         """Run code of the step.
 
         Method expects raise StepFailedError if step code fails due data error
@@ -1518,12 +1969,30 @@ If an exception is raised during the execution:
         for f, ftype in cls._fields.items():
             if f.startswith("i_") and isinstance(json_data[f], str):
                 continue
-            elif f.startswith("a_") or f.startswith("i_") or f.startswith("r_") or f in ("errors", "stats", "details"):
-                args[f] = ftype.from_json(json_data[f])
+            elif (
+                f.startswith("a_")
+                or f.startswith("i_")
+                or f.startswith("r_")
+                or f in ("errors", "stats", "details")
+            ):
+                if f.startswith("r_"):
+                    args[f] = (
+                        TypeNode.from_json(json_data[f]["$type"])
+                        .to_type()
+                        .from_json(json_data[f])
+                    )
+                else:
+                    args[f] = ftype.from_json(json_data[f])
             elif f.startswith("i_"):
                 args[f] = ftype.from_json(json_data[f])
             elif f.startswith("o_"):
                 outs[f] = ftype.from_json(json_data[f])
+            elif f == "tractions":
+                args[f] = TList[Union[Traction, None]].from_json(json_data[f])
+            elif f == "tractions_state":
+                args[f] = TList[TractionState].from_json(json_data[f])
+            elif f == "state":
+                args[f] = TractionState(json_data[f])
             else:
                 args[f] = json_data[f]
         ret = cls(**args)
@@ -1533,68 +2002,117 @@ If an exception is raised during the execution:
 
 
 class STMDMeta(TractionMeta):
-    _SELF_ARGS = ['a_pool_size', 'a_executor_type', 'a_delete_after_finished']
+    _SELF_ARGS = ["a_pool_size", "a_executor_type", "a_delete_after_finished"]
 
     @classmethod
     def _attribute_check(cls, attr, type_, all_attrs):
-        if attr not in ('uid', 'state', 'skip', 'skip_reason', 'errors', 'stats', 'details', 'traction', 'tractions'):
+        type_type_node = TypeNode.from_type(type_, subclass_check=False)
+        if attr not in (
+            "uid",
+            "state",
+            "skip",
+            "skip_reason",
+            "errors",
+            "stats",
+            "details",
+            "traction",
+            "tractions",
+            "tractions_state",
+        ):
             if attr.startswith("i_"):
-                if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(In[TList[In[ANY]]]) and \
-                        TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(STMDSingleIn[ANY]):
-                    raise TypeError(f"Attribute {attr} has to be type In[TList[In[ANY]]] or STMDSingleIn[ANY], but is {type_}")
+                if type_type_node != TypeNode.from_type(
+                    In[TList[In[ANY]]]
+                ) and TypeNode.from_type(
+                    type_, subclass_check=False
+                ) != TypeNode.from_type(
+                    STMDSingleIn[ANY]
+                ):
+                    raise TypeError(
+                        f"Attribute {attr} has to be type In[TList[In[ANY]]] or STMDSingleIn[ANY], but is {type_}"
+                    )
             elif attr.startswith("o_"):
-                if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(Out[TList[Out[ANY]]]):
-                    raise TypeError(f"Attribute {attr} has to be type Out[TList[Out[ANY]]], but is {type_}")
+                if type_type_node != TypeNode.from_type(Out[TList[Out[ANY]]]):
+                    raise TypeError(
+                        f"Attribute {attr} has to be type Out[TList[Out[ANY]]], but is {type_}"
+                    )
             elif attr.startswith("a_"):
-                if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(Arg[ANY]):
-                    raise TypeError(f"Attribute {attr} has to be type Arg[ANY], but is {type_}")
+                if type_type_node != TypeNode.from_type(Arg[ANY]):
+                    raise TypeError(
+                        f"Attribute {attr} has to be type Arg[ANY], but is {type_}"
+                    )
             elif attr.startswith("r_"):
-                if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(Res[ANY]):
-                    raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
+                if type_type_node != TypeNode.from_type(Res[ANY]):
+                    raise TypeError(
+                        f"Attribute {attr} has to be type Res[ANY], but is {type_}"
+                    )
             else:
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or d_")
 
     def __new__(cls, name, bases, attrs):
-        annotations = attrs.get('__annotations__', {})
+        annotations = attrs.get("__annotations__", {})
         # check if all attrs are in supported types
         for attr, type_ in annotations.items():
             # skip private attributes
             if attr.startswith("_"):
                 continue
             cls._attribute_check(attr, type_, attrs)
-            if attr.startswith("i_") and attr not in attrs['_traction']._fields:
-                raise ValueError(f"STMD {cls}{name} has attribute {attr} but traction doesn't have input with the same name")
-            if attr.startswith("o_") and attr not in attrs['_traction']._fields:
-                raise ValueError(f"STMD {cls}{name} has attribute {attr} but traction doesn't have input with the same name")
-            if attr.startswith("r_") and attr not in attrs['_traction']._fields:
-                raise ValueError(f"STMD {cls}{name} has attribute {attr} but traction doesn't have resource with the same name")
-            if attr.startswith("a_") and attr not in cls._SELF_ARGS and attr not in attrs['_traction']._fields:
-                raise ValueError(f"STMD {cls}{name} has attribute {attr} but traction doesn't have argument with the same name")
+            if attr.startswith("i_") and attr not in attrs["_traction"]._fields:
+                raise ValueError(
+                    f"STMD {cls}{name} has attribute {attr} but traction doesn't have input with the same name"
+                )
+            if attr.startswith("o_") and attr not in attrs["_traction"]._fields:
+                raise ValueError(
+                    f"STMD {cls}{name} has attribute {attr} but traction doesn't have input with the same name"
+                )
+            if attr.startswith("r_") and attr not in attrs["_traction"]._fields:
+                raise ValueError(
+                    f"STMD {cls}{name} has attribute {attr} but traction doesn't have resource with the same name"
+                )
+            if (
+                attr.startswith("a_")
+                and attr not in cls._SELF_ARGS
+                and attr not in attrs["_traction"]._fields
+            ):
+                raise ValueError(
+                    f"STMD {cls}{name} has attribute {attr} but traction doesn't have argument with the same name"
+                )
 
-        if '_traction' not in attrs:
-            raise ValueError("Missing _traction: Type[<Traction>] = <Traction> definition")
+        if "_traction" not in attrs:
+            raise ValueError(
+                "Missing _traction: Type[<Traction>] = <Traction> definition"
+            )
 
         # record fields to private attribute
         attrs["_attrs"] = attrs
-        attrs['_fields'] = {k: v for k, v in attrs.get('__annotations__', {}).items() if not k.startswith("_")}
+        attrs["_fields"] = {
+            k: v
+            for k, v in attrs.get("__annotations__", {}).items()
+            if not k.startswith("_")
+        }
 
         for f, ftype in attrs["_fields"].items():
             # Do not include outputs in init
             if f.startswith("o_") and f not in attrs:
                 attrs[f] = dataclasses.field(
                     init=False,
-                    default_factory=DefaultOut(type_=ftype._params[0],
-                                               params=(ftype._params)))
+                    default_factory=DefaultOut(
+                        type_=ftype._params[0], params=(ftype._params)
+                    ),
+                )
 
             # Set all inputs to NoData after as default
             if f.startswith("i_") and f not in attrs:
                 attrs[f] = dataclasses.field(default_factory=NoData[ftype._params])
 
-        attrs['_fields'] = {k: v for k, v in attrs.get('__annotations__', {}).items() if not k.startswith("_")}
+        attrs["_fields"] = {
+            k: v
+            for k, v in attrs.get("__annotations__", {}).items()
+            if not k.startswith("_")
+        }
 
         cls._before_new(name, attrs, bases)
-
         ret = super().__new__(cls, name, bases, attrs)
+
         return ret
 
     @classmethod
@@ -1603,18 +2121,18 @@ class STMDMeta(TractionMeta):
         inputs_map = {}
         resources_map = {}
         args_map = {}
-        for f, fo  in attrs.items():
+        for f, fo in attrs.items():
             if f.startswith("i_"):
-                inputs_map[f]= id(fo)
+                inputs_map[f] = id(fo)
                 outputs_map.append(id(fo))
             if f.startswith("r_"):
                 resources_map[f] = id(fo)
             if f.startswith("a_"):
                 args_map[f] = id(fo)
 
-        attrs['_inputs_map'] = inputs_map
-        attrs['_resources_map'] = resources_map
-        attrs['_args_map'] = args_map
+        attrs["_inputs_map"] = inputs_map
+        attrs["_resources_map"] = resources_map
+        attrs["_args_map"] = args_map
 
 
 class STMDExecutorType(str, enum.Enum):
@@ -1631,16 +2149,26 @@ class STMD(Traction, metaclass=STMDMeta):
     skip_reason: Optional[str] = ""
     errors: TList[str] = dataclasses.field(default_factory=TList[str])
     stats: TractionStats = dataclasses.field(default_factory=TractionStats)
-    details: TList[str] = dataclasses.field(default_factory=TList[str])
+    details: TDict[str, str] = dataclasses.field(default_factory=TDict[str, str])
     _traction: Type[Traction] = Traction
     a_pool_size: Arg[int]
     a_delete_after_finished: Arg[bool] = Arg[bool](a=True)
-    a_executor_type: Arg[STMDExecutorType] = Arg[STMDExecutorType](a=STMDExecutorType.LOCAL)
-    tractions: TList[Union[Traction, None]] = TList[Optional[Traction]]([])
+    a_executor_type: Arg[STMDExecutorType] = Arg[STMDExecutorType](
+        a=STMDExecutorType.LOCAL
+    )
+    tractions: TList[Union[Traction, None]] = dataclasses.field(
+        default_factory=TList[Optional[Traction]]
+    )
+    tractions_state: TList[TractionState] = dataclasses.field(
+        default_factory=TList[TractionState]
+    )
 
     def _traction_runner(self, index, on_update=None):
         traction = self._copy_traction(index)
+        # print(traction)
+        self.tractions_state[index] = TractionState.RUNNING
         traction.run(on_update=on_update)
+        self.tractions_state[index] = traction.state
         outputs = {}
         for o in traction._fields:
             if o.startswith("o_"):
@@ -1648,11 +2176,12 @@ class STMD(Traction, metaclass=STMDMeta):
         return outputs
 
     def _copy_traction(self, index, connect_inputs=True):
-        """ After tractor is created, all tractions needs to be copied so it's
-            possible to use same Tractor class multiple times
+        """After tractor is created, all tractions needs to be copied so it's
+        possible to use same Tractor class multiple times
         """
         traction = self._traction
         init_fields = {}
+        # print("COPY T", traction.__name__, index)
         for ft, field in traction.__dataclass_fields__.items():
             # set all inputs for the traction to outputs of traction copy
             # created bellow
@@ -1664,13 +2193,21 @@ class STMD(Traction, metaclass=STMDMeta):
                 init_fields[ft] = getattr(self, ft)
 
             elif ft.startswith("i_") and connect_inputs:
-                if TypeNode.from_type(self._fields[ft], subclass_check=False) == TypeNode.from_type(STMDSingleIn[ANY]):
-                    init_fields[ft] = getattr(self, ft)
+                # print("FT", ft, getattr(self, ft).data)
+                if TypeNode.from_type(
+                    self._fields[ft], subclass_check=False
+                ) == TypeNode.from_type(STMDSingleIn[ANY]):
+                    # print("Setting STMD Single in", index, self._traction.__name__, ft, str(getattr(self, ft).data)[:200])
+                    init_fields[ft] = In.__class_getitem__(*getattr(self, ft)._params)(
+                        data=getattr(self, ft).data
+                    )
                 else:
+                    # print("Setting Inpupt", index, self._traction.__name__, ft, str(getattr(self, ft).data)[:200])
                     init_fields[ft] = getattr(self, ft).data[index]
 
-        init_fields['uid'] = "%s:%d" % (self.fullname, index)
+        init_fields["uid"] = "%s:%d" % (self.fullname, index)
         # create copy of existing traction
+        # print("INIT FIELDS", index, init_fields)
         ret = traction(**init_fields)
 
         for ft in traction._fields:
@@ -1678,12 +2215,22 @@ class STMD(Traction, metaclass=STMDMeta):
                 if ft.startswith("o_"):
                     getattr(self, ft).data[index] = getattr(ret, ft)
             except Exception as e:
-                raise RuntimeError(f"Failed to copy traction {self._traction}. Field {ft}") from e
-
-        if not connect_inputs:
-            return ret
-
+                raise RuntimeError(
+                    f"Failed to copy traction {self._traction}. Field {ft}"
+                ) from e
         return ret
+
+    def _prep_tractions(self, first_in, outputs):
+        if self.state == TractionState.READY:
+            self.tractions_state.clear()
+            self.tractions_state.extend(
+                TList[TractionState]([TractionState.READY] * len(first_in.data))
+            )
+
+            for o in outputs:
+                o_type = getattr(self, o).data._params[0]._params[0]
+                for i in range(len(first_in.data)):
+                    getattr(self, o).data.append(NoOut[o_type]())
 
     def run(
         self,
@@ -1691,11 +2238,11 @@ class STMD(Traction, metaclass=STMDMeta):
     ) -> Self:
         _on_update: OnUpdateCallable = lambda step: None
         dt = datetime.datetime.now()
+        self._reset_stats()
+        self.stats.started = isodate_now()
 
         if on_update:
             _on_update = on_update
-
-        self.state = TractionState.RUNNING
 
         if self.a_executor_type.a == STMDExecutorType.PROCESS:
             executor_class = ProcessPoolExecutor
@@ -1704,60 +2251,78 @@ class STMD(Traction, metaclass=STMDMeta):
         else:
             executor_class = None
 
-        inputs = {}
-        for f, ftype in self._fields.items():
-            if f.startswith("i_"):
-                inputs[f] = getattr(self, f)
         outputs = {}
         for f in self._fields:
             if f.startswith("o_"):
                 outputs[f] = getattr(self, f)
 
+        inputs = {}
+        for f, ftype in self._fields.items():
+            if f.startswith("i_"):
+                inputs[f] = getattr(self, f)
+
         first_in = None
         for fname in inputs.keys():
             infield = self._fields[fname]
-            if TypeNode.from_type(infield, subclass_check=False) != TypeNode.from_type(STMDSingleIn[ANY]):
+            if TypeNode.from_type(infield, subclass_check=False) != TypeNode.from_type(
+                STMDSingleIn[ANY]
+            ):
                 first_in = inputs[fname]
                 break
 
         if not first_in:
             raise RuntimeError("Cannot have STMD with only STMDSingleIn inputs")
 
+        self._prep_tractions(first_in, outputs)
+        self.state = TractionState.RUNNING
+
         for key in inputs:
             if inputs[key].data is None:
                 raise ValueError(f"{self.fullname}: No input data for {key}")
-            if TypeNode.from_type(self._fields[key], subclass_check=False) != TypeNode.from_type(STMDSingleIn[ANY]) and len(inputs[key].data) != len(first_in.data):
-                raise ValueError(f"{self.__class__}: Input {key} has length {len(inputs[key].data)} but others have length {len(first_in.data)} ({list(inputs.keys())[0]})")
-
-        for o in outputs:
-            o_type = getattr(self, o).data._params[0]._params[0]
-            for _ in range(len(first_in.data)):
-                getattr(self, o).data.append(NoOut[o_type]())
+            if TypeNode.from_type(
+                self._fields[key], subclass_check=False
+            ) != TypeNode.from_type(STMDSingleIn[ANY]) and len(inputs[key].data) != len(
+                first_in.data
+            ):
+                raise ValueError(
+                    f"{self.__class__}: Input {key} has length {len(inputs[key].data)} but others have length {len(first_in.data)} ({list(inputs.keys())[0]})"
+                )
 
         if executor_class:
             with executor_class(max_workers=self.a_pool_size.a) as executor:
                 ft_results = {}
-                self.tractions.extend(TList[Optional[Traction]]([None]*len(first_in.data)))
+                # self.tractions.extend(TList[Optional[Traction]]([None]*len(first_in.data)))
                 for i in range(0, len(first_in.data)):
-                    res = executor.submit(self._traction_runner, i, on_update=on_update)
-                    ft_results[res] = i
+                    if self.tractions_state[i] in (
+                        TractionState.READY,
+                        TractionState.ERROR,
+                    ):
+                        res = executor.submit(
+                            self._traction_runner, i, on_update=on_update
+                        )
+                        ft_results[res] = i
                 _on_update(self)
                 for ft in as_completed(ft_results):
                     i = ft_results[ft]
+                    if ft.exception():
+                        self.tractions_state[i] = TractionState.ERROR
+                    else:
+                        self.tractions_state[i] = TractionState.FINISHED
                     t_outputs = ft.result()
                     for o in outputs:
-                        #getattr(self, o).data[i].data = getattr(nt, o).data
+                        # getattr(self, o).data[i].data = getattr(nt, o).data
                         getattr(self, o).data[i].data = t_outputs[o].data
-                    if self.a_delete_after_finished.a:
-                        self.tractions[i] = None
+                    # if self.a_delete_after_finished.a:
+                    #    self.tractions[i] = None
                 _on_update(self)
+            # if self.a_delete_after_finished.a:
+            #    self.tractions.clear()
         else:
+            # self.tractions_state.extend(TList[TractionState]([TractionState.READY]*len(first_in.data)))
             for i in range(0, len(first_in.data)):
                 res = self._traction_runner(i, on_update=on_update)
-                #self.tractions.append(self._copy_traction(i, connect_inputs=False))
                 for o in outputs:
-                    #getattr(self, o).data[i].data = getattr(res, o).data
                     getattr(self, o).data[i].data = res[o].data
-
         self.state = TractionState.FINISHED
+        self._finish_stats()
         return self

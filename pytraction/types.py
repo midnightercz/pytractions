@@ -394,11 +394,16 @@ class TypeNode:
 
             if hasattr(type_, "__orig_qualname__"):
                 type_name = type_.__orig_qualname__
+                module = type_.__module__
             elif hasattr(type_, "__qualname__"):
                 type_name = type_.__qualname__
+                module = type_.__module__
+            elif type_ == None:
+                type_name = "NoneType"
+                module = 'types'
             else:
                 type_name = type_.__name__
-            module = type_.__module__
+                module = type_.__module__
             current_parent[parent_key] = {"type": type_name,
                                           "args": [None,] * len(current.children),
                                           "module": module}

@@ -5,7 +5,8 @@ from typing_extensions import Self
 
 
 from .base import (
-    Traction, TractionStats, TractionState, TList, TDict, TractionMeta, Arg, MultiArg, In, Out, Res, ANY, TypeNode,
+    Base, Traction, TractionStats, TractionState, TList, TDict, TractionMeta, Arg, MultiArg, In, 
+    STMDSingleIn, Out, Res, ANY, TypeNode,
     OnUpdateCallable, OnErrorCallable, on_update_empty, TractionFailedError,
     NoData, TRes, isodate_now
 
@@ -13,13 +14,16 @@ from .base import (
 from .exc import UninitiatedResource
 
 
+class _TractorOutputOwner(Base):
+    fullname: str
+
 class TractorMeta(TractionMeta):
     @classmethod
     def _attribute_check(cls, attr, type_, all_attrs):
         if attr not in ('uid', 'state', 'skip', 'skip_reason', 'errors', 'stats', 'details', 'tractions'):
             if attr.startswith("i_"):
-                if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(In[ANY]):
-                    raise TypeError(f"Attribute {attr} has to be type In[ANY], but is {type_}")
+                if TypeNode.from_type(type_, subclass_check=True) != TypeNode.from_type(STMDSingleIn[ANY]):
+                    raise TypeError(f"Attribute {attr} has to be type STMDSingleIn[ANY], In[ANY], or TIn[ANY] but is {type_}")
             elif attr.startswith("o_"):
                 if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(Out[ANY]):
                     raise TypeError(f"Attribute {attr} has to be type Out[ANY], but is {type_}")
@@ -149,7 +153,6 @@ class TractorMeta(TractionMeta):
                     args_map[(t, tf)] = args[id(tfo)]
 
                 elif tf.startswith("a_") and id(tfo) in margs:
-                    ##print("!!!!!!!!", tf, margs)
                     args_map[(t, tf)] = margs[id(tfo)]
 
                 elif tf.startswith("a_") and TypeNode.from_type(type(tfo), subclass_check=True) == TypeNode.from_type(MultiArg):
@@ -164,7 +167,6 @@ class TractorMeta(TractionMeta):
             if f.startswith("o_"):
                 if id(fo) in outputs_map:
                     t_outputs_map[f] = outputs_map[id(fo)]
-
 
         attrs['_t_outputs_map'] = t_outputs_map
         attrs['_output_waves'] = output_waves
@@ -189,7 +191,7 @@ class Tractor(Traction, metaclass=TractorMeta):
     skip_reason: Optional[str] = ""
     errors: TList[str] = dataclasses.field(default_factory=TList[str])
     stats: TractionStats = dataclasses.field(default_factory=TractionStats)
-    details: TList[str] = dataclasses.field(default_factory=TList[str])
+    details: TDict[str, str] = dataclasses.field(default_factory=TDict[str, str])
     tractions: TDict[str, Traction] = dataclasses.field(default_factory=TDict[str, Traction], init=False)
 
     def _init_traction(self, traction_name, traction):
@@ -239,13 +241,14 @@ class Tractor(Traction, metaclass=TractorMeta):
         return traction.__class__(**init_fields)
 
     def __post_init__(self):
-        self.tractions = TDict[str, Traction]({})
-        for f in self._fields:
-            # Copy all tractions
-            if f.startswith("t_"):
-                traction = getattr(self, f)
-                new_traction = self._init_traction(f, traction)
-                self.tractions[f] = new_traction
+        if not self.tractions:
+            self.tractions = TDict[str, Traction]({})
+            for f in self._fields:
+                # Copy all tractions
+                if f.startswith("t_"):
+                    traction = getattr(self, f)
+                    new_traction = self._init_traction(f, traction)
+                    self.tractions[f] = new_traction
         for f in self._fields:
             # set tractor output to outputs of copied tractions
             if f.startswith("o_"):
@@ -264,10 +267,13 @@ class Tractor(Traction, metaclass=TractorMeta):
                 fo = getattr(self, f)
                 if isinstance(fo, TRes):
                     raise UninitiatedResource(f"{f}")
+                
 
     def _run(self, on_update: Optional[OnUpdateCallable] = None) -> Self:  # pragma: no cover
         for tname, traction in self.tractions.items():
+            print("RUNNING TRACTION", traction.uid, traction.state)
             traction.run(on_update=on_update)
+            print("FINISHED TRACTION", traction.uid, traction.state)
             if on_update:
                 on_update(self)
             if traction.state == TractionState.ERROR:
@@ -277,6 +283,16 @@ class Tractor(Traction, metaclass=TractorMeta):
                 self.state = TractionState.FAILED
                 return self
         return self
+
+    def resubmit_from(self, traction_name: str):
+        reset_started = False
+        self.state = TractionState.READY
+        for tname, traction in self.tractions.items():
+            if reset_started:
+                print("RESETING", tname)
+                traction.state = TractionState.READY
+            if tname == traction_name:
+                reset_started = True
 
     def run(
         self,
@@ -306,9 +322,8 @@ class Tractor(Traction, metaclass=TractorMeta):
             self.errors.append(str(e))
             _on_error(self)
             raise
-        else:
-            self.state = TractionState.FINISHED
         finally:
+            self.state = TractionState.FINISHED
             self._finish_stats()
             _on_update(self)  # type: ignore
         return self
@@ -347,12 +362,10 @@ class Tractor(Traction, metaclass=TractorMeta):
         outs = {}
         tractions = {}
         traction_outputs = {}
-        #print(json_data)
         for f, ftype in cls._fields.items():
             if f.startswith("i_") and isinstance(json_data[f], str):
                 continue
             elif f.startswith("t_"):
-                #print("TRACTOR FROM JSON F", f, ftype)
                 args[f] = ftype.from_json(json_data[f])
                 tractions[f] = args[f]
                 for tf in tractions[f]._fields:
@@ -362,10 +375,13 @@ class Tractor(Traction, metaclass=TractorMeta):
                     if tf.startswith("i_") and isinstance(tfval, str):
                         traction_name, o_name = tfval.split("#")
                         setattr(tractions[f], tf, traction_outputs[traction_name][o_name])
-            elif f.startswith("a_") or f.startswith("i_") or f.startswith("r_") or f in ("errors", "stats", "details", "tractions"):
+            elif f.startswith("i_"):
+                if json_data[f].get("$data"):
+                    args[f] = ftype.from_json(json_data[f])
+                #traction_outputs.setdefault(tractions[f].fullname,{})[tf] = getattr(tractions[f], tf)
+            elif f.startswith("a_") or f.startswith("r_") or f in ("errors", "stats", "details", "tractions"):
                 # skip if there are no data to load
                 if json_data[f].get("$data"):
-                    #print("TRACTOR LOAD F", f, json_data[f].get("$data"))
                     args[f] = ftype.from_json(json_data[f])
             elif f.startswith("o_"):
                 outs[f] = ftype.from_json(json_data[f])
