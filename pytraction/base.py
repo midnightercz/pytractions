@@ -291,6 +291,7 @@ class BaseMeta(type):
 
         attrs["_fields"] = fields
         attrs["__hash__"] = _hash
+        attrs["__name__"] = name
 
         cls._before_new(name, attrs, bases)
         ret = super().__new__(cls, name, bases, attrs)
