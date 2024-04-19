@@ -130,9 +130,6 @@ class TractorMeta(TractionMeta):
             for tf in _traction._fields:
                 tfo = getattr(_traction, tf)
 
-                #if tf.startswith("a_"):
-                #    print("ID", id(tfo), tf)
-
                 if tf.startswith("o_"):
                     outputs_all.append(id(tfo))
                     outputs_map[id(tfo)] = (t, tf)
@@ -193,6 +190,20 @@ class Tractor(Traction, metaclass=TractorMeta):
     stats: TractionStats = dataclasses.field(default_factory=TractionStats)
     details: TDict[str, str] = dataclasses.field(default_factory=TDict[str, str])
     tractions: TDict[str, Traction] = dataclasses.field(default_factory=TDict[str, Traction], init=False)
+
+    def _init_traction_input(self, traction_name, traction):
+        init_fields = {}
+        for ft, field in traction.__dataclass_fields__.items():
+            # set all inputs for the traction created at the end of this method 
+            # to outputs of traction copy in self.tractions
+            if ft.startswith("i_"):
+                if (traction_name, ft) in self._io_map:
+                    source, o_name = self._io_map[(traction_name, ft)]
+                    if source == "#":
+                        init_fields[ft] = getattr(self, o_name)
+                    else:
+                        init_fields[ft] = getattr(self.tractions[source], o_name)
+        return init_fields
 
     def _init_traction(self, traction_name, traction):
         init_fields = {}
@@ -267,13 +278,22 @@ class Tractor(Traction, metaclass=TractorMeta):
                 fo = getattr(self, f)
                 if isinstance(fo, TRes):
                     raise UninitiatedResource(f"{f}")
-                
+
+    def resubmit_from(self, traction_name: str):
+        reset_started = False
+        self.state = TractionState.READY
+        for tname, traction in self.tractions.items():
+            if tname == traction_name:
+                reset_started = True
+            if reset_started:
+                traction.state = TractionState.READY
+            else:
+                traction.state = TractionState.FINISHED
+
 
     def _run(self, on_update: Optional[OnUpdateCallable] = None) -> Self:  # pragma: no cover
         for tname, traction in self.tractions.items():
-            print("RUNNING TRACTION", traction.uid, traction.state)
             traction.run(on_update=on_update)
-            print("FINISHED TRACTION", traction.uid, traction.state)
             if on_update:
                 on_update(self)
             if traction.state == TractionState.ERROR:
@@ -283,16 +303,6 @@ class Tractor(Traction, metaclass=TractorMeta):
                 self.state = TractionState.FAILED
                 return self
         return self
-
-    def resubmit_from(self, traction_name: str):
-        reset_started = False
-        self.state = TractionState.READY
-        for tname, traction in self.tractions.items():
-            if reset_started:
-                print("RESETING", tname)
-                traction.state = TractionState.READY
-            if tname == traction_name:
-                reset_started = True
 
     def run(
         self,
@@ -429,7 +439,6 @@ class MultiTractor(Tractor, metaclass=TractorMeta):
 
         with executor_class(max_workers=self.a_pool_size.a) as executor:
             for w, tractions in traction_groups.items():
-                #print("Running wave", w)
                 ft_results = {}
                 for t_name, traction in tractions.items():
                     res = executor.submit(self._traction_runner, t_name, traction, on_update=on_update)

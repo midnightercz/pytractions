@@ -7,6 +7,7 @@ import json
 from types import prepare_class, resolve_bases
 import enum
 import sys
+import re
 import uuid
 
 from typing import (
@@ -24,6 +25,7 @@ from typing import (
     Tuple,
     Type,
     Callable,
+    _UnionGenericAlias,
     get_args,
 )
 from typing_extensions import Self
@@ -94,7 +96,10 @@ class DefaultOut:
             ret = Out[self.params]()
         else:
             ret = Out[self.params]()
-            ret.data = self.type_()
+            if isinstance(self.type_, TypeVar):
+                ret.data = None
+            else:
+                ret.data = self.type_()
 
         return ret
 
@@ -229,9 +234,11 @@ class BaseMeta(type):
                 elif type(attrs[attr]) in (str, int, None, float):
                     default = attrs[attr]
                 elif TypeNode.from_type(attrs[attr]) == TypeNode.from_type(
-                    Optional[ANY]
+                    Optional[ABase]
                 ):
                     default = None
+                elif TypeNode.from_type(attrs[attr].__class__) == TypeNode.from_type(ABase):
+                    default = attrs[attr]
                 else:
                     default = type(attrs[attr])
 
@@ -244,6 +251,7 @@ class BaseMeta(type):
                 #   and not isinstance(default, dataclasses._MISSING_TYPE)\
                 #   and TypeNode.from_type(type_) != TypeNode.from_type(default):
                 #    raise TypeError(f"Annotation for {attr} is {type_} but default is {default}")
+        #print("DEFAULTS", name, defaults)
 
         # record fields to private attribute
         attrs["_attrs"] = attrs
@@ -259,6 +267,10 @@ class BaseMeta(type):
                     hasattr(base, "__dataclass_fields__")
                     and f in base.__dataclass_fields__
                 ):
+                    # Skip if default is already set
+                    if f in defaults:
+                        #print("DEFAULT", f, "ALREADY SET", defaults[f])
+                        continue
                     if base.__dataclass_fields__[f].default is not dataclasses.MISSING:
                         defaults[f] = dataclasses.field(
                             default=base.__dataclass_fields__[f].default
@@ -285,6 +297,8 @@ class BaseMeta(type):
         all_annotations.update(annotations)
         attrs["__annotations__"] = all_annotations
 
+        #print("ATTRS", name, attrs)
+
         for default, defval in defaults.items():
             if default not in attrs:
                 attrs[default] = defval
@@ -297,7 +311,12 @@ class BaseMeta(type):
         ret = super().__new__(cls, name, bases, attrs)
 
         ret = dataclasses.dataclass(ret, kw_only=True)
+        #print("CLASS", name, ret.__dataclass_fields__)
         return ret
+
+
+class SerializationError(Exception):
+    pass
 
 
 class Base(ABase, metaclass=BaseMeta):
@@ -397,6 +416,10 @@ class Base(ABase, metaclass=BaseMeta):
 
     def __class_getitem__(cls, param, params_map={}):
         _params = param if isinstance(param, tuple) else (param,)
+        if len(_params) != len(cls.__parameters__):
+            raise TypeError(
+                f"Expected {len(cls.__parameters__)} parameters, got {len(_params)}"
+            )
 
         # param ids for caching as TypeVars are class instances
         # therefore has to compare with id() to get good param replacement
@@ -507,6 +530,8 @@ class Base(ABase, metaclass=BaseMeta):
                     )
             elif isinstance(current, (TList, TDict)):
                 current_parent[parent_key] = current.to_json()
+            elif isinstance(current, (enum.Enum)):
+                current_parent[parent_key] = current.value
             else:
                 current_parent[parent_key] = current
         return pre_order["root"]
@@ -524,6 +549,8 @@ class Base(ABase, metaclass=BaseMeta):
             current, current_parent, parent_key = stack.pop(0)
             if isinstance(current, (TList, TDict, Base)):
                 current_parent[parent_key] = current.content_to_json()
+            elif isinstance(current, (enum.Enum)):
+                current_parent[parent_key] = current.value
             else:
                 current_parent[parent_key] = current
         return pre_order["root"]
@@ -539,56 +566,125 @@ class Base(ABase, metaclass=BaseMeta):
                     TList[JSON_COMPATIBLE], Dict[str, JSON_COMPATIBLE]
                 ],  # parent_init_fields
                 Dict[str, ANY],  # json_data
+                str, # path to current object
             ]
         ] = []
         order: List[
             Tuple[Type[Any], Dict[str, JSON_COMPATIBLE], Union[str, int], JSON_COMPATIBLE]
 
         ] = []
-        stack.append((cls, 'root', json_dict, root_init_fields))
-
-        # for f, fval in cls._fields.items():
-        #    if f in json_dict:
-        #        stack.append((cls, root_init_fields, f, json_dict[f]))
+        stack.append(((cls,), 'root', json_dict, root_init_fields, "#"))
+        #print("---")
         while stack:
             (
-                parent_cls,
+                parent_cls_candidates,
                 parent_key,
                 _json_dict,
-                parent_init_fields
+                parent_init_fields,
+                parent_path
             ) = stack.pop(0)
-            if TypeNode.from_type(parent_cls) == TypeNode.from_type(TList[ANY]):
+            optional_uargs = [x for x in parent_cls_candidates if x.__class__ == _UnionGenericAlias and x._name == "Optional"]
+            union_uargs = [x for x in parent_cls_candidates if x.__class__ == _UnionGenericAlias and x._name != "Optional"]
+
+            list_uargs = [x for x in parent_cls_candidates if TypeNode.from_type(x) == TypeNode.from_type(TList[ANY]) and x not in optional_uargs]
+            dict_uargs = [x for x in parent_cls_candidates if TypeNode.from_type(x) == TypeNode.from_type(TDict[ANY, ANY]) and x not in optional_uargs]
+            obj_uargs = [x for x in parent_cls_candidates if x not in list_uargs and x not in dict_uargs and\
+                                                            TypeNode.from_type(x) == TypeNode.from_type(Base) and x not in optional_uargs and x not in union_uargs]
+            other_uargs = [x for x in parent_cls_candidates
+                           if x not in list_uargs and
+                              x not in dict_uargs and
+                              x not in obj_uargs and
+                              x not in optional_uargs and
+                              x not in union_uargs]
+
+            # print("OPT", optional_uargs)
+            # print("LIST", list_uargs)
+            # print("DICT", dict_uargs)
+            # print("OBJ", obj_uargs)
+            # print("UNI", union_uargs)
+            # print("OTH", other_uargs)
+            #
+            # print(
+            #     parent_cls_candidates,
+            #     parent_key,
+            #     _json_dict,
+            #     parent_init_fields,
+            #     parent_path)
+
+            if optional_uargs:
+                if _json_dict is None:
+                    parent_init_fields[parent_key] = None
+                else:
+                    non_optional_classes = [x.__args__[0] for x in optional_uargs]
+                    stack.append((non_optional_classes + list_uargs + dict_uargs + obj_uargs + union_uargs + other_uargs, parent_key, _json_dict, parent_init_fields, parent_path))
+            elif union_uargs:
+                all_uargs = []
+                for union_uarg in union_uargs:
+                    for uarg in union_uarg.__args__:
+                        all_uargs.append(uarg)
+                    stack.append((optional_uargs + list_uargs + dict_uargs + obj_uargs + all_uargs + other_uargs, parent_key, _json_dict, parent_init_fields, parent_path))
+            elif list_uargs and isinstance(_json_dict, list):
                 init_fields = [None for x in range(len(_json_dict))]
-                if parent_cls._params[0] in (str, int, float, type(None)):
-                    for n, value in enumerate(_json_dict):
+                for n, value in enumerate(_json_dict):
+                    if isinstance(value, (str, int, float, type(None), bool)):
                         init_fields[n] = value
-                else:
-                    for n, value in enumerate(_json_dict):
-                        stack.append((parent_cls._params[0], n, value, init_fields))
-                order.insert(0, (parent_cls, parent_init_fields, parent_key, init_fields))
-            elif TypeNode.from_type(parent_cls) == TypeNode.from_type(TDict[ANY, ANY]):
-                init_fields = {}
-                if parent_cls._params[1] in (str, int, float, type(None)):
-                    for k, v in _json_dict.items():
-                        init_fields[k] = v
-                else:
-                    for k, v in _json_dict.items():
-                        stack.append((parent_cls._params[1], k, v, init_fields))
-                order.insert(0, (parent_cls, parent_init_fields, parent_key, init_fields))
-            else:
-                init_fields = {}
-                for f, ftype in parent_cls._fields.items():
-                    if ftype in (str, int, float, type(None)):
-                        init_fields[f] = _json_dict[f]
                     else:
-                        stack.append((ftype, f, _json_dict[f], init_fields))
-                order.insert(0, (parent_cls, parent_init_fields, parent_key, init_fields))
-        for (_cls, parent_init_fields, parent_key, init_fields) in order:
-            if TypeNode.from_type(_cls) == TypeNode.from_type(TList[ANY]) or\
-               TypeNode.from_type(_cls) == TypeNode.from_type(TDict[ANY, ANY]):
-                parent_init_fields[parent_key] = _cls(init_fields)
+                        for n, value in enumerate(_json_dict):
+                            stack.append(([x._params[0] for x in list_uargs], n, value, init_fields, parent_path + f".{n}"))
+                for l_cls in list_uargs:
+                    order.insert(0, (l_cls, parent_init_fields, parent_key, init_fields, parent_path))
+            elif (obj_uargs or dict_uargs) and isinstance(_json_dict, dict):
+                for d_cls in dict_uargs:
+                    init_fields = {}
+                    if d_cls._params[1] in (str, int, float, type(None)):
+                        for k, v in _json_dict.items():
+                            init_fields[k] = v
+                    else:
+                        for k, v in _json_dict.items():
+                            stack.append(([x._params[1] for x in dict_uargs], k, v, init_fields, parent_path + f".{k}"))
+
+                    order.insert(0, (d_cls, parent_init_fields, parent_key, init_fields, parent_path))
+                for o_cls in obj_uargs:
+                    init_fields = {}
+                    for f, ftype in o_cls._fields.items():
+                        if ftype in (str, int, float, type(None), bool) and f in _json_dict:
+                            init_fields[f] = _json_dict[f]
+                        elif f in _json_dict:
+                            stack.append(((ftype,), f, _json_dict[f], init_fields, parent_path + f".{f}"))
+                    order.insert(0, (o_cls, parent_init_fields, parent_key, init_fields, parent_path))
+            elif other_uargs:
+                for o_cls in other_uargs:
+                    init_fields = {}
+                    if o_cls in (str, int, float, type(None), bool):# or issubclass(o_cls, enum.Enum):
+                        parent_init_fields[parent_key] = _json_dict
+                    elif issubclass(o_cls, enum.Enum):
+                        #parent_init_fields[parent_key] = json_dict
+                        init_fields = {'value': _json_dict}
+                        order.insert(0, (o_cls, parent_init_fields, parent_key, init_fields, parent_path))
+                    else:
+                        raise ValueError(f"Cannot handle {o_cls}")
             else:
-                parent_init_fields[parent_key] = _cls(**init_fields)
+                raise ValueError(f"Cannot process data '{_json_dict}' with classes '{parent_cls_candidates}' in '{parent_path}'")
+
+
+        errors = {}
+        for (cls_candidate, parent_init_fields, parent_key, init_fields, parent_path) in order:
+            if parent_key in parent_init_fields:
+                continue
+            if TypeNode.from_type(cls_candidate) == TypeNode.from_type(TList[ANY]) or\
+               TypeNode.from_type(cls_candidate) == TypeNode.from_type(TDict[ANY, ANY]):
+                try:
+                    parent_init_fields[parent_key] = cls_candidate(init_fields)
+                except Exception as e:
+                    errors.setdefault(parent_path, []).append({"fields": init_fields, "exception": e})
+            else:
+                try:
+                    parent_init_fields[parent_key] = cls_candidate(**init_fields)
+                except Exception as e:
+                    errors.setdefault(parent_path, []).append({"fields": init_fields, "exception": e})
+        if "root" not in root_init_fields and errors:
+            raise SerializationError(errors)
+
         return root_init_fields["root"]
 
 
@@ -636,6 +732,51 @@ class Base(ABase, metaclass=BaseMeta):
                     "$type": TypeNode.from_type(current).to_json(),
                     "default": current_default,
                 }
+        return pre_order["root"]
+
+    @classmethod
+    def type_defaults_to_json(cls) -> Dict[str, Any]:
+        """Similar to `Base.to_json` method, but dumps information only of type of the object"""
+        pre_order: Dict[str, Any] = {}
+        # stack is list of (current_cls_to_process, current_parent, current_key, current_default)
+        stack: List[
+            Tuple[Type[Base], Dict[str, Any], str, Optional[JSON_COMPATIBLE]]
+        ] = [(cls, pre_order, "root", None)]
+        while stack:
+            current, current_parent, parent_key, current_default = stack.pop(0)
+            if hasattr(current, "_TYPE"):
+                current_parent["_TYPE"] = current._TYPE
+            if (
+                hasattr(current, "_CUSTOM_TYPE_TO_JSON")
+                and current._CUSTOM_TYPE_TO_JSON
+                and current != cls
+            ):
+                current_parent[parent_key] = current.type_to_json()
+            elif hasattr(current, "_fields"):
+                current_parent[parent_key] = {
+                #    "$type": current
+                }
+                for f, ftype in current._fields.items():
+                    if type(current.__dataclass_fields__[f].default) in (
+                        str,
+                        int,
+                        float,
+                    ):
+                        stack.append(
+                            (
+                                ftype,
+                                current_parent[parent_key],
+                                f,
+                                current.__dataclass_fields__[f].default,
+                            )
+                        )
+                    else:
+                        stack.append((ftype, current_parent[parent_key], f, ftype))
+            else:
+                if isinstance(current_default, (int, float)):
+                    current_parent[parent_key] = current_default
+                else:
+                    current_parent[parent_key] = str(current_default)
         return pre_order["root"]
 
     @classmethod
@@ -885,6 +1026,8 @@ class TList(Base, Generic[T]):
                     )
             elif isinstance(current, (TList, TDict)):
                 current_parent[parent_key] = current.to_json()
+            elif isinstance(current, (enum.Enum)):
+                current_parent[parent_key] = current.value
             else:
                 current_parent[parent_key] = current
         return pre_order["root"]
@@ -900,6 +1043,8 @@ class TList(Base, Generic[T]):
             current, current_parent, parent_key = stack.pop(0)
             if isinstance(current, (TList, TDict, Base)):
                 current_parent[parent_key] = current.content_to_json()
+            elif isinstance(current, (enum.Enum)):
+                current_parent[parent_key] = current.value
             else:
                 current_parent[parent_key] = current
         return pre_order["root"]
@@ -1161,6 +1306,8 @@ class TDict(Base, Generic[TK, TV]):
                     )
             elif isinstance(current, (TList, TDict)):
                 current_parent[parent_key] = current.to_json()
+            elif isinstance(current, (enum.Enum)):
+                current_parent[parent_key] = current.value
             else:
                 current_parent[parent_key] = current
         return pre_order["root"]
@@ -1412,12 +1559,6 @@ class STMDSingleIn(Base, Generic[T]):
             )
         return self._uid
 
-    def content_to_json(self) -> Dict[str, Any]:
-        if isinstance(self.data, (TList, TDict, Base)):
-            return self.data.content_to_json()
-        else:
-            return self.data
-
 
 class In(STMDSingleIn, Generic[T]):
     """Class used for input of a Traction instance. Once connected it redirect all
@@ -1523,12 +1664,6 @@ class Arg(Base, Generic[T]):
 
     _TYPE: str = "ARG"
     a: T
-
-    def content_to_json(self) -> Dict[str, Any]:
-        if isinstance(self.a, (TList, TDict, Base)):
-            return self.a.content_to_json()
-        else:
-            return self.a
 
 
 ANY_ARG_TYPE_NODE = TypeNode.from_type(Arg[ANY])
@@ -1645,7 +1780,7 @@ class TractionMeta(BaseMeta):
 
 def isodate_now() -> str:
     """Return current datetime in iso8601 format."""
-    return "%s%s" % (datetime.datetime.utcnow().isoformat(), "Z")
+    return "%s" % (datetime.datetime.utcnow().isoformat())
 
 
 class TractionStats(Base):
@@ -1834,7 +1969,7 @@ class Traction(Base, metaclass=TractionMeta):
         super().__setattr__(name, value)
 
     def add_details(self, detail):
-        self.details[datetime.utcnow().toisoformat()] = detail
+        self.details[datetime.datetime.utcnow().isoformat()] = detail
 
     @property
     def fullname(self) -> str:
@@ -1856,6 +1991,8 @@ class Traction(Base, metaclass=TractionMeta):
                 else:
                     i_json = getattr(self, f).to_json()
                     ret[f] = i_json
+            elif isinstance(getattr(self, f), (enum.Enum)):
+                ret[f] = getattr(self, f).value
             elif isinstance(getattr(self, f), (int, str, bool, float, type(None))):
                 ret[f] = getattr(self, f)
             else:
@@ -2110,7 +2247,6 @@ class STMDMeta(TractionMeta):
             for k, v in attrs.get("__annotations__", {}).items()
             if not k.startswith("_")
         }
-
         cls._before_new(name, attrs, bases)
         ret = super().__new__(cls, name, bases, attrs)
 
@@ -2166,7 +2302,6 @@ class STMD(Traction, metaclass=STMDMeta):
 
     def _traction_runner(self, index, on_update=None):
         traction = self._copy_traction(index)
-        # print(traction)
         self.tractions_state[index] = TractionState.RUNNING
         traction.run(on_update=on_update)
         self.tractions_state[index] = traction.state
@@ -2206,7 +2341,7 @@ class STMD(Traction, metaclass=STMDMeta):
                     # print("Setting Inpupt", index, self._traction.__name__, ft, str(getattr(self, ft).data)[:200])
                     init_fields[ft] = getattr(self, ft).data[index]
 
-        init_fields["uid"] = "%s:%d" % (self.fullname, index)
+        init_fields["uid"] = "%s:%d" % (self.uid, index)
         # create copy of existing traction
         # print("INIT FIELDS", index, init_fields)
         ret = traction(**init_fields)
@@ -2238,12 +2373,15 @@ class STMD(Traction, metaclass=STMDMeta):
         on_update: Optional[OnUpdateCallable] = None,
     ) -> Self:
         _on_update: OnUpdateCallable = lambda step: None
-        dt = datetime.datetime.now()
+        if on_update:
+            _on_update = on_update
+
+        if self.state not in (TractionState.READY, TractionState.ERROR):
+            return self
+
         self._reset_stats()
         self.stats.started = isodate_now()
 
-        if on_update:
-            _on_update = on_update
 
         if self.a_executor_type.a == STMDExecutorType.PROCESS:
             executor_class = ProcessPoolExecutor
@@ -2289,11 +2427,13 @@ class STMD(Traction, metaclass=STMDMeta):
                     f"{self.__class__}: Input {key} has length {len(inputs[key].data)} but others have length {len(first_in.data)} ({list(inputs.keys())[0]})"
                 )
 
+        _on_update(self)
         if executor_class:
             with executor_class(max_workers=self.a_pool_size.a) as executor:
                 ft_results = {}
                 # self.tractions.extend(TList[Optional[Traction]]([None]*len(first_in.data)))
                 for i in range(0, len(first_in.data)):
+                    #print(f"Init traction {i}:{self.tractions_state[i]}")
                     if self.tractions_state[i] in (
                         TractionState.READY,
                         TractionState.ERROR,
@@ -2302,6 +2442,8 @@ class STMD(Traction, metaclass=STMDMeta):
                             self._traction_runner, i, on_update=on_update
                         )
                         ft_results[res] = i
+                    else:
+                        print(f"{i} skipped")
                 _on_update(self)
                 for ft in as_completed(ft_results):
                     i = ft_results[ft]
@@ -2315,7 +2457,6 @@ class STMD(Traction, metaclass=STMDMeta):
                         getattr(self, o).data[i].data = t_outputs[o].data
                     # if self.a_delete_after_finished.a:
                     #    self.tractions[i] = None
-                _on_update(self)
             # if self.a_delete_after_finished.a:
             #    self.tractions.clear()
         else:
@@ -2325,5 +2466,6 @@ class STMD(Traction, metaclass=STMDMeta):
                 for o in outputs:
                     getattr(self, o).data[i].data = res[o].data
         self.state = TractionState.FINISHED
+        _on_update(self)
         self._finish_stats()
         return self

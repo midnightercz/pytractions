@@ -39,7 +39,8 @@ setup(
         "mypy",
         "typing_inspect",
         "dataclasses_json",
-        "pyyaml"
+        "pyyaml",
+        "lark"
     ],
     include_package_data=True,
 )
