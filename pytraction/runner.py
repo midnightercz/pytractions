@@ -21,7 +21,6 @@ class SimpleRunner:
             monitor.close(self.tractor)
 
     def resubmit(self, traction):
-        print("LOADING", datetime.datetime.now().isoformat())
         loading_started = False
         _ttraction = getattr(self.tractor, traction)
         outputs = []
@@ -52,7 +51,7 @@ class SimpleRunner:
                 traction_path = os.path.join(
                     self.monitor_file,
                     self.tractor.uid + "::" + output[1] + ".json")
-                print(traction_path)
+                ftype = self.tractor._fields[output[1]]
                 setattr(self.tractor, output[1], ftype.from_json(
                     json.load(open(traction_path))
                 ))
@@ -63,18 +62,14 @@ class SimpleRunner:
             if f.startswith("t_") and loading_started:
                 inputs = self.tractor._init_traction_input(f, ftype)
                 for _in, t_in in inputs.items():
-                    print(getattr(self.tractor.tractions[f], _in))
                     object.__setattr__(self.tractor.tractions[f], _in,  t_in)
 
 
 
         #self.tractor = self.tractor.from_json(json.load(open(os.path.join(self.monitor_file, self.tractor.uid + ".json"))))
-        print("LOADED", datetime.datetime.now().isoformat())
-        print(self.tractor.tractions['t_brew_builds_from_et'].i_errata_id)
         monitor = StructuredMonitor(self.tractor, self.monitor_file)
         self.tractor.resubmit_from(traction)
         try:
-            print("running")
             self.tractor.run(on_update=monitor.on_update)
         finally:
             monitor.close(self.tractor)

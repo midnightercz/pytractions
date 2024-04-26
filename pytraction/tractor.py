@@ -20,27 +20,34 @@ class _TractorOutputOwner(Base):
 class TractorMeta(TractionMeta):
     @classmethod
     def _attribute_check(cls, attr, type_, all_attrs):
+        type_type_node = TypeNode.from_type(type_, subclass_check=False)
+
         if attr not in ('uid', 'state', 'skip', 'skip_reason', 'errors', 'stats', 'details', 'tractions'):
             if attr.startswith("i_"):
                 if TypeNode.from_type(type_, subclass_check=True) != TypeNode.from_type(STMDSingleIn[ANY]):
                     raise TypeError(f"Attribute {attr} has to be type STMDSingleIn[ANY], In[ANY], or TIn[ANY] but is {type_}")
             elif attr.startswith("o_"):
-                if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(Out[ANY]):
+                if type_type_node != TypeNode.from_type(Out[ANY]):
                     raise TypeError(f"Attribute {attr} has to be type Out[ANY], but is {type_}")
             elif attr.startswith("a_"):
-                if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(Arg[ANY]) and\
+                if type_type_node != TypeNode.from_type(Arg[ANY]) and\
                    TypeNode.from_type(type_, subclass_check=True) != TypeNode.from_type(MultiArg):
                     raise TypeError(f"Attribute {attr} has to be type Arg[ANY] or MultiArg, but is {type_}")
             elif attr.startswith("r_"):
-                if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(Res[ANY]):
+                if type_type_node != TypeNode.from_type(Res[ANY]):
                     raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
             elif attr.startswith("t_"):
                 if TypeNode.from_type(type_, subclass_check=True) != TypeNode.from_type(Traction):
                     raise TypeError(f"Attribute {attr} has to be type Traction, but is {type_}")
+            elif attr == "d_":
+                if type_type_node != TypeNode.from_type(str):
+                    raise TypeError(
+                        f"Attribute {attr} has to be type str, but is {type_}"
+                    )
             elif attr.startswith("d_"):
-                if TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(str):
+                if type_type_node != TypeNode.from_type(str):
                     raise TypeError(f"Attribute {attr} has to be type str, but is {type_}")
-                if attr.replace("d_", "", 1) not in all_attrs['__annotations__']:
+                if attr.replace("d_", "", 1) not in all_attrs['__annotations__'] :
                     raise TypeError(f"Attribute {attr.replace('d_', '', 1)} is not defined for description {attr}: {all_attrs}")
             else:
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or t_")

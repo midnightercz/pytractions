@@ -84,9 +84,6 @@ def generate_traction_name_str(traction, include_module=False):
     else:
         module = ""
     if traction._params:
-        import sys
-        print(traction.__name__, traction._params, file=sys.stderr)
-        print(traction.__orig_qualname__, file=sys.stderr)
         return f"{module}{traction.__orig_qualname__}[{','.join([generate_traction_name_str(p, include_module=True) for p in traction._params])}]"
     else:
         return f"{module}{traction.__name__}"
@@ -124,11 +121,14 @@ def generate_task_spec(traction, docker_image, inputs_map={}, id_in_tractor=None
                  "description": getattr(traction, "d_" + f, None) or ""
                 }
             )
-        # spec['results'] = results
+        elif f in ('stats', 'state'):
+            results.append(
+                {"name": f}
+            )
     params_str = yaml.dump_all([{"name": p["name"],
                                   "data": StrParam(f'$(params["{p["name"]}"])')} for p in params])
     inputs_str = yaml.dump_all([{"name": k,
-                                 "data_file":f"$(workspaces.outputs.path)/{v[0]}::{v[1]}"}
+                                 "data_file": f"$(workspaces.outputs.path)/{v[0]}::{v[1]}"}
                                 for k, v in inputs_map.items()])
     delimiter = "---" if inputs_str else ""
     tid = id_in_tractor or traction.uid
@@ -146,7 +146,6 @@ cat <<EOF |
 EOF
 python -m pytraction.container_runner run {store_results_str}\\
     "{traction.__module__}:{generate_traction_name_str(traction)}"
-ls $(workspaces.outputs.path)/
 """
     })
     return spec
@@ -209,15 +208,6 @@ def generate_tekton_pipeline(tractor, docker_image):
                      "type": "string",
                      "description": generate_param_description(tractor, f)}
             params.append(param)
-        # elif f.startswith("o_"):
-        #     results.append(
-        #         {"name": f,
-        #          "description": getattr(traction, "d_" + f, None) or "",
-        #          "value": "$(workspaces.outputs.%s.%s)" % (
-        #              tekton_task_name(tractor._t_outputs_map[f][0]),
-        #              tractor._t_outputs_map[f][1])
-        #         }
-        #     )
 
     tasks = []
     for f, tf in tractor._fields.items():
@@ -402,100 +392,104 @@ def parse_traction_str(traction_str):
     parsed = parser.parse(traction_str)
     return parsed
 
+
 def field_from_json_str(json_str):
     json_dict = json.loads(json_str)
     return json_dict["name"], json_dict['data']
 
-def run_in_container():
-    parser = argparse.ArgumentParser(description="Run a traction in a docker container")
-    subparsers = parser.add_subparsers(required=True)
 
+def generate_tekton_task_main(args):
+    traction_cls = parse_traction_str(args.traction)
+    if args.type == "tractor":
+        print(
+            yaml.dump(
+                generate_tekton_pipeline(traction_cls, args.docker_image),
+            )
+        )
+    else:
+        print(
+            yaml.dump(
+                generate_tekton_task(traction_cls, args.docker_image),
+            )
+        )
+
+
+def generate_tekton_task_run_main(args):
+    traction_cls = parse_traction_str(args.traction)
+    if args.type == "tractor":
+        print(
+            yaml.dump(
+                generate_tekton_pipeline_run(traction_cls),
+            )
+        )
+    else:
+        print(
+            yaml.dump(
+                generate_tekton_task_run(traction_cls),
+            )
+        )
+
+
+def run_main(args):
+    traction_cls = parse_traction_str(args.traction)
+    traction_init_fields = {}
+    docs = yaml.safe_load_all(sys.stdin.read())
+    for doc in docs:
+        name, data, data_file = doc['name'], doc.get('data'), doc.get('data_file')
+        if data_file:
+            data = yaml.safe_load(open(data_file).read())
+            data = data['data']
+        if name not in traction_cls._fields:
+            raise AttributeError(f"{traction_cls.__name__} doesn't have field {name}")
+        traction_init_fields[name] = traction_cls._fields[name].content_from_json(yaml.safe_load(data))
+    traction = traction_cls(uid='0', **traction_init_fields)
+    traction.run()
+    outputs_map = {}
+    for store_output in args.store_output:
+        outputs_map[store_output.split("=")[0]] = store_output.split("=")[1]
+
+    for f in outputs_map:
+        if f not in traction._fields:
+            raise AttributeError(f"{traction_cls.__name__} doesn't have field {f}")
+
+    for f, ftype in traction._fields.items():
+        if f in outputs_map:
+            if f == "stats":
+                o_yaml = yaml.safe_dump({"name": f, "data": yaml.safe_dump(getattr(traction, f).content_to_json())})
+            elif f == "state":
+                o_yaml = yaml.safe_dump({"name": f, "data": getattr(traction, f).value})
+            else:
+                o_yaml = yaml.safe_dump({"name": f, "data": StrParam(yaml.dump(getattr(traction, f).content_to_json()))})
+            with open(outputs_map[f], "w") as _f:
+                _f.write(o_yaml)
+
+def make_parsers(subparsers):
     p_generate_tekton_task = subparsers.add_parser("generate_tekton_task", help="Generate tekton task yaml")
     p_generate_tekton_task.add_argument("--type", choices=('traction','tractor'), default='traction')
     p_generate_tekton_task.add_argument("traction", help="Traction to describe")
     p_generate_tekton_task.add_argument("docker_image", help="docker image for tekton task")
-    p_generate_tekton_task.set_defaults(generate_tekton_task=True)
+    p_generate_tekton_task.set_defaults(command=generate_tekton_task_main)
 
     p_generate_tekton_task_run = subparsers.add_parser("generate_tekton_task_run", help="Generate tekton taskrun yaml")
     p_generate_tekton_task_run.add_argument("traction", help="Traction to describe")
     p_generate_tekton_task_run.add_argument("--type", choices=('traction','tractor'), default='traction')
-    p_generate_tekton_task_run.set_defaults(generate_tekton_task_run=True)
+    p_generate_tekton_task_run.set_defaults(command=generate_tekton_task_run_main)
 
     run_parser = subparsers.add_parser("run", help="Run a traction")
     run_parser.add_argument("traction", help="Traction to run")
     run_parser.add_argument("--store-output",
                             action='append',
                             help="mapping of output=/file/path where specific output should be stored")
-    run_parser.set_defaults(run=True)
+    run_parser.set_defaults(command=run_main)
 
-    store_outputs_parser = subparsers.add_parser("store_outputs", help="Store traction outputs to files")
-    store_outputs_parser.add_argument("output_mapping", help="Traction to run", nargs="*")
-    store_outputs_parser.set_defaults(store_results=True)
+
+def run_in_container():
+    parser = argparse.ArgumentParser(description="Run a traction in a docker container")
+    subparsers = parser.add_subparsers(required=True, dest='command')
+    make_parsers(subparsers)
 
     args = parser.parse_args()
-    if hasattr(args, "generate_tekton_task"):
-        traction_mod_str, traction_cls_str = parse_traction_str(args.traction)
-        traction_mod = importlib.import_module(traction_mod_str)
-        traction_cls = getattr(traction_mod, traction_cls_str)
-        if args.type == "tractor":
-            print(
-                yaml.dump(
-                    generate_tekton_pipeline(traction_cls, args.docker_image),
-                )
-            )
-        else:
-            print(
-                yaml.dump(
-                    generate_tekton_task(traction_cls, args.docker_image),
-                )
-            )
-    if hasattr(args, "generate_tekton_task_run"):
-        traction_cls = parse_traction_str(args.traction)
-        if args.type == "tractor":
-            print(
-                yaml.dump(
-                    generate_tekton_pipeline_run(traction_cls),
-                )
-            )
-        else:
-            print(
-                yaml.dump(
-                    generate_tekton_task_run(traction_cls),
-                )
-            )
-
-    elif hasattr(args, "run"):
-        traction_cls = parse_traction_str(args.traction)
-        traction_init_fields = {}
-        docs = yaml.safe_load_all(sys.stdin.read())
-        for doc in docs:
-            name, data, data_file = doc['name'], doc.get('data'), doc.get('data_file')
-            if data_file:
-                data = yaml.safe_load(open(data_file).read())
-                data = data['data']
-            if name not in traction_cls._fields:
-                raise AttributeError(f"{traction_cls.__name__} doesn't have field {name}")
-            traction_init_fields[name] = traction_cls._fields[name].content_from_json(yaml.safe_load(data))
-        traction = traction_cls(uid='0', **traction_init_fields)
-        traction.run()
-        outputs_map = {}
-        for store_output in args.store_output:
-            outputs_map[store_output.split("=")[0]] = store_output.split("=")[1]
-
-        for f in outputs_map:
-            if f not in traction._fields:
-                raise AttributeError(f"{traction_cls.__name__} doesn't have field {f}")
-
-        for f, ftype in traction._fields.items():
-            if f in outputs_map:
-                if f == "stats":
-                    o_yaml = yaml.safe_dump({"name": f, "data": yaml.safe_dump(getattr(traction, f).content_to_json())})
-                elif f == "state":
-                    o_yaml = yaml.safe_dump({"name": f, "data": getattr(traction, f).value})
-                else:
-                    o_yaml = yaml.safe_dump({"name": f, "data": StrParam(yaml.dump(getattr(traction, f).content_to_json()))})
-                with open(outputs_map[f], "w") as _f:
-                    _f.write(o_yaml)
+    args.command(args)
 
 
 if __name__ == '__main__':

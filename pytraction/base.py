@@ -1720,6 +1720,11 @@ class TractionMeta(BaseMeta):
                     raise TypeError(
                         f"Attribute {attr} has to be type Res[ANY], but is {type_}"
                     )
+            elif attr == "d_":
+                if type_type_node != TypeNode.from_type(str):
+                    raise TypeError(
+                        f"Attribute {attr} has to be type str, but is {type_}"
+                    )
             elif attr.startswith("d_"):
                 if type_type_node != TypeNode.from_type(str):
                     raise TypeError(
@@ -2183,6 +2188,16 @@ class STMDMeta(TractionMeta):
                     raise TypeError(
                         f"Attribute {attr} has to be type Res[ANY], but is {type_}"
                     )
+            elif attr == "d_":
+                if type_type_node != TypeNode.from_type(str):
+                    raise TypeError(
+                        f"Attribute {attr} has to be type str, but is {type_}"
+                    )
+            elif attr.startswith("d_"):
+                if type_type_node != TypeNode.from_type(str):
+                    raise TypeError(f"Attribute {attr} has to be type str, but is {type_}")
+                if attr.replace("d_", "", 1) not in all_attrs['__annotations__'] :
+                    raise TypeError(f"Attribute {attr.replace('d_', '', 1)} is not defined for description {attr}: {all_attrs}")
             else:
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or d_")
 
