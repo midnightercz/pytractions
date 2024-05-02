@@ -1,4 +1,5 @@
 import inspect
+import importlib
 import json
 from typing import get_origin, TypeVar, Union, ForwardRef, Dict, Any, Tuple, List
 from typing_extensions import Self
@@ -423,7 +424,7 @@ class TypeNode:
 
         while stack:
             parent, parent_key, _type, _type_mod, _args = stack.pop(0)
-            mod = sys.modules[_type_mod]
+            mod = importlib.import_module(_type_mod)
             _type_path = _type.split(".")
             _type_o = mod
             for path_part in _type_path:
