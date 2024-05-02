@@ -833,6 +833,8 @@ class Base(ABase, metaclass=BaseMeta):
                         break
             elif TypeNode.from_type(type_) == TypeNode.from_type(TList[ANY]):
                 parent_args[parent_key] = type_.from_json(data)
+            elif TypeNode.from_type(type_) == TypeNode.from_type(TDict[ANY, ANY]):
+                parent_args[parent_key] = type_.from_json(data)
             elif type_ not in (int, str, bool, float, type(None)) and not issubclass(
                 type_, enum.Enum
             ):
@@ -1982,7 +1984,7 @@ class Traction(Base, metaclass=TractionMeta):
         return f"{self.__class__.__name__}[{self.uid}]"
 
     def to_json(self) -> Dict[str, Any]:
-        ret = {}
+        ret = {"$data":{}}
         for f in self._fields:
             if f.startswith("i_"):
                 if (
@@ -1990,20 +1992,22 @@ class Traction(Base, metaclass=TractionMeta):
                     and getattr(self, f)._owner
                     and getattr(self, f)._owner != self
                 ):
-                    ret[f] = (
+                    ret['$data'][f] = (
                         getattr(self, f)._owner.fullname + "#" + getattr(self, f)._name
                     )
                 else:
                     i_json = getattr(self, f).to_json()
-                    ret[f] = i_json
+                    ret['$data'][f] = i_json
             elif isinstance(getattr(self, f), (enum.Enum)):
-                ret[f] = getattr(self, f).value
+                ret['$data'][f] = getattr(self, f).value
             elif isinstance(getattr(self, f), (int, str, bool, float, type(None))):
-                ret[f] = getattr(self, f)
+                ret['$data'][f] = getattr(self, f)
             else:
-                ret[f] = getattr(self, f).to_json()
-        ret["name"] = self.__class__.__name__
-        ret["type"] = self._TYPE
+                ret['$data'][f] = getattr(self, f).to_json()
+
+        ret["$type"] =  TypeNode.from_type(self.__class__).to_json()
+        #ret['$data']["name"] = self.__class__.__name__
+        #ret['$data']["type"] = self._TYPE
         return ret
 
     def _getstate_to_json(self) -> Dict[str, Any]:
@@ -2109,8 +2113,10 @@ class Traction(Base, metaclass=TractionMeta):
     def from_json(cls, json_data) -> Self:
         args = {}
         outs = {}
+        data = json_data['$data']
+        type_cls = TypeNode.from_json(json_data["$type"]).to_type()
         for f, ftype in cls._fields.items():
-            if f.startswith("i_") and isinstance(json_data[f], str):
+            if f.startswith("i_") and isinstance(data[f], str):
                 continue
             elif (
                 f.startswith("a_")
@@ -2120,25 +2126,25 @@ class Traction(Base, metaclass=TractionMeta):
             ):
                 if f.startswith("r_"):
                     args[f] = (
-                        TypeNode.from_json(json_data[f]["$type"])
+                        TypeNode.from_json(data[f]["$type"])
                         .to_type()
-                        .from_json(json_data[f])
+                        .from_json(data[f])
                     )
                 else:
-                    args[f] = ftype.from_json(json_data[f])
+                    args[f] = ftype.from_json(data[f])
             elif f.startswith("i_"):
-                args[f] = ftype.from_json(json_data[f])
+                args[f] = ftype.from_json(data[f])
             elif f.startswith("o_"):
-                outs[f] = ftype.from_json(json_data[f])
+                outs[f] = ftype.from_json(data[f])
             elif f == "tractions":
-                args[f] = TList[Union[Traction, None]].from_json(json_data[f])
+                args[f] = TList[Union[Traction, None]].from_json(data[f])
             elif f == "tractions_state":
-                args[f] = TList[TractionState].from_json(json_data[f])
+                args[f] = TList[TractionState].from_json(data[f])
             elif f == "state":
-                args[f] = TractionState(json_data[f])
+                args[f] = TractionState(data[f])
             else:
-                args[f] = json_data[f]
-        ret = cls(**args)
+                args[f] = data[f]
+        ret = type_cls(**args)
         for o, oval in outs.items():
             setattr(ret, o, oval)
         return ret
