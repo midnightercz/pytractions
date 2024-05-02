@@ -21,7 +21,6 @@ ignore_types = (
 def gather_simple_types(type_json):
 
     simple_types = []
-    print(type_json)
     if type_json['type']['$type']['type'] not in ignore_types:
         simple_types.append(type_json['type']['$type']['type'])
     stack = []
@@ -33,11 +32,18 @@ def gather_simple_types(type_json):
             simple_types.append(arg['type'])
         for a in arg.get('args', []):
             stack.append(a)
-    print(simple_types)
     return list(set(simple_types))
 
 
-def tractions_discovery(tag_filter=None, type_filter=None, name_filter=None):
+def tractions_discovery(
+        tag_filter=None,
+        type_filter=None,
+        name_filter=None,
+        inputs_type_filter=None,
+        outputs_type_filter=None,
+        resources_type_filter=None,
+        args_type_filter=None,
+        type_to_str=False):
     ret = []
     seen = set()
     for d in importlib.metadata.distributions():
@@ -45,51 +51,102 @@ def tractions_discovery(tag_filter=None, type_filter=None, name_filter=None):
             if d._path in seen:
                 continue
             seen.add(d._path)
-            dist = inspect_distribution(d, tag_filter=None, type_filter=None, name_filter=None)
+            dist = inspect_distribution(d, tag_filter=tag_filter, type_filter=type_filter,
+                                        name_filter=name_filter,
+                                        inputs_type_filter=inputs_type_filter,
+                                        outputs_type_filter=outputs_type_filter,
+                                        resources_type_filter=resources_type_filter,
+                                        args_type_filter=args_type_filter,
+                                        type_to_str=type_to_str)
             if dist:
                 ret.append(dist)
     return ret
 
 
-def inspect_traction_ep(traction_ep, tag_filter=None, type_filter=None):
+def _type_to_str(type_json):
+    out = []
+    stack = []
+    out.append(type_json['$type']['type'])
+    if type_json['$type'].get('args', []):
+        stack.insert(0, "]")
+        for n, arg in enumerate(type_json['$type'].get('args', [])[::-1]):
+            stack.insert(0, arg)
+            if n != len(type_json['$type'].get('args', [])) - 1:
+                stack.insert(0, ",")
+        stack.insert(0, "[")
+
+    x = 0
+    while stack and x < 100:
+        x += 1
+        item = stack.pop(0)
+        if isinstance(item, str):
+            out.append(item)
+            continue
+        out.append(item['type'])
+        if item.get('args', []):
+            stack.insert(0, "]")
+            for n, a in enumerate(item.get('args', [])[::-1]):
+                stack.insert(0, a)
+                if n != len(item.get('args', [])) - 1:
+                    stack.insert(0, ",")
+            stack.insert(0, "[")
+    return "".join(out)
+
+def convert_types_to_str(t_meta):
+    t_meta['inputs'] = [{"name": i['name'], "type": _type_to_str(i['type'])} for i in t_meta['inputs']]
+    t_meta['outputs'] = [{"name": i['name'], "type": _type_to_str(i['type'])} for i in t_meta['outputs']]
+    t_meta['resources'] = [{"name": i['name'], "type": _type_to_str(i['type'])} for i in t_meta['resources']]
+    t_meta['args'] = [{"name": i['name'], "type": _type_to_str(i['type'])} for i in t_meta['args']]
+    return t_meta
+
+
+def inspect_traction_ep(traction_ep, tag_filter=None, name_filter=None, type_filter=None):
     t = {}
     traction = traction_ep.load()
-    if tag_filter and not filter_tag(tag_filter, traction.tags):
-        return None
-    if type_filter and traction._TYPE != type_filter:
-        return None
     t['name'] = str(traction)
     t['type'] = traction._TYPE
     t['module'] = traction.__module__
     t['docs'] = getattr(traction, 'd_', None)
-    #t['tags'] = traction.tags
+    t['tags'] = []
+
+    if name_filter and not filter_name(name_filter, t['name']):
+        return {}
+    if tag_filter and not filter_tag(tag_filter, traction.tags):
+        return {}
+    if type_filter and traction._TYPE not in type_filter:
+        return {}
+
     t['inputs'] = [
         {"name": k,
-         "type": v.type_to_json()
+         "type": v.type_to_json(),
+         "docs": traction._fields.get("d_" + k, None)
         } for k, v in traction._fields.items() if k.startswith('i_')
     ]
     t['outputs'] = [
         {"name": k,
-         "type": v.type_to_json()
+         "type": v.type_to_json(),
+         "docs": traction._fields.get("d_" + k, None)
         } for k, v in traction._fields.items() if k.startswith('o_')
     ]
     t['resources'] = [
         {"name": k,
-         "type": v.type_to_json()
+         "type": v.type_to_json(),
+         "docs": traction._fields.get("d_" + k, None)
         } for k, v in traction._fields.items() if k.startswith('r_')
     ]
     t['args'] = [
         {"name": k,
-         "type": v.type_to_json()
+         "type": v.type_to_json(),
+         "docs": traction._fields.get("d_" + k, None)
         } for k, v in traction._fields.items() if k.startswith('a_')
     ]
     return t
 
 
-def inspect_distribution(distribution, tag_filter=None, type_filter=None, name_filter=None):
+def inspect_distribution(distribution, tag_filter=None, type_filter=None, name_filter=None,
+                         inputs_type_filter=None, outputs_type_filter=None, resources_type_filter=None,
+                         args_type_filter=None, type_to_str=False):
     d = {}
-    if name_filter and not filter_name(name_filter, distribution.metadata['Name']):
-        return None
     d['name'] = distribution.metadata['Name']
     d['tags'] = []
     d['tractions'] = []
@@ -98,9 +155,8 @@ def inspect_distribution(distribution, tag_filter=None, type_filter=None, name_f
     d['outputs'] = []
     d['resources'] = []
     for t in distribution.entry_points.select(group='tractions'):
-        t_meta = inspect_traction_ep(t, tag_filter=tag_filter, type_filter=type_filter)
+        t_meta = inspect_traction_ep(t, tag_filter=tag_filter, type_filter=type_filter, name_filter=name_filter)
         if t_meta:
-            d['tractions'].append(t_meta)
             d['args'].extend(sum([gather_simple_types(a) for a in t_meta['args']],[]))
             d['resources'].extend(sum([gather_simple_types(a) for a in t_meta['resources']], []))
             d['inputs'].extend(sum([gather_simple_types(a) for a in t_meta['inputs']], []))
@@ -109,12 +165,42 @@ def inspect_distribution(distribution, tag_filter=None, type_filter=None, name_f
             d['resources'] = list(set(d['resources']))
             d['inputs'] = list(set(d['inputs']))
             d['outputs'] = list(set(d['outputs']))
+        else:
+            continue
+        
+        t_meta_str_types = convert_types_to_str(t_meta.copy())
+
+        if inputs_type_filter:
+            if not any([any([rt in t['type'] for t in  t_meta_str_types['inputs']])
+                        for rt in inputs_type_filter]):
+                continue
+        if outputs_type_filter:
+            if not any([any([rt in t['type'] for t in  t_meta_str_types['outputs']])
+                        for rt in outputs_type_filter]):
+                continue
+        if resources_type_filter:
+            if not any([any([rt in t['type'] for t in  t_meta_str_types['resources']])
+                        for rt in resources_type_filter]):
+                continue
+        if args_type_filter:
+            if not any([any([rt in t['type'] for t in  t_meta_str_types['args']])
+                        for rt in args_type_filter]):
+                continue
+        d['tractions'].append(t_meta_str_types if type_to_str else t_meta)
 
     return d
 
 
-def catalog(tag_filter=None, type_filter=None, name_filter=None):
-    tractions = tractions_discovery(tag_filter=None, type_filter=None, name_filter=None)
+def catalog(tag_filter=None, type_filter=None, name_filter=None,
+            args_type_filter=None,
+            inputs_type_filter=None, outputs_type_filter=None, resources_type_filter=None,
+            type_to_str=False):
+    tractions = tractions_discovery(tag_filter=tag_filter, type_filter=type_filter, name_filter=name_filter,
+                                    args_type_filter=args_type_filter,
+                                    inputs_type_filter=inputs_type_filter,
+                                    outputs_type_filter=outputs_type_filter,
+                                    resources_type_filter=resources_type_filter,
+                                    type_to_str=type_to_str)
     all_inputs = list(set([inp for t in tractions for inp in t['inputs']]))
     all_outputs = list(set([out for t in tractions for out in t['outputs']]))
     all_resources = list(set([res for t in tractions for res in t['resources']]))
@@ -124,7 +210,10 @@ def catalog(tag_filter=None, type_filter=None, name_filter=None):
 
 
 def catalog_main(args):
-    tractions = catalog(tag_filter=args.tag_filter, type_filter=args.type_filter, name_filter=args.name_filter)
+    tractions = catalog(
+        tag_filter=args.tag_filter, type_filter=args.type_filter, name_filter=args.name_filter,
+        type_to_str=True
+    )
     if args.output == 'json':
         import json
         print(json.dumps(tractions[0], indent=2))
@@ -148,7 +237,8 @@ if __name__ == '__main__':
     subparsers = parser.add_subparsers(required=True, dest='command')
     make_parsers(subparsers)
     args = parser.parse_args()
-    tractions, _, _, _, _, _ = catalog(tag_filter=args.tag_filter, type_filter=args.type_filter, name_filter=args.name_filter)
+    tractions, _, _, _, _, _ = catalog(tag_filter=args.tag_filter, type_filter=args.type_filter,
+                                       name_filter=args.name_filter, type_to_str=True)
     if args.output == 'json':
         import json
         print(json.dumps(tractions, indent=2))
