@@ -380,6 +380,8 @@ class Tractor(Traction, metaclass=TractorMeta):
         tractions = {}
         traction_outputs = {}
         for f, ftype in cls._fields.items():
+            if not cls.__dataclass_fields__[f].init:
+                continue
             if f.startswith("i_") and isinstance(json_data[f], str):
                 continue
             elif f.startswith("t_"):
@@ -402,6 +404,8 @@ class Tractor(Traction, metaclass=TractorMeta):
                     args[f] = ftype.from_json(json_data[f])
             elif f.startswith("o_"):
                 outs[f] = ftype.from_json(json_data[f])
+            elif f == 'tractions':
+                continue
             else:
                 args[f] = json_data[f]
         ret = cls(**args)
