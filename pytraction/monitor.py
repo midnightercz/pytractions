@@ -39,6 +39,8 @@ class StructuredMonitor:
         self.path = path
         self.traction_states = {}
         self.tractor = tractor
+        with open(os.path.join(self.path, "-root-.json"), "w") as f:
+            f.write(json.dumps(tractor.to_json()))
 
     def on_update(self, traction):
         if traction.uid not in self.traction_states:
