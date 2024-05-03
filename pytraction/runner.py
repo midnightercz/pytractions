@@ -3,9 +3,12 @@ import argparse
 import datetime
 import sys
 import os
+import yaml
 
 from .monitor import StructuredMonitor
-from .base import Base
+from .base import Base, Traction
+from .tractor import Tractor
+from .runner_utils import parse_traction_str, generate_traction_ari
 
 
 class SimpleRunner:
@@ -64,12 +67,59 @@ class SimpleRunner:
                 for _in, t_in in inputs.items():
                     object.__setattr__(self.tractor.tractions[f], _in,  t_in)
 
-
-
-        #self.tractor = self.tractor.from_json(json.load(open(os.path.join(self.monitor_file, self.tractor.uid + ".json"))))
         monitor = StructuredMonitor(self.tractor, self.monitor_file)
         self.tractor.resubmit_from(traction)
         try:
             self.tractor.run(on_update=monitor.on_update)
         finally:
             monitor.close(self.tractor)
+
+
+def run_main(args):
+    traction_cls = parse_traction_str(args.traction)
+    traction_init_fields = {}
+    docs = yaml.safe_load_all(sys.stdin.read())
+    for doc in docs:
+        name, data, data_file = doc['name'], doc.get('data'), doc.get('data_file')
+        if data_file:
+            data = yaml.safe_load(open(data_file).read())
+            data = data['data']
+        if name not in traction_cls._fields:
+            raise AttributeError(f"{traction_cls.__name__} doesn't have field {name}")
+        traction_init_fields[name] = traction_cls._fields[name].content_from_json(yaml.safe_load(data))
+    traction = traction_cls(uid='0', **traction_init_fields)
+    runner = SimpleRunner(traction, args.monitor)
+    runner.run()
+
+
+def resubmit_main(args):
+    traction = Traction.from_json(json.load(open(os.path.join(args.monitor, '-root-.json'))))
+    runner = SimpleRunner(traction, args.monitor)
+    runner.resubmit(args.from_traction)
+
+def gen_inputs_main(args):
+    traction_cls = parse_traction_str(args.traction)
+    print(generate_traction_ari(traction_cls))
+
+
+def make_parsers(subparsers):
+    p_runner = subparsers.add_parser('run', help='Run pytraction module')
+    p_runner.add_argument('traction', help='Path of traction to run (module:traction)', type=str)
+    p_runner.add_argument('--monitor', '-m', help='Path to monitor directory', type=str, default='monitor')
+    p_runner.set_defaults(command=run_main)
+
+    p_resubmit = subparsers.add_parser('resubmit', help='Run pytraction module')
+    p_resubmit.add_argument('--monitor', '-m', help='Path to monitor directory', type=str, default='monitor')
+    p_resubmit.add_argument('--from-traction', '-t', help='Resubmit from specific traction', type=str, default='monitor')
+    p_resubmit.set_defaults(command=resubmit_main)
+
+    p_gen_inputs = subparsers.add_parser('generate_inputs', help='Run pytraction module')
+    p_gen_inputs.add_argument('traction', help='Path of traction to run (module:traction)', type=str)
+    p_gen_inputs.set_defaults(command=gen_inputs_main)
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Pytraction simple runner")
+    subparsers = parser.add_subparsers(required=True, dest='command')
+    make_parsers(subparsers)
+    args = parser.parse_args()
+    args.command(args)

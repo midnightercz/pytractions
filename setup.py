@@ -40,7 +40,9 @@ setup(
         "typing_inspect",
         "dataclasses_json",
         "pyyaml",
-        "lark"
+        "lark",
+        "streamlit",
+        "streamlit-extras"
     ],
     include_package_data=True,
 )
