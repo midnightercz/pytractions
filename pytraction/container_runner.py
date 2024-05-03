@@ -8,10 +8,9 @@ import re
 import yaml
 from typing import Optional, _SpecialForm, _UnionGenericAlias
 
-from lark import Lark, Transformer
-
 from .monitor import Monitor
 from .base import Base, TypeNode, ANY, TList, TDict
+from .runner_utils import parse_traction_str
 
 
 def str_presenter(dumper, data):
@@ -68,7 +67,7 @@ def generate_type_description(type_, indent=0):
                             for f, t in type_._fields.items()
                             if not f.startswith("_")])
         ret = f"{type_.__name__}(\n{fields}\n)"
-    return ret 
+    return ret
 
 
 def generate_param_description(traction, field):
@@ -146,6 +145,8 @@ cat <<EOF |
 EOF
 python -m pytraction.container_runner run {store_results_str}\\
     "{traction.__module__}:{generate_traction_name_str(traction)}"
+cat $(workspaces.outputs.path)/{tid}::stats
+cat $(workspaces.outputs.path)/{tid}::state
 """
     })
     return spec
@@ -344,53 +345,7 @@ def generate_tekton_pipeline_run(traction):
     }
     return result
 
-traction_str_grammar = r"""
-start: type
-type: fullname | fullname "[" typelist "]"
-fullname: name ":" name
-typelist: type | type "," typelist
-name: NAME
-NAME: /([a-zA-Z_])+([a-zA-Z_\.])*/
-"""
 
-class TTransformer(Transformer):
-    def __init___(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.stack = []
-        self.current_traction = {
-            'mod': None,
-            'name': None,
-            'args': []
-        }
-
-    def type(self, token):
-        if len(token) > 1:
-            return token[0].__class_getitem__(tuple(token[1]))
-        else:
-            return token[0]
-
-    def typelist(self, token):
-        if len(token) > 1:
-            return tuple(token)
-        else:
-            return token
-
-    def name(self, token):
-        return str(token[0])
-
-    def fullname(self, token):
-        mod, clsname = token
-        mod_ = importlib.import_module(mod)
-        return getattr(mod_, clsname)
-
-    def start(self, token):
-        return token[0]
-
-
-def parse_traction_str(traction_str):
-    parser = Lark(traction_str_grammar, parser='lalr', transformer=TTransformer())
-    parsed = parser.parse(traction_str)
-    return parsed
 
 
 def field_from_json_str(json_str):
