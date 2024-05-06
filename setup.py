@@ -23,14 +23,14 @@ classifiers = [
 ]
 
 setup(
-    name="pytraction",
+    name="pytractions",
     version="0.0.1",
-    description="pytraction",
+    description="pytractions",
     long_description="TBD",
     long_description_content_type="text/x-rst",
     author="Jindrich Luza",
     author_email="jluza@redhat.com",
-    url="https://github.com/midnightercz/pytraction",
+    url="https://github.com/midnightercz/pytractions",
     classifiers=classifiers,
     packages=find_packages(exclude="tests"),
     data_files=[],
