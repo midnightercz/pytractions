@@ -4,8 +4,8 @@ from unittest.mock import patch
 
 @fixture
 def fixture_isodate_now():
-    with patch("pytraction.base.isodate_now") as mocked_isodate_now:
-        with patch("pytraction.tractor.isodate_now") as mocked_isodate_now2:
+    with patch("pytractions.base.isodate_now") as mocked_isodate_now:
+        with patch("pytractions.tractor.isodate_now") as mocked_isodate_now2:
             dates = [
                 "1990-01-01T00:00:00.00000Z",
                 "1990-01-01T00:00:01.00000Z",

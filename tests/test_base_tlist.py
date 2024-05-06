@@ -2,7 +2,7 @@ from typing import List, Dict, Union, Optional, TypeVar, Generic, get_args
 
 import pytest
 
-from pytraction.base import Base, JSONIncompatibleError, TList, TDict, TypeNode
+from pytractions.base import Base, JSONIncompatibleError, TList, TDict, TypeNode
 
 # Jsonable test cases
 

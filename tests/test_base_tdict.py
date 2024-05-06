@@ -2,7 +2,7 @@ from typing import List, Dict, Union, Optional, TypeVar, Generic
 
 import pytest
 
-from pytraction.base import Base, JSONIncompatibleError, TList, TDict
+from pytractions.base import Base, JSONIncompatibleError, TList, TDict
 
 # Jsonable test cases
 
@@ -215,7 +215,7 @@ def test_base_dict_to_json_simple():
                  'type': 'int',
                 },
             ],
-            'module': 'pytraction.base',
+            'module': 'pytractions.base',
             'type': 'TDict',
         },
         "$data": {
@@ -248,11 +248,11 @@ def test_base_dict_to_json_complex():
                             'type': 'int',
                         },
                     ],
-                    'module': 'pytraction.base',
+                    'module': 'pytractions.base',
                     'type': 'TDict',
                 },
             ],
-            'module': 'pytraction.base',
+            'module': 'pytractions.base',
             'type': 'TDict',
         },
         "$data": {
@@ -273,7 +273,7 @@ def test_base_dict_to_json_complex():
                              'type': 'int',
                          },
                      ],
-                     'module': 'pytraction.base',
+                     'module': 'pytractions.base',
                      'type': 'TDict',
                  },
              },
@@ -294,7 +294,7 @@ def test_base_dict_to_json_complex():
                              'type': 'int',
                          },
                      ],
-                     'module': 'pytraction.base',
+                     'module': 'pytractions.base',
                      'type': 'TDict',
                  },
              },
@@ -307,8 +307,8 @@ def test_base_dict_to_json_complex_key():
     d: TDict[int, int] = TDict[TList[str], int]({key1: 10, key2: 20})
     assert d.to_json() == {
          '$data': {
-             '{"$data": ["a", "b", "c"], "$type": {"args": [{"args": [], "module": "builtins", "type": "str"}], "module": "pytraction.base", "type": "TList"}}': 10,
-             '{"$data": ["d", "e", "f"], "$type": {"args": [{"args": [], "module": "builtins", "type": "str"}], "module": "pytraction.base", "type": "TList"}}': 20,
+             '{"$data": ["a", "b", "c"], "$type": {"args": [{"args": [], "module": "builtins", "type": "str"}], "module": "pytractions.base", "type": "TList"}}': 10,
+             '{"$data": ["d", "e", "f"], "$type": {"args": [{"args": [], "module": "builtins", "type": "str"}], "module": "pytractions.base", "type": "TList"}}': 20,
          },
          '$type': {
              'args': [
@@ -320,7 +320,7 @@ def test_base_dict_to_json_complex_key():
                              'type': 'str',
                          },
                      ],
-                     'module': 'pytraction.base',
+                     'module': 'pytractions.base',
                      'type': 'TList',
                  },
                  {
@@ -329,7 +329,7 @@ def test_base_dict_to_json_complex_key():
                      'type': 'int',
                  },
              ],
-             'module': 'pytraction.base',
+             'module': 'pytractions.base',
              'type': 'TDict',
         }
     }
@@ -351,7 +351,7 @@ def test_base_dict_from_json_simple():
                  'type': 'int',
                 },
             ],
-            'module': 'pytraction.base',
+            'module': 'pytractions.base',
             'type': 'TDict',
         },
         "$data": {

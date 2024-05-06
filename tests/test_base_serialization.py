@@ -1,6 +1,6 @@
 import pytest
 
-from pytraction.base import Base, JSONIncompatibleError, TList, TDict, JSON_COMPATIBLE, TypeNode
+from pytractions.base import Base, JSONIncompatibleError, TList, TDict, JSON_COMPATIBLE, TypeNode
 
 from typing import Optional, Union
 from enum import Enum
@@ -108,12 +108,12 @@ def test_base_from_json_complex_no_type():
             },
             "intlist": {
                 "$data": [20, 40],
-                "$type": {"args": [{"args": [], "type": "int", 'module':'builtins'}], "type": "TList", "module": "pytraction.base"}
+                "$type": {"args": [{"args": [], "type": "int", 'module':'builtins'}], "type": "TList", "module": "pytractions.base"}
             },
             "complex_list": {
                 "$data": [],
                 "$type": {"args": [{"args": [], "type": "TestC2", 'module':'tests.test_base_serialization'}],
-                          "type": "TList", "module": "pytraction.base"}
+                          "type": "TList", "module": "pytractions.base"}
             }
         },
         "$type": {
@@ -175,12 +175,12 @@ def test_base_to_json_complex():
             },
             "intlist": {
                 "$data": [20, 40],
-                "$type": {"args": [{"args": [], "type": "int", 'module':'builtins'}], "type": "TList", "module": "pytraction.base"}
+                "$type": {"args": [{"args": [], "type": "int", 'module':'builtins'}], "type": "TList", "module": "pytractions.base"}
             },
             "complex_list": {
                 "$data": [],
                 "$type": {"args": [{"args": [], "type": "TestC2", 'module':'tests.test_base_serialization'}],
-                          "type": "TList", "module": "pytraction.base"}
+                          "type": "TList", "module": "pytractions.base"}
             }
         },
         "$type": {

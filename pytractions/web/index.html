@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Card List</title>
+    <style>
+        .card {
+            border: 1px solid #000;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: #f9f9f9;
+        }
+        
+        .card-title {
+            background-color: #428bca;
+            color: #fff;
+            padding: 5px 10px;
+            margin: -10px -10px 10px -10px;
+            border-top-left-radius: 5px;
+            border-top-right-radius: 5px;
+        }
+        
+        .attributes {
+            margin-left: 20px;
+        }
+        
+        .inputs {
+            background-color: #dff0d8;
+            padding: 5px;
+            border-radius: 5px;
+            margin-bottom: 5px;
+        }
+        .tag {
+            display: inline-block;
+            color: #000;
+            padding: 5px 10px;
+            border-radius: 20px;
+            margin-right: 3px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+        }
+        .type-input {
+            background-color: #dff0d8;
+        }
+        
+        .outputs {
+            background-color: #d9edf7;
+            padding: 5px;
+            border-radius: 5px;
+            margin-bottom: 5px;
+            border: 1px solid #3c763d;
+        }
+        .type-output {
+            background-color: #d9edf7;
+        }
+        
+        .args {
+            background-color: #fcf8e3;
+            padding: 5px;
+            border-radius: 5px;
+            margin-bottom: 5px;
+        }
+        .type-arg {
+            background-color: #fcf8e3;
+        }
+        
+        .resources {
+            background-color: #f2dede;
+            padding: 5px;
+            border-radius: 5px;
+            margin-bottom: 5px;
+        }
+        .type-resource {
+            background-color: #f2dede;
+        }
+    </style>
+</head>
+<body>
+    <h1>Tractions catalog</h1>
+    <form action="/" method="GET">
+        <label for="name">Name:</label>
+        <input type="text" id="name" name="name">
+        <br>
+        <label for="tags">Tags:</label>
+        <select id="tags" name="tags" multiple>
+            <option value="tag1">Tag 1</option>
+            <option value="tag2">Tag 2</option>
+            <option value="tag3">Tag 3</option>
+            <!-- Add more options as needed -->
+        </select>
+        <br>
+        <label for="inputs">Inputs:</label>
+        <select id="inputs" name="inputs" multiple>
+            {% for input in all_inputs %}
+            <option value="{{input}}">{{input}}</option>
+            {% endfor %}
+            <!-- Add more options as needed -->
+        </select>
+        <br>
+        <label for="outputs">Outputs:</label>
+        <select id="outputs" name="outputs" multiple>
+            {% for output in all_outputs %}
+            <option value="{{output}}">{{output}}</option>
+            {% endfor %}
+            <!-- Add more options as needed -->
+        </select>
+        <br>
+        <label for="args">Args:</label>
+        <select id="args" name="args" multiple>
+            {% for arg in all_args %}
+            <option value="{{arg}}">{{arg}}</option>
+            {% endfor %}
+            <!-- Add more options as needed -->
+        </select>
+        <br>
+        <label for="resources">Resources:</label>
+        <select id="resources" name="resources" multiple>
+            {% for resource in all_resources %}
+            <option value="{{resource}}">{{resource}}</option>
+            {% endfor %}
+            <!-- Add more options as needed -->
+        </select>
+        <br>
+        <button type="submit">Filter</button>
+    </form>
+
+    <div>
+        <div>
+        All available input types:
+        {% for input in all_inputs %}
+            <span class='type-input tag'>{{ input }}</span>
+        {% endfor %}
+        <div>
+        <div>
+        All available output types:
+        {% for output in all_outputs %}
+            <span class='type-output tag'>{{ output }}</span>
+        {% endfor %}
+        <div>
+        <div>
+        All available arg types:
+        {% for arg in all_args %}
+            <span class='type-arg tag'>{{ arg }}</span>
+        {% endfor %}
+        <div>
+        <div>
+        All available resource types:
+        {% for resource in all_resources %}
+            <span class='type-resource tag'>{{ resource }}</span>
+        {% endfor %}
+        <div>
+
+        {% for card in cards %}
+        <div class="card">
+            <div class="card-title">{{ card.name }}</div>
+            <div class="attributes">
+                <div class="documentation">
+                    <strong>Docs:</strong>
+                    <ul>
+                        {{card.docs}}
+                    </ul>
+                </div>
+                <div class="inputs">
+                    <strong>Inputs:</strong>
+                    <ul>
+                        {% for input in card.inputs %}
+                        <li>{{ input.name }}&nbsp;<b>[&nbsp;{{ input.type }}&nbsp;]</b><br>{{ input.docs }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                <div class="outputs">
+                    <strong>Outputs:</strong>
+                    <ul>
+                        {% for output in card.outputs %}
+                        <li>{{ output.name }}&nbsp;<b>[&nbsp;{{ output.type }}&nbsp;]</b><br>{{ output.docs }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                <div class="args">
+                    <strong>Args:</strong>
+                    <ul>
+                        {% for arg in card.args %}
+                        <li>{{ arg.name }}&nbsp;<b>[&nbsp;{{ arg.type }}&nbsp;]</b><br>{{ arg.docs }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                <div class="resources">
+                    <strong>Resources:</strong>
+                    <ul>
+                        {% for resource in card.resources %}
+                        <li>{{ resource.name }}&nbsp;<b>[&nbsp;{{ resource.type }}&nbsp;]</b><br>{{ resource.docs }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</body>
+</html>
+

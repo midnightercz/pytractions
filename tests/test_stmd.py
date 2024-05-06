@@ -1,9 +1,6 @@
 from typing import List, Dict, Union, Optional, TypeVar, Generic, Type
-from dataclasses import field
 
-import pytest
-
-from pytraction.base import (
+from pytractions.base import (
     Traction,
     STMD,
     TList,
@@ -20,7 +17,7 @@ from pytraction.base import (
 )
 
 
-from pytraction.tractor import Tractor
+from pytractions.tractor import Tractor
 
 
 class Double(Traction):
