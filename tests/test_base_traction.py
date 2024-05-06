@@ -191,7 +191,7 @@ def test_traction_to_from_json():
 
     o: Out[int] = Out[int](data=10)
     t = TTest(uid="1", i_in1=o)
-    t2 = TTest.from_json(t.to_json())
+    t2 = TTest.from_json(t.to_json(), _locals=locals())
     assert t == t2
 
 

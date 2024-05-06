@@ -415,7 +415,7 @@ class TypeNode:
         return pre_order['root']
 
     @classmethod
-    def from_json(cls, json_data) -> Self:
+    def from_json(cls, json_data, _locals={}) -> Self:
         root_parent = cls(None)
         root_parent.children = [None]
 
@@ -427,32 +427,17 @@ class TypeNode:
             mod = importlib.import_module(_type_mod)
             _type_path = _type.split(".")
             _type_o = mod
-            print(_type_path)
             for path_part in _type_path:
                 if path_part == "<locals>":
-                    #_type_o = _type_o.__code__.co_consts[1]
-                    codes = {}
-                    for const in _type_o.__code__.co_consts:
-                        if inspect.iscode(const):
-                            codes[const.co_name] = const
-                    _type_o = codes
+                    _type_o = _locals
                 else:
                     if path_part != 'NoneType':
-                        #_type_o = getattr(_type_o, path_part)
                         if isinstance(_type_o, dict):
                            _type_o = _type_o[path_part]
                         else:
                            _type_o = getattr(_type_o, path_part)
                     else:
                         _type_o = None
-                print(_type_o)
-            if inspect.iscode(_type_o):
-                l, g = {}, {}
-                print(l)
-                print(g)
-                codecls = exec(_type_o.co_consts[1], l, g)
-                _type_o = type(_type_o.co_consts[1].co_name, (ABase,), g)
-
 
             type_node = cls(_type_o)
             type_node.children = [None] * len(_args)

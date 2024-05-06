@@ -780,7 +780,7 @@ class Base(ABase, metaclass=BaseMeta):
         return pre_order["root"]
 
     @classmethod
-    def from_json(cls, json_data: JSON_COMPATIBLE) -> Self:
+    def from_json(cls, json_data: JSON_COMPATIBLE, _locals={}) -> Self:
         """Oposite to `Base.to_json` method. Method returns dumped instance of a Base class filled with
         data provided on the input.
         """
@@ -796,7 +796,7 @@ class Base(ABase, metaclass=BaseMeta):
         post_order = []
         root_args: Dict[str, Any] = {"root": None}
         if json_data.get("$type"):
-            json_cls = TypeNode.from_json(json_data.get("$type")).to_type()
+            json_cls = TypeNode.from_json(json_data.get("$type"), _locals=_locals).to_type()
         else:
             json_cls = cls
 
@@ -813,7 +813,7 @@ class Base(ABase, metaclass=BaseMeta):
                 else:
                     data_type = TypeNode.from_type(data.__class__).to_json()
                 for uarg in get_args(type_):
-                    if TypeNode.from_type(uarg) == TypeNode.from_json(data_type):
+                    if TypeNode.from_type(uarg) == TypeNode.from_json(data_type, _locals=_locals):
                         stack.append((parent_args, parent_key, data, uarg, type_args))
                         break
                 else:
@@ -827,14 +827,14 @@ class Base(ABase, metaclass=BaseMeta):
                 for uarg in get_args(type_):
                     if (
                         TypeNode.from_type(uarg).to_json()
-                        == TypeNode.from_json(data_type).to_json()
+                        == TypeNode.from_json(data_type, _locals=_locals).to_json()
                     ):
                         stack.append((parent_args, parent_key, data, uarg, type_args))
                         break
             elif TypeNode.from_type(type_) == TypeNode.from_type(TList[ANY]):
-                parent_args[parent_key] = type_.from_json(data)
+                parent_args[parent_key] = type_.from_json(data, _locals=_locals)
             elif TypeNode.from_type(type_) == TypeNode.from_type(TDict[ANY, ANY]):
-                parent_args[parent_key] = type_.from_json(data)
+                parent_args[parent_key] = type_.from_json(data, _locals=_locals)
             elif type_ not in (int, str, bool, float, type(None)) and not issubclass(
                 type_, enum.Enum
             ):
@@ -1052,19 +1052,19 @@ class TList(Base, Generic[T]):
         return pre_order["root"]
 
     @classmethod
-    def from_json(cls, json_data) -> Self:
+    def from_json(cls, json_data, _locals={}) -> Self:
         stack = []
         post_order = []
         self_type_json = TypeNode.from_type(cls).to_json()
         root_args: Dict[str, Any] = {"root": None}
-        if TypeNode.from_json(json_data["$type"]) != TypeNode.from_type(cls):
+        if TypeNode.from_json(json_data["$type"], _locals=_locals) != TypeNode.from_type(cls):
             raise ValueError(f"Cannot load {json_data['$type']} to {self_type_json}")
 
         root_type_args = {"iterable": []}
         for n, item in enumerate(json_data["$data"]):
             root_type_args["iterable"].append(None)
             if not isinstance(item, (int, str, bool, float, type(None))):
-                item_type = TypeNode.from_json(item["$type"]).to_type(
+                item_type = TypeNode.from_json(item["$type"], _locals=_locals).to_type(
                     types_cache=cls._generic_cache
                 )
             else:
@@ -1082,7 +1082,7 @@ class TList(Base, Generic[T]):
                 else:
                     data_type = TypeNode.from_type(data.__class__).to_json()
                 for uarg in get_args(type_):
-                    if TypeNode.from_json(data_type) == TypeNode.from_type(uarg):
+                    if TypeNode.from_json(data_type, _locals=_locals) == TypeNode.from_type(uarg):
                         stack.append((parent_args, parent_key, data, uarg, type_args))
                         break
                     if data_type == TypeNode.from_type(uarg).to_json():
@@ -1093,7 +1093,7 @@ class TList(Base, Generic[T]):
             elif TypeNode.from_type(type_) == TypeNode.from_type(
                 TList[ANY]
             ) or TypeNode.from_type(type_) == TypeNode.from_type(TDict[ANY, ANY]):
-                parent_args[parent_key] = type_.from_json(data)
+                parent_args[parent_key] = type_.from_json(data, _locals=_locals)
             elif type_ not in (int, str, bool, float, type(None)) and not issubclass(
                 type_, enum.Enum
             ):
@@ -1333,25 +1333,25 @@ class TDict(Base, Generic[TK, TV]):
         return pre_order["root"]
 
     @classmethod
-    def from_json(cls, json_data) -> Self:
+    def from_json(cls, json_data, _locals={}) -> Self:
         stack = []
         post_order = []
         self_type_json = TypeNode.from_type(cls).to_json()
         root_args: Dict[str, Any] = {"root": None}
-        if TypeNode.from_json(json_data["$type"]) != TypeNode.from_type(cls):
+        if TypeNode.from_json(json_data["$type"], _locals=_locals) != TypeNode.from_type(cls):
             raise ValueError(f"Cannot load {json_data['$type']} to {self_type_json}")
 
         root_type_args = {"iterable": cls({})}
         for k, v in json_data["$data"].items():
             if not isinstance(v, (int, str, bool, float, type(None))):
-                item_type = TypeNode.from_json(v["$type"]).to_type(
+                item_type = TypeNode.from_json(v["$type"], _locals=_locals).to_type(
                     types_cache=cls._generic_cache
                 )
             else:
                 item_type = cls._params[1]
             # need to insert in reversed order as traversal reverse the dictionary
             if type(k) != cls._params[0]:
-                json_key = cls._params[0].from_json(json.loads(k))
+                json_key = cls._params[0].from_json(json.loads(k), _locals=_locals)
             else:
                 json_key = k
             stack.insert(0, (root_type_args["iterable"], json_key, v, item_type, {}))
@@ -1367,7 +1367,7 @@ class TDict(Base, Generic[TK, TV]):
                 else:
                     data_type = TypeNode.from_type(data.__class__).to_json()
                 for uarg in get_args(type_):
-                    if TypeNode.from_json(data_type) == TypeNode.from_type(uarg):
+                    if TypeNode.from_json(data_type, _locals=_locals) == TypeNode.from_type(uarg):
                         stack.append((parent_args, parent_key, data, uarg, type_args))
                         break
                     if data_type == TypeNode.from_type(uarg).to_json():
@@ -1378,7 +1378,7 @@ class TDict(Base, Generic[TK, TV]):
             elif TypeNode.from_type(type_) == ANY_LIST_TYPE_NODE or TypeNode.from_type(
                 type_
             ) == TypeNode.from_type(TDict[ANY, ANY]):
-                parent_args[parent_key] = type_.from_json(data)
+                parent_args[parent_key] = type_.from_json(data, _locals=_locals)
             elif type_ not in (int, str, bool, float, type(None)) and not issubclass(
                 type_, enum.Enum
             ):
@@ -1388,7 +1388,7 @@ class TDict(Base, Generic[TK, TV]):
                         # need to take type from data, in the case of subclass is used instead of generic
                         # type
                         data_type = (
-                            TypeNode.from_json(data["$type"]).to_type()._fields[key]
+                            TypeNode.from_json(data["$type"], _locals=_locals).to_type()._fields[key]
                         )
                         stack.append(
                             (
@@ -2110,11 +2110,11 @@ class Traction(Base, metaclass=TractionMeta):
         raise NotImplementedError
 
     @classmethod
-    def from_json(cls, json_data) -> Self:
+    def from_json(cls, json_data, _locals={}) -> Self:
         args = {}
         outs = {}
         data = json_data['$data']
-        type_cls = TypeNode.from_json(json_data["$type"]).to_type()
+        type_cls = TypeNode.from_json(json_data["$type"], _locals=_locals).to_type()
         for f, ftype in cls._fields.items():
             if f.startswith("i_") and isinstance(data[f], str):
                 continue
@@ -2126,20 +2126,20 @@ class Traction(Base, metaclass=TractionMeta):
             ):
                 if f.startswith("r_"):
                     args[f] = (
-                        TypeNode.from_json(data[f]["$type"])
+                        TypeNode.from_json(data[f]["$type"], _locals=_locals)
                         .to_type()
-                        .from_json(data[f])
+                        .from_json(data[f], _locals=_locals)
                     )
                 else:
-                    args[f] = ftype.from_json(data[f])
+                    args[f] = ftype.from_json(data[f], _locals=_locals)
             elif f.startswith("i_"):
-                args[f] = ftype.from_json(data[f])
+                args[f] = ftype.from_json(data[f], _locals=_locals)
             elif f.startswith("o_"):
-                outs[f] = ftype.from_json(data[f])
+                outs[f] = ftype.from_json(data[f], _locals=_locals)
             elif f == "tractions":
-                args[f] = TList[Union[Traction, None]].from_json(data[f])
+                args[f] = TList[Union[Traction, None]].from_json(data[f], _locals=_locals)
             elif f == "tractions_state":
-                args[f] = TList[TractionState].from_json(data[f])
+                args[f] = TList[TractionState].from_json(data[f], _locals=_locals)
             elif f == "state":
                 args[f] = TractionState(data[f])
             else:
