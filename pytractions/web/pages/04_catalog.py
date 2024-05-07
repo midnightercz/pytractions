@@ -1,7 +1,7 @@
 import streamlit as st
 from streamlit_extras.stylable_container import stylable_container 
 
-from pytraction.catalog import catalog
+from pytractions.catalog import catalog
 
 tractions, all_inputs, all_outputs, all_resources, all_args, tags = catalog()
 

@@ -1,15 +1,17 @@
 import os
-import streamlit
-import streamlit.web.bootstrap
-from streamlit import config as _config
+from streamlit.web import cli as stcli
+import sys
 
 dirname = os.path.dirname(__file__)
-filename = os.path.join(dirname)
+filename = os.path.join(dirname, 'welcome.py')
 
-_config.set_option("server.headless", True)
-args = []
 
-#streamlit.cli.main_run(filename, args)
-streamlit.web.bootstrap.load_app({})
+def main(args):
+    sys.exit(stcli.main_run([filename], standalone_mode=False))
 
-streamlit.web.bootstrap.run(filename,'',args, flag_options={})
+
+def make_parsers(subparsers):
+    p_web = subparsers.add_parser('web', help='Run web interface')
+    p_web.set_defaults(command=main)
+    return p_web
+
