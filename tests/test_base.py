@@ -2,11 +2,12 @@ from typing import List, Dict, Union, Optional, TypeVar, Generic
 
 import pytest
 
-from pytractions.base import Base, JSONIncompatibleError, TList, TDict, JSON_COMPATIBLE, TypeNode
+from pytractions.base import Base, JSONIncompatibleError, TList, TDict, JSON_COMPATIBLE, TypeNode, NoAnnotationError
 
 # Jsonable test cases
 
 T = TypeVar("T")
+T2 = TypeVar("T")
 
 
 def test_base_jsonable_basic_ok():
@@ -221,6 +222,20 @@ def test_base_setattr_fail():
     with pytest.raises(TypeError):
         t.s = 100
 
+def test_base_setattr_missing_annotation_fail():
+    with pytest.raises(NoAnnotationError):
+        class TestC(Base):
+            i = 10
+
+def test_base_setattr_no_attr_fail():
+    class TestC(Base):
+        i: int
+        s: str
+
+    t = TestC(i=10, s="a")
+    with pytest.raises(AttributeError):
+        t.a = "a"
+
 def test_base_setattr_optional_fail():
     class TestC(Base):
         s: Optional[str]
@@ -309,9 +324,101 @@ def test_base_generic_nested():
     TestC[TestA](a=TestA())
 
 
+# Type testing
+
 def test_type_json():
     t = TypeNode.from_type(TList[JSON_COMPATIBLE])
     tjson = t.to_json()
     print(tjson)
     t2 =TypeNode.from_json(tjson)
     assert t == t2
+
+
+def test_base_type_to_json():
+    class TestC(Base):
+        i: int
+        s: str
+
+    assert TestC.type_to_json() == {
+        '$type': {
+            'args': [],
+            'module': 'tests.test_base',
+            'type': 'test_base_type_to_json.<locals>.TestC',
+        },
+        'i': {
+            '$type': {
+                'args': [],
+                'module': 'builtins',
+                'type': 'int',
+            },
+            'default': None,
+        },
+        's': {
+            '$type': {
+                'args': [],
+                'module': 'builtins',
+                'type': 'str',
+            },
+            'default': None,
+        },
+    }
+
+
+def test_base_type_nested_to_json():
+    class TestA(Base):
+        a: str
+
+    class TestC(Base):
+        i: int
+        s: str
+        ta: TestA
+    assert TestC.type_to_json() == {
+        '$type': {
+            'args': [],
+            'module': 'tests.test_base',
+            'type': 'test_base_type_nested_to_json.<locals>.TestC',
+        },
+        'i': {
+            '$type': {
+                'args': [],
+                'module': 'builtins',
+                'type': 'int',
+            },
+            'default': None,
+        },
+        's': {
+            '$type': {
+                'args': [],
+                'module': 'builtins',
+                'type': 'str',
+            },
+            'default': None,
+        },
+        'ta': {
+            '$type': {
+                'args': [],
+                'module': 'tests.test_base',
+                'type': 'test_base_type_nested_to_json.<locals>.TestA',
+            },
+            'a': {
+                '$type': {
+                    'args': [],
+                    'module': 'builtins',
+                    'type': 'str',
+                },
+                'default': None,
+            },
+        },
+    }
+
+
+
+# Test Generics
+
+def test_generic_wrong_param_count():
+    class TestC(Base, Generic[T, T2]):
+        a: T
+        b: T2
+
+    with pytest.raises(TypeError):
+        TestC[int]

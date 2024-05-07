@@ -1,6 +1,6 @@
 
 from typing import TypeVar, Generic
-from pytraction.base import Base, In, Out, Traction, OnUpdateCallable, TList, Arg
+from .base import Base, In, Out, Traction, OnUpdateCallable, TList, Arg
 
 T = TypeVar("T")
 X = TypeVar("X")

@@ -61,12 +61,6 @@ def on_update_empty(T):
     pass
 
 
-def evaluate_forward_ref(ref, frame):
-    caller_globals, caller_locals = frame.f_globals, frame.f_locals
-    recursive_guard = set()
-    return ref._evaluate(caller_globals, caller_locals, recursive_guard)
-
-
 @dataclasses.dataclass
 class BaseConfig:
     validate_set_attr: bool = True
@@ -251,7 +245,6 @@ class BaseMeta(type):
                 #   and not isinstance(default, dataclasses._MISSING_TYPE)\
                 #   and TypeNode.from_type(type_) != TypeNode.from_type(default):
                 #    raise TypeError(f"Annotation for {attr} is {type_} but default is {default}")
-        #print("DEFAULTS", name, defaults)
 
         # record fields to private attribute
         attrs["_attrs"] = attrs
@@ -269,7 +262,6 @@ class BaseMeta(type):
                 ):
                     # Skip if default is already set
                     if f in defaults:
-                        #print("DEFAULT", f, "ALREADY SET", defaults[f])
                         continue
                     if base.__dataclass_fields__[f].default is not dataclasses.MISSING:
                         defaults[f] = dataclasses.field(
@@ -297,7 +289,6 @@ class BaseMeta(type):
         all_annotations.update(annotations)
         attrs["__annotations__"] = all_annotations
 
-        #print("ATTRS", name, attrs)
 
         for default, defval in defaults.items():
             if default not in attrs:
@@ -311,7 +302,6 @@ class BaseMeta(type):
         ret = super().__new__(cls, name, bases, attrs)
 
         ret = dataclasses.dataclass(ret, kw_only=True)
-        #print("CLASS", name, ret.__dataclass_fields__)
         return ret
 
 
@@ -574,7 +564,6 @@ class Base(ABase, metaclass=BaseMeta):
 
         ] = []
         stack.append(((cls,), 'root', json_dict, root_init_fields, "#"))
-        #print("---")
         while stack:
             (
                 parent_cls_candidates,
@@ -596,20 +585,6 @@ class Base(ABase, metaclass=BaseMeta):
                               x not in obj_uargs and
                               x not in optional_uargs and
                               x not in union_uargs]
-
-            # print("OPT", optional_uargs)
-            # print("LIST", list_uargs)
-            # print("DICT", dict_uargs)
-            # print("OBJ", obj_uargs)
-            # print("UNI", union_uargs)
-            # print("OTH", other_uargs)
-            #
-            # print(
-            #     parent_cls_candidates,
-            #     parent_key,
-            #     _json_dict,
-            #     parent_init_fields,
-            #     parent_path)
 
             if optional_uargs:
                 if _json_dict is None:
@@ -1431,42 +1406,44 @@ class TDict(Base, Generic[TK, TV]):
         return root_args["root"]
 
 
-class IOStore:
-    def data(self, key: str) -> Any:
-        pass
-
-    def set_data(self, key: str, val: Any):
-        pass
+# Currently not used
+# class IOStore:
+#     def data(self, key: str) -> Any:
+#         pass
+#
+#     def set_data(self, key: str, val: Any):
+#         pass
 
 
 class NoData(Base):
     pass
 
 
-class MemoryIOStore(IOStore):
-    def __init__(self):
-        self._data = {}
-
-    def data(self, key: str) -> Any:
-        print("MEMORY STORE GET", key, self._data.get(key))
-
-        return self._data.get(key, NoData())
-
-    def move_data(self, old_key: str, new_key: str) -> Any:
-        data = self._data.pop(old_key, None)
-        self._data[new_key] = data
-
-    def set_data(self, key: str, val: Any):
-        print("MEMORY STORE SET", key, val)
-        self._data[key] = val
-
-
-class _DefaultIOStore:
-    def __init__(self):
-        self.io_store = MemoryIOStore()
-
-
-DefaultIOStore = _DefaultIOStore()
+# Currently not used
+# class MemoryIOStore(IOStore):
+#     def __init__(self):
+#         self._data = {}
+#
+#     def data(self, key: str) -> Any:
+#         print("MEMORY STORE GET", key, self._data.get(key))
+#
+#         return self._data.get(key, NoData())
+#
+#     def move_data(self, old_key: str, new_key: str) -> Any:
+#         data = self._data.pop(old_key, None)
+#         self._data[new_key] = data
+#
+#     def set_data(self, key: str, val: Any):
+#         print("MEMORY STORE SET", key, val)
+#         self._data[key] = val
+#
+#
+# class _DefaultIOStore:
+#     def __init__(self):
+#         self.io_store = MemoryIOStore()
+#
+#
+# DefaultIOStore = _DefaultIOStore()
 
 
 class STMDSingleIn(Base, Generic[T]):
@@ -1494,11 +1471,13 @@ class STMDSingleIn(Base, Generic[T]):
     _owner: Optional[_Traction] = dataclasses.field(
         repr=False, init=False, default=None, compare=False
     )
-    _io_store: IOStore = dataclasses.field(repr=False, init=False, compare=False)
+    #_io_store: IOStore = dataclasses.field(repr=False, init=False, compare=False)
     _uid: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
 
     def __post_init__(self):
-        self._io_store = DefaultIOStore.io_store
+        # Currently not used
+        #self._io_store = DefaultIOStore.io_store
+        pass
 
     def _validate_setattr_(self, name: str, value: Any) -> None:
         if name in ("_name", "_owner"):
@@ -1520,8 +1499,8 @@ class STMDSingleIn(Base, Generic[T]):
             ):
                 raise AttributeError(f"{self.__class__} doesn't have attribute {name}")
             if name == "data":
-                if not hasattr(self, "_io_store"):
-                    self._io_store = DefaultIOStore.io_store
+                #if not hasattr(self, "_io_store"):
+                #    self._io_store = DefaultIOStore.io_store
                 object.__setattr__(self, name, value)
                 # getattr(self.__class__, name).setter(value)
                 return
@@ -1595,12 +1574,12 @@ class Out(In, Generic[T]):
 
     _TYPE: str = "OUT"
 
-    _io_store: IOStore = dataclasses.field(repr=False, init=False, compare=False)
+    #_io_store: IOStore = dataclasses.field(repr=False, init=False, compare=False)
     data: Optional[T] = None
     _uid: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
 
-    def __post_init__(self):
-        self._io_store = DefaultIOStore.io_store
+    # def __post_init__(self):
+    #     self._io_store = DefaultIOStore.io_store
 
     @property
     def uid(self):

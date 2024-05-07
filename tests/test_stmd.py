@@ -1,5 +1,7 @@
 from typing import List, Dict, Union, Optional, TypeVar, Generic, Type
 
+import pytest
+
 from pytractions.base import (
     Traction,
     STMD,
@@ -18,6 +20,27 @@ from pytractions.base import (
 
 
 from pytractions.tractor import Tractor
+
+class NOPResource(Base):
+    pass
+
+
+class NOPResource2(Base):
+    pass
+
+
+class EmptyTraction(Traction):
+    i_input: In[int]
+    o_output: Out[int]
+    a_arg: Arg[int]
+    r_res: Res[NOPResource]
+
+    def _run(self, on_update) -> None:  # pragma: no cover
+        if not self.i_input.data:
+            print(self.uid, "DATA", self.i_input.data)
+        if not self.i_coeficient.data:
+            print(self.uid, "COEF", self.i_coeficient.data)
+        self.o_output.data = self.i_input.data * 2 / self.i_coeficient.data
 
 
 class Double(Traction):
@@ -83,6 +106,83 @@ class Calculator(Tractor):
 
     o_output: Out[TList[Out[int]]] = t_half.o_output
 
+
+def test_stmd_attr_validation():
+    # wrong input
+    with pytest.raises(TypeError):
+        class TestSTMD(STMD):
+            _traction: Type[Traction] = EmptyTraction
+            i_input: In[int]
+            o_output: Out[TList[Out[int]]]
+            r_res: Res[NOPResource]
+            a_arg: Arg[int]
+
+    # wrong output
+    with pytest.raises(TypeError):
+        class TestSTMD(STMD):
+            _traction: Type[Traction] = EmptyTraction
+            i_input: In[TList[In[int]]]
+            o_output: TList[Out[int]]
+            r_res: Res[NOPResource]
+            a_arg: Arg[int]
+
+    # wrong resource
+    with pytest.raises(TypeError):
+        class TestSTMD(STMD):
+            _traction: Type[Traction] = EmptyTraction
+            i_input: In[TList[In[int]]]
+            o_output: Out[TList[Out[int]]]
+            r_res: Arg[NOPResource]
+            a_arg: Arg[int]
+
+    # wrong resource
+    with pytest.raises(TypeError):
+        class TestSTMD(STMD):
+            _traction: Type[Traction] = EmptyTraction
+            i_input: In[TList[In[int]]]
+            o_output: Out[TList[Out[int]]]
+            r_res: Res[NOPResource]
+            a_arg: In[str]
+
+    # wrong doc arg
+    with pytest.raises(TypeError):
+        class TestSTMD(STMD):
+            _traction: Type[Traction] = EmptyTraction
+            i_input: In[TList[In[int]]]
+            o_output: Out[TList[Out[int]]]
+            r_res: Res[NOPResource]
+            a_arg: Arg[str]
+            d_: int
+
+    # wrong attr doc arg
+    with pytest.raises(TypeError):
+        class TestSTMD(STMD):
+            _traction: Type[Traction] = EmptyTraction
+            i_input: In[TList[In[int]]]
+            o_output: Out[TList[Out[int]]]
+            r_res: Res[NOPResource]
+            a_arg: Arg[str]
+            d_a_arg: int = 0
+
+    # uknown doc attr
+    with pytest.raises(TypeError):
+        class TestSTMD(STMD):
+            _traction: Type[Traction] = EmptyTraction
+            i_input: In[TList[In[int]]]
+            o_output: Out[TList[Out[int]]]
+            r_res: Res[NOPResource]
+            a_arg: Arg[str]
+            d_a_uknown: str = ""
+
+    # custom attr
+    with pytest.raises(TypeError):
+        class TestSTMD(STMD):
+            _traction: Type[Traction] = EmptyTraction
+            i_input: In[TList[In[int]]]
+            o_output: Out[TList[Out[int]]]
+            r_res: Res[NOPResource]
+            a_arg: Arg[str]
+            custom: str
 
 def test_stmd():
     c = Calculator(

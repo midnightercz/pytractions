@@ -83,6 +83,10 @@ def test_base_list_new_generic_fail():
     with pytest.raises(TypeError):
         tc = TestC[int](l=TList[int](["a"]))
 
+def test_base_list_new_generic_no_type_fail():
+    with pytest.raises(TypeError):
+        l = TList([1,2,3])
+
 
 def test_base_list_append_fail():
     l: TList[int] = TList[int]([10])
