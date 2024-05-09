@@ -1,15 +1,9 @@
 name: Automate Docker Image Build & Push to Quay.io Registry CI
 
 on:
-  pull_request:
+  push:
     branches:
-      - master
-    types:
-      - opened
-      - closed
-      - labeled
-      - unlabeled
-      - edited
+      - main
 
 jobs:   
   build:
