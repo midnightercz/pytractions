@@ -44,5 +44,5 @@ setup(
         "streamlit",
         "streamlit-extras"
     ],
-    include_package_data=True,
+    include_package_data=False
 )
