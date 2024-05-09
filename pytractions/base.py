@@ -1812,7 +1812,6 @@ class TractionMeta(BaseMeta):
     def __new__(cls, name, bases, attrs):
         """Create new traction class."""
         annotations = attrs.get("__annotations__", {})
-        print("ANNOTATIONS", name, annotations)
         # check if all attrs are in supported types
         for attr, type_ in annotations.items():
             # skip private attributes
