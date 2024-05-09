@@ -6,8 +6,11 @@ on:
       - main
 
 jobs:   
+  tests:
+    uses: ./.github/workflows/tox-tests.yml
   build:
     runs-on: ubuntu-latest
+    needs: [tests]
     steps:
       - name: Login to Quay.io
         uses: docker/login-action@v2
@@ -16,12 +19,6 @@ jobs:
           username: ${{ secrets.QUAY_ID }}
           password: ${{ secrets.QUAY_PW }}
       - uses: actions/checkout@v4
-      - name: Get changed files
-        id: changed-files
-        uses: tj-actions/changed-files@v24
-        with:
-          files: |
-            containers/**/Dockerfile
       - name: Get version
         id: getversion
         run: echo "::set-output name=version::$(python setup.py --version)"
@@ -32,5 +29,6 @@ jobs:
         run: |
           VERSION=${{ steps.getversion.outputs.version }}
           python setup.py sdist
-          docker build --build-arg=SDIST=".tox/dist/pytractions.*"  -t quay.io/jluza/pytractions:${{ steps.getversion.outputs.version }}-${{ steps.getrev.outputs.rev }} -f docker/Dockerfile .
+          ls $PWD/
+          docker build --build-arg=SDIST="dist/pytractions-${{steps.getversion.outputs.version}}.tar.gz"  -t quay.io/jluza/pytractions:${{ steps.getversion.outputs.version }}-${{ steps.getrev.outputs.rev }} -f docker/Dockerfile .
           docker push quay.io/jluza/pytractions:${{ steps.getversion.outputs.version }}-${{ steps.getrev.outputs.rev }}
