@@ -42,7 +42,8 @@ setup(
         "pyyaml",
         "lark",
         "streamlit",
-        "streamlit-extras"
+        "streamlit-extras",
+        "streamlit_option_menu"
     ],
     include_package_data=False
 )
