@@ -1,32 +1,35 @@
-
-from typing import List, Dict, Union, Optional, TypeVar, Generic
-
 import pytest
 
-from pytractions.base import Base, JSONIncompatibleError, TList, TDict, JSON_COMPATIBLE, TypeNode, NoAnnotationError
 from pytractions.tractor import Tractor
+
 
 def test_tractor_attr():
     with pytest.raises(TypeError):
-        class TT(Tractor):
+
+        class TT1(Tractor):
             i_in1: int
 
     with pytest.raises(TypeError):
-        class TT(Tractor):
+
+        class TT2(Tractor):
             o_out1: int
 
     with pytest.raises(TypeError):
-        class TT(Tractor):
+
+        class TT3(Tractor):
             a_arg1: int
 
     with pytest.raises(TypeError):
-        class TT(Tractor):
+
+        class TT4(Tractor):
             r_res1: int
 
     with pytest.raises(TypeError):
-        class TT(Tractor):
+
+        class TT5(Tractor):
             t_traction: int
 
     with pytest.raises(TypeError):
-        class TT(Tractor):
+
+        class TT6(Tractor):
             custom_attribute: int

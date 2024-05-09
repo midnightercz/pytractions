@@ -2,6 +2,7 @@ from pytest import fixture
 
 from unittest.mock import patch
 
+
 @fixture
 def fixture_isodate_now():
     with patch("pytractions.base.isodate_now") as mocked_isodate_now:

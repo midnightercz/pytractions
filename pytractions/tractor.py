@@ -1,15 +1,31 @@
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 import dataclasses
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple, List
 from typing_extensions import Self
 
 
 from .base import (
-    Base, Traction, TractionStats, TractionState, TList, TDict, TractionMeta, Arg, MultiArg, In, 
-    STMDSingleIn, Out, Res, ANY, TypeNode,
-    OnUpdateCallable, OnErrorCallable, on_update_empty, TractionFailedError,
-    NoData, TRes, isodate_now
-
+    Base,
+    Traction,
+    TractionStats,
+    TractionState,
+    TList,
+    TDict,
+    TractionMeta,
+    Arg,
+    MultiArg,
+    STMDSingleIn,
+    Out,
+    Res,
+    ANY,
+    TypeNode,
+    OnUpdateCallable,
+    OnErrorCallable,
+    on_update_empty,
+    TractionFailedError,
+    NoData,
+    TRes,
+    isodate_now,
 )
 from .exc import UninitiatedResource
 
@@ -17,22 +33,42 @@ from .exc import UninitiatedResource
 class _TractorOutputOwner(Base):
     fullname: str
 
+
 class TractorMeta(TractionMeta):
+    """Tractor metaclass."""
+
     @classmethod
     def _attribute_check(cls, attr, type_, all_attrs):
         type_type_node = TypeNode.from_type(type_, subclass_check=False)
 
-        if attr not in ('uid', 'state', 'skip', 'skip_reason', 'errors', 'stats', 'details', 'tractions'):
+        if attr not in (
+            "uid",
+            "state",
+            "skip",
+            "skip_reason",
+            "errors",
+            "stats",
+            "details",
+            "tractions",
+        ):
             if attr.startswith("i_"):
-                if TypeNode.from_type(type_, subclass_check=True) != TypeNode.from_type(STMDSingleIn[ANY]):
-                    raise TypeError(f"Attribute {attr} has to be type STMDSingleIn[ANY], In[ANY], or TIn[ANY] but is {type_}")
+                if TypeNode.from_type(type_, subclass_check=True) != TypeNode.from_type(
+                    STMDSingleIn[ANY]
+                ):
+                    raise TypeError(
+                        f"Attribute {attr} has to be type STMDSingleIn[ANY], In[ANY], or TIn[ANY] "
+                        f"but is {type_}"
+                    )
             elif attr.startswith("o_"):
                 if type_type_node != TypeNode.from_type(Out[ANY]):
                     raise TypeError(f"Attribute {attr} has to be type Out[ANY], but is {type_}")
             elif attr.startswith("a_"):
-                if type_type_node != TypeNode.from_type(Arg[ANY]) and\
-                   TypeNode.from_type(type_, subclass_check=True) != TypeNode.from_type(MultiArg):
-                    raise TypeError(f"Attribute {attr} has to be type Arg[ANY] or MultiArg, but is {type_}")
+                if type_type_node != TypeNode.from_type(Arg[ANY]) and TypeNode.from_type(
+                    type_, subclass_check=True
+                ) != TypeNode.from_type(MultiArg):
+                    raise TypeError(
+                        f"Attribute {attr} has to be type Arg[ANY] or MultiArg, but is {type_}"
+                    )
             elif attr.startswith("r_"):
                 if type_type_node != TypeNode.from_type(Res[ANY]):
                     raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
@@ -41,14 +77,15 @@ class TractorMeta(TractionMeta):
                     raise TypeError(f"Attribute {attr} has to be type Traction, but is {type_}")
             elif attr == "d_":
                 if type_type_node != TypeNode.from_type(str):
-                    raise TypeError(
-                        f"Attribute {attr} has to be type str, but is {type_}"
-                    )
+                    raise TypeError(f"Attribute {attr} has to be type str, but is {type_}")
             elif attr.startswith("d_"):
                 if type_type_node != TypeNode.from_type(str):
                     raise TypeError(f"Attribute {attr} has to be type str, but is {type_}")
-                if attr.replace("d_", "", 1) not in all_attrs['__annotations__'] :
-                    raise TypeError(f"Attribute {attr.replace('d_', '', 1)} is not defined for description {attr}: {all_attrs}")
+                if attr.replace("d_", "", 1) not in all_attrs["__annotations__"]:
+                    raise TypeError(
+                        f"Attribute {attr.replace('d_', '', 1)} is not defined for description "
+                        f"{attr}: {all_attrs}"
+                    )
             else:
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or t_")
 
@@ -68,19 +105,20 @@ class TractorMeta(TractionMeta):
         output_waves = {}
         traction_waves = {}
 
-        for dst_o, _attr in [(outputs_map, '_outputs_map'),
-                             (io_map, '_io_map'),
-                             (resources, '_resources'),
-                             (resources_map, '_resources_map'),
-                             (outputs_map, '_outputs_map'),
-                             (t_outputs_map, '_t_outputs_map'),
-                             (args_map, '_args_map'),
-                             (margs_map, '_margs_map'),
-                             (args, '_args'),
-                             (margs, '_margs'),
-                             (output_waves, '_output_waves'),
-                             (traction_waves, '_traction_waves'),
-                            ]:
+        for dst_o, _attr in [
+            (outputs_map, "_outputs_map"),
+            (io_map, "_io_map"),
+            (resources, "_resources"),
+            (resources_map, "_resources_map"),
+            (outputs_map, "_outputs_map"),
+            (t_outputs_map, "_t_outputs_map"),
+            (args_map, "_args_map"),
+            (margs_map, "_margs_map"),
+            (args, "_args"),
+            (margs, "_margs"),
+            (output_waves, "_output_waves"),
+            (traction_waves, "_traction_waves"),
+        ]:
             for base in bases:
                 if hasattr(base, _attr):
                     for k, v in getattr(base, _attr).items():
@@ -111,7 +149,7 @@ class TractorMeta(TractionMeta):
                         if id(mafo) in args:
                             margs_map[("#", f, maf)] = args[id(mafo)]
 
-        for t in attrs['_fields']:
+        for t in attrs["_fields"]:
             if not t.startswith("t_"):
                 continue
             traction = attrs[t]
@@ -126,9 +164,14 @@ class TractorMeta(TractionMeta):
             for tf in traction_fields:
                 tfo = getattr(_traction, tf)
                 if tf.startswith("i_"):
-                    if TypeNode.from_type(type(tfo), subclass_check=False) != TypeNode.from_type(NoData[ANY]):
+                    if TypeNode.from_type(type(tfo), subclass_check=False) != TypeNode.from_type(
+                        NoData[ANY]
+                    ):
                         if id(getattr(_traction, tf)) not in outputs_all:
-                            raise ValueError(f"Input {_traction.__class__}[{_traction.uid}]->{tf} is mapped to output which is not known yet")
+                            raise ValueError(
+                                f"Input {_traction.__class__}[{_traction.uid}]->{tf} is mapped to "
+                                "output which is not known yet"
+                            )
                     if id(tfo) in outputs_map:
                         io_map[(t, tf)] = outputs_map[id(tfo)]
                         wave = max(output_waves[id(tfo)], wave)
@@ -142,9 +185,14 @@ class TractorMeta(TractionMeta):
                     outputs_map[id(tfo)] = (t, tf)
                     output_waves[id(tfo)] = traction_waves[t]
                 elif tf.startswith("i_"):
-                    if TypeNode.from_type(type(tfo), subclass_check=False) != TypeNode.from_type(NoData[ANY]):
+                    if TypeNode.from_type(type(tfo), subclass_check=False) != TypeNode.from_type(
+                        NoData[ANY]
+                    ):
                         if id(getattr(_traction, tf)) not in outputs_all:
-                            raise ValueError(f"Input {_traction.__class__}[{_traction.uid}]->{tf} is mapped to output which is not known yet")
+                            raise ValueError(
+                                f"Input {_traction.__class__}[{_traction.uid}]->{tf} is mapped to "
+                                "output which is not known yet"
+                            )
                     if id(tfo) in outputs_map:
                         io_map[(t, tf)] = outputs_map[id(tfo)]
                 elif tf.startswith("r_"):
@@ -159,34 +207,38 @@ class TractorMeta(TractionMeta):
                 elif tf.startswith("a_") and id(tfo) in margs:
                     args_map[(t, tf)] = margs[id(tfo)]
 
-                elif tf.startswith("a_") and TypeNode.from_type(type(tfo), subclass_check=True) == TypeNode.from_type(MultiArg):
-                    #print("Multiarg", t, tf)
+                elif tf.startswith("a_") and TypeNode.from_type(
+                    type(tfo), subclass_check=True
+                ) == TypeNode.from_type(MultiArg):
+                    # print("Multiarg", t, tf)
                     for maf, mafo in tfo._fields.items():
                         if id(mafo) in args:
                             margs_map[(t, tf, maf)] = args[id(mafo)]
 
-        #print("OUTPUTS MAP", outputs_map)
+        # print("OUTPUTS MAP", outputs_map)
         for f, fo in attrs.items():
-            #print("F", f, id(fo))#, fo)
+            # print("F", f, id(fo))#, fo)
             if f.startswith("o_"):
                 if id(fo) in outputs_map:
                     t_outputs_map[f] = outputs_map[id(fo)]
 
-        attrs['_t_outputs_map'] = t_outputs_map
-        attrs['_output_waves'] = output_waves
-        attrs['_outputs_map'] = outputs_map
-        attrs['_resources'] = resources
-        attrs['_resources_map'] = resources_map
-        attrs['_args_map'] = args_map
-        attrs['_margs_map'] = margs_map
-        attrs['_io_map'] = io_map
-        attrs['_args'] = args
-        attrs['_margs'] = margs
-        attrs['_outputs_all'] = outputs_all
-        attrs['_traction_waves'] = traction_waves
+        attrs["_t_outputs_map"] = t_outputs_map
+        attrs["_output_waves"] = output_waves
+        attrs["_outputs_map"] = outputs_map
+        attrs["_resources"] = resources
+        attrs["_resources_map"] = resources_map
+        attrs["_args_map"] = args_map
+        attrs["_margs_map"] = margs_map
+        attrs["_io_map"] = io_map
+        attrs["_args"] = args
+        attrs["_margs"] = margs
+        attrs["_outputs_all"] = outputs_all
+        attrs["_traction_waves"] = traction_waves
 
 
 class Tractor(Traction, metaclass=TractorMeta):
+    """Tractor class."""
+
     _TYPE: str = "TRACTOR"
     _CUSTOM_TYPE_TO_JSON: bool = True
     uid: str
@@ -196,12 +248,14 @@ class Tractor(Traction, metaclass=TractorMeta):
     errors: TList[str] = dataclasses.field(default_factory=TList[str])
     stats: TractionStats = dataclasses.field(default_factory=TractionStats)
     details: TDict[str, str] = dataclasses.field(default_factory=TDict[str, str])
-    tractions: TDict[str, Traction] = dataclasses.field(default_factory=TDict[str, Traction], init=False)
+    tractions: TDict[str, Traction] = dataclasses.field(
+        default_factory=TDict[str, Traction], init=False
+    )
 
     def _init_traction_input(self, traction_name, traction):
         init_fields = {}
         for ft, field in traction.__dataclass_fields__.items():
-            # set all inputs for the traction created at the end of this method 
+            # set all inputs for the traction created at the end of this method
             # to outputs of traction copy in self.tractions
             if ft.startswith("i_"):
                 if (traction_name, ft) in self._io_map:
@@ -215,7 +269,7 @@ class Tractor(Traction, metaclass=TractorMeta):
     def _init_traction(self, traction_name, traction):
         init_fields = {}
         for ft, field in traction.__dataclass_fields__.items():
-            # set all inputs for the traction created at the end of this method 
+            # set all inputs for the traction created at the end of this method
             # to outputs of traction copy in self.tractions
             if ft.startswith("i_"):
                 if (traction_name, ft) in self._io_map:
@@ -237,7 +291,9 @@ class Tractor(Traction, metaclass=TractorMeta):
                     else:
                         init_fields[ft] = getattr(self, self_field)
                 # handle MultiArg type
-                elif TypeNode.from_type(field.type, subclass_check=True) == TypeNode.from_type(MultiArg):
+                elif TypeNode.from_type(field.type, subclass_check=True) == TypeNode.from_type(
+                    MultiArg
+                ):
                     ma_init_fields = {}
                     for maf, _ in field.type._fields.items():
                         if (traction_name, ft, maf) in self._margs_map:
@@ -247,8 +303,8 @@ class Tractor(Traction, metaclass=TractorMeta):
                 # if argument is not found in arg mapping, use default value
                 elif (traction_name, ft) not in self._args_map:
                     init_fields[ft] = getattr(traction, ft)
-            elif ft == 'uid':
-                # change uid to be tractor.uid::traction.uid 
+            elif ft == "uid":
+                # change uid to be tractor.uid::traction.uid
                 init_fields[ft] = "%s::%s" % (self.uid, getattr(traction, ft))
             # if field doesn't start with _ include it in init_fields to
             # initialize the traction copy
@@ -259,6 +315,7 @@ class Tractor(Traction, metaclass=TractorMeta):
         return traction.__class__(**init_fields)
 
     def __post_init__(self):
+        """Tractor post init."""
         if not self.tractions:
             self.tractions = TDict[str, Traction]({})
             for f in self._fields:
@@ -287,6 +344,7 @@ class Tractor(Traction, metaclass=TractorMeta):
                     raise UninitiatedResource(f"{f}")
 
     def resubmit_from(self, traction_name: str):
+        """Run tractor from specific traction."""
         reset_started = False
         self.state = TractionState.READY
         for tname, traction in self.tractions.items():
@@ -296,7 +354,6 @@ class Tractor(Traction, metaclass=TractorMeta):
                 traction.state = TractionState.READY
             else:
                 traction.state = TractionState.FINISHED
-
 
     def _run(self, on_update: Optional[OnUpdateCallable] = None) -> Self:  # pragma: no cover
         for tname, traction in self.tractions.items():
@@ -316,6 +373,7 @@ class Tractor(Traction, metaclass=TractorMeta):
         on_update: Optional[OnUpdateCallable] = None,
         on_error: Optional[OnErrorCallable] = None,
     ) -> Self:
+        """Run the tractor."""
         _on_update: OnUpdateCallable = on_update or on_update_empty
         _on_error: OnErrorCallable = on_error or on_update_empty
         self._reset_stats()
@@ -347,34 +405,50 @@ class Tractor(Traction, metaclass=TractorMeta):
 
     @classmethod
     def type_to_json(cls) -> Dict[str, Any]:
+        """Return tractor type to json."""
         pre_order: Dict[str, Any] = {}
         # stack is list of (current_cls_to_process, current_parent, current_key, current_default)
         stack: List[Tuple[Base, Dict[str, Any], str]] = [(cls, pre_order, "root", None)]
         while stack:
             current, current_parent, parent_key, current_default = stack.pop(0)
-            if hasattr(current, "_CUSTOM_TYPE_TO_JSON") and current._CUSTOM_TYPE_TO_JSON and current != cls:
+            if (
+                hasattr(current, "_CUSTOM_TYPE_TO_JSON")
+                and current._CUSTOM_TYPE_TO_JSON
+                and current != cls
+            ):
                 current_parent[parent_key] = current.type_to_json()
             elif hasattr(current, "_fields"):
                 current_parent[parent_key] = {"$type": TypeNode.from_type(current).to_json()}
                 if hasattr(current, "_TYPE"):
-                    current_parent[parent_key]['_TYPE'] = current._TYPE
+                    current_parent[parent_key]["_TYPE"] = current._TYPE
                 for f, ftype in current._fields.items():
                     if type(current.__dataclass_fields__[f].default) in (str, int, float, None):
-                        stack.append((ftype, current_parent[parent_key], f, current.__dataclass_fields__[f].default))
+                        stack.append(
+                            (
+                                ftype,
+                                current_parent[parent_key],
+                                f,
+                                current.__dataclass_fields__[f].default,
+                            )
+                        )
                     else:
                         stack.append((ftype, current_parent[parent_key], f, None))
             else:
-                current_parent[parent_key] = {"$type": TypeNode.from_type(current).to_json(), "default": current_default}
+                current_parent[parent_key] = {
+                    "$type": TypeNode.from_type(current).to_json(),
+                    "default": current_default,
+                }
                 if hasattr(current, "_TYPE"):
-                    current_parent[parent_key]['_TYPE'] = current._TYPE
+                    current_parent[parent_key]["_TYPE"] = current._TYPE
 
-        pre_order['root']['_TYPE'] = cls._TYPE
-        pre_order['root']['$io_map'] = [[list(k), list(v)] for k, v in cls._io_map.items()]
-        pre_order['root']['$resource_map'] = [[list(k), v] for k, v in cls._resources_map.items()]
-        return pre_order['root']
+        pre_order["root"]["_TYPE"] = cls._TYPE
+        pre_order["root"]["$io_map"] = [[list(k), list(v)] for k, v in cls._io_map.items()]
+        pre_order["root"]["$resource_map"] = [[list(k), v] for k, v in cls._resources_map.items()]
+        return pre_order["root"]
 
     @classmethod
-    def from_json(cls, json_data) -> Self:
+    def from_json(cls, json_data: Dict[str, Any]) -> Self:
+        """Deserialize tractor from json."""
         args = {}
         outs = {}
         tractions = {}
@@ -389,7 +463,9 @@ class Tractor(Traction, metaclass=TractorMeta):
                 tractions[f] = args[f]
                 for tf in tractions[f]._fields:
                     if tf.startswith("o_"):
-                        traction_outputs.setdefault(tractions[f].fullname,{})[tf] = getattr(tractions[f], tf)
+                        traction_outputs.setdefault(tractions[f].fullname, {})[tf] = getattr(
+                            tractions[f], tf
+                        )
                 for tf, tfval in json_data[f].items():
                     if tf.startswith("i_") and isinstance(tfval, str):
                         traction_name, o_name = tfval.split("#")
@@ -397,14 +473,17 @@ class Tractor(Traction, metaclass=TractorMeta):
             elif f.startswith("i_"):
                 if json_data[f].get("$data"):
                     args[f] = ftype.from_json(json_data[f])
-                #traction_outputs.setdefault(tractions[f].fullname,{})[tf] = getattr(tractions[f], tf)
-            elif f.startswith("a_") or f.startswith("r_") or f in ("errors", "stats", "details", "tractions"):
+            elif (
+                f.startswith("a_")
+                or f.startswith("r_")
+                or f in ("errors", "stats", "details", "tractions")
+            ):
                 # skip if there are no data to load
                 if json_data[f].get("$data"):
                     args[f] = ftype.from_json(json_data[f])
             elif f.startswith("o_"):
                 outs[f] = ftype.from_json(json_data[f])
-            elif f == 'tractions':
+            elif f == "tractions":
                 continue
             else:
                 args[f] = json_data[f]
@@ -415,6 +494,8 @@ class Tractor(Traction, metaclass=TractorMeta):
 
 
 class MultiTractor(Tractor, metaclass=TractorMeta):
+    """Multitractor version of tractor."""
+
     _TYPE: str = "MULTITRACTOR"
     uid: str
     state: str = "ready"
@@ -452,7 +533,9 @@ class MultiTractor(Tractor, metaclass=TractorMeta):
             for w, tractions in traction_groups.items():
                 ft_results = {}
                 for t_name, traction in tractions.items():
-                    res = executor.submit(self._traction_runner, t_name, traction, on_update=on_update)
+                    res = executor.submit(
+                        self._traction_runner, t_name, traction, on_update=on_update
+                    )
                     ft_results[res] = t_name
                 _on_update(self)
                 for ft in as_completed(ft_results):

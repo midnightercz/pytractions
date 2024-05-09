@@ -1,8 +1,8 @@
-from typing import List, Dict, Union, Optional, TypeVar, Generic
+from typing import TypeVar, Generic
 
 import pytest
 
-from pytractions.base import Base, JSONIncompatibleError, TList, TDict
+from pytractions.base import Base, TList, TDict
 
 # Jsonable test cases
 
@@ -31,7 +31,7 @@ def test_base_dict_get_ok():
     d: TDict[int, int] = TDict[int, int]({10: 10})
 
     assert d._dict.get(10) == 10
-    assert d._dict.get(20) == None
+    assert d._dict.get(20) is None
 
 
 def test_base_dict_update_ok():
@@ -71,7 +71,7 @@ def test_base_dict_delitem_ok():
 
 def test_base_dict_pop_ok():
     d: TDict[int, int] = TDict[int, int]({10: 10, 20: 20})
-    d.pop(10) ==10
+    d.pop(10) == 10
     assert d._dict == {20: 20}
 
 
@@ -169,11 +169,6 @@ def test_base_dict_iter():
     assert [i for i in d] == [10, 20]
 
 
-def test_base_dict_len():
-    d: TDict[int, int] = TDict[int, int]({10: 10, 20: 20})
-    assert len(d) == 2
-
-
 def test_base_dict_clear():
     d: TDict[int, int] = TDict[int, int]({10: 10, 20: 20})
     d.clear()
@@ -203,161 +198,160 @@ def test_base_dict_popitem():
 def test_base_dict_to_json_simple():
     d: TDict[int, int] = TDict[int, int]({10: 10, 20: 20})
     assert d.to_json() == {
-        '$type': {
-            'args': [
-                {'args': [],
-                 'module': 'builtins',
-                 'type': 'int',
+        "$type": {
+            "args": [
+                {
+                    "args": [],
+                    "module": "builtins",
+                    "type": "int",
                 },
                 {
-                 'args': [],
-                 'module': 'builtins',
-                 'type': 'int',
+                    "args": [],
+                    "module": "builtins",
+                    "type": "int",
                 },
             ],
-            'module': 'pytractions.base',
-            'type': 'TDict',
+            "module": "pytractions.base",
+            "type": "TDict",
         },
-        "$data": {
-            10: 10,
-            20: 20
-        }
+        "$data": {10: 10, 20: 20},
     }
 
 
 def test_base_dict_to_json_complex():
-    d: TDict[int, int] = TDict[int, TDict[str, int]]({10: TDict[str, int]({'a': 10}), 20: TDict[str, int]({"b": 20})})
+    d: TDict[int, int] = TDict[int, TDict[str, int]](
+        {10: TDict[str, int]({"a": 10}), 20: TDict[str, int]({"b": 20})}
+    )
     assert d.to_json() == {
-        '$type': {
-            'args': [
+        "$type": {
+            "args": [
                 {
-                    'args': [],
-                    'module': 'builtins',
-                    'type': 'int',
+                    "args": [],
+                    "module": "builtins",
+                    "type": "int",
                 },
                 {
-                    'args': [
+                    "args": [
                         {
-                            'args': [],
-                            'module': 'builtins',
-                            'type': 'str',
+                            "args": [],
+                            "module": "builtins",
+                            "type": "str",
                         },
                         {
-                            'args': [],
-                            'module': 'builtins',
-                            'type': 'int',
+                            "args": [],
+                            "module": "builtins",
+                            "type": "int",
                         },
                     ],
-                    'module': 'pytractions.base',
-                    'type': 'TDict',
+                    "module": "pytractions.base",
+                    "type": "TDict",
                 },
             ],
-            'module': 'pytractions.base',
-            'type': 'TDict',
+            "module": "pytractions.base",
+            "type": "TDict",
         },
         "$data": {
-             10: {
-                 '$data': {
-                     'a': 10,
-                 },
-                 '$type': {
-                     'args': [
-                         {
-                             'args': [],
-                             'module': 'builtins',
-                             'type': 'str',
-                         },
-                         {
-                             'args': [],
-                             'module': 'builtins',
-                             'type': 'int',
-                         },
-                     ],
-                     'module': 'pytractions.base',
-                     'type': 'TDict',
-                 },
-             },
-             20: {
-                 '$data': {
-                     'b': 20,
-                 },
-                 '$type': {
-                     'args': [
-                         {
-                             'args': [],
-                             'module': 'builtins',
-                             'type': 'str',
-                         },
-                         {
-                             'args': [],
-                             'module': 'builtins',
-                             'type': 'int',
-                         },
-                     ],
-                     'module': 'pytractions.base',
-                     'type': 'TDict',
-                 },
-             },
-        }
+            10: {
+                "$data": {
+                    "a": 10,
+                },
+                "$type": {
+                    "args": [
+                        {
+                            "args": [],
+                            "module": "builtins",
+                            "type": "str",
+                        },
+                        {
+                            "args": [],
+                            "module": "builtins",
+                            "type": "int",
+                        },
+                    ],
+                    "module": "pytractions.base",
+                    "type": "TDict",
+                },
+            },
+            20: {
+                "$data": {
+                    "b": 20,
+                },
+                "$type": {
+                    "args": [
+                        {
+                            "args": [],
+                            "module": "builtins",
+                            "type": "str",
+                        },
+                        {
+                            "args": [],
+                            "module": "builtins",
+                            "type": "int",
+                        },
+                    ],
+                    "module": "pytractions.base",
+                    "type": "TDict",
+                },
+            },
+        },
     }
+
 
 def test_base_dict_to_json_complex_key():
     key1: TList[str] = TList[str](["a", "b", "c"])
     key2: TList[str] = TList[str](["d", "e", "f"])
     d: TDict[int, int] = TDict[TList[str], int]({key1: 10, key2: 20})
     assert d.to_json() == {
-         '$data': {
-             '{"$data": ["a", "b", "c"], "$type": {"args": [{"args": [], "module": "builtins", "type": "str"}], "module": "pytractions.base", "type": "TList"}}': 10,
-             '{"$data": ["d", "e", "f"], "$type": {"args": [{"args": [], "module": "builtins", "type": "str"}], "module": "pytractions.base", "type": "TList"}}': 20,
-         },
-         '$type': {
-             'args': [
-                 {
-                     'args': [
-                         { 
-                             'args': [],
-                             'module': 'builtins',
-                             'type': 'str',
-                         },
-                     ],
-                     'module': 'pytractions.base',
-                     'type': 'TList',
-                 },
-                 {
-                     'args': [],
-                     'module': 'builtins',
-                     'type': 'int',
-                 },
-             ],
-             'module': 'pytractions.base',
-             'type': 'TDict',
-        }
+        "$data": {
+            '{"$data": ["a", "b", "c"], "$type": {"args": [{"args": [], "module": "builtins", '
+            '"type": "str"}], "module": "pytractions.base", "type": "TList"}}': 10,
+            '{"$data": ["d", "e", "f"], "$type": {"args": [{"args": [], "module": "builtins", '
+            '"type": "str"}], "module": "pytractions.base", "type": "TList"}}': 20,
+        },
+        "$type": {
+            "args": [
+                {
+                    "args": [
+                        {
+                            "args": [],
+                            "module": "builtins",
+                            "type": "str",
+                        },
+                    ],
+                    "module": "pytractions.base",
+                    "type": "TList",
+                },
+                {
+                    "args": [],
+                    "module": "builtins",
+                    "type": "int",
+                },
+            ],
+            "module": "pytractions.base",
+            "type": "TDict",
+        },
     }
-
-
 
 
 def test_base_dict_from_json_simple():
     json_dict = {
-        '$type': {
-            'args': [
-                {'args': [],
-                 'module': 'builtins',
-                 'type': 'int',
+        "$type": {
+            "args": [
+                {
+                    "args": [],
+                    "module": "builtins",
+                    "type": "int",
                 },
                 {
-                 'args': [],
-                 'module': 'builtins',
-                 'type': 'int',
+                    "args": [],
+                    "module": "builtins",
+                    "type": "int",
                 },
             ],
-            'module': 'pytractions.base',
-            'type': 'TDict',
+            "module": "pytractions.base",
+            "type": "TDict",
         },
-        "$data": {
-            10: 10,
-            20: 20
-        }
+        "$data": {10: 10, 20: 20},
     }
-    d: TDict[int, int] = TDict[int,int].from_json(json_dict)
+    d: TDict[int, int] = TDict[int, int].from_json(json_dict)
     assert d == TDict[int, int]({10: 10, 20: 20})

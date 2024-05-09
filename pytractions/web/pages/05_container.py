@@ -2,12 +2,13 @@ import streamlit as st
 
 
 st.title("Building Pytractions container")
-st.markdown("""
+st.markdown(
+    """
 Building custom pytractions container
 =====================================
 
-Pytractions provides base container you can use as base image for building container with your own tractions.
-To build pytractions container, simply run the following command:
+Pytractions provides base container you can use as base image for building container with your own
+tractions. To build pytractions container, simply run the following command:
 ```
 tox -e build
 ```
@@ -21,7 +22,9 @@ This will produce container with with entrypoint providing following commands:
 Building your own container
 ---------------------------
 
-To build your own container, use can simply use `pytractions` container as base image. Here is an example of Dockerfile:
+To build your own container, use can simply use `pytractions` container as base image.
+Here is an example of Dockerfile:
+
 ```Dockerfile
 FROM localhost/pytraction:latest
 COPY ./requirements.txt /
@@ -31,5 +34,5 @@ VOLUME /userdata
 PORT 8051
 ```
 
-""")
-
+"""
+)

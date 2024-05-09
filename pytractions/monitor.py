@@ -1,41 +1,12 @@
-import datetime
 import json
 import os
 
-from .base import Traction
-from .tractor import Tractor
-
-class Monitor:
-    def update(self):
-        #with open(self.filename, "w") as f:
-        #    f.write(json.dumps(self.tractor.content_to_json()))
-        if not self.updating:
-            self.updating = True
-            with open("full-"+self.filename, "w") as f:
-                f.write(json.dumps(self.tractor.to_json()))
-            self.updating = False
-
-        if not self.dead:
-            threading.Timer(10, self.update).start()
-
-    def __init__(self, tractor, filename):
-        self.updating = False
-        self.dead = False
-        self.tractor = tractor
-        self.filename = filename
-        self.last_update_request = datetime.datetime.now()
-        self.update()
-
-    def on_update(self, traction):
-        self.last_update_request = datetime.datetime.now()
-
-    def close(self):
-        self.update()
-        self.dead = True
-
 
 class StructuredMonitor:
+    """Monitor traction runs."""
+
     def __init__(self, tractor, path):
+        """Initialize the monitor."""
         self.path = path
         self.traction_states = {}
         self.tractor = tractor
@@ -43,6 +14,7 @@ class StructuredMonitor:
             f.write(json.dumps(tractor.to_json()))
 
     def on_update(self, traction):
+        """Dump updated traction to output directory."""
         if traction.uid not in self.traction_states:
             self.traction_states[traction.uid] = traction.state
             with open(os.path.join(self.path, f"{traction.uid}.json"), "w") as f:
@@ -63,5 +35,6 @@ class StructuredMonitor:
                     f.write(json.dumps(traction.to_json()))
 
     def close(self, traction):
+        """Close the monitoring and dump the root tractor."""
         with open(os.path.join(self.path, f"{traction.uid}.json"), "w") as f:
             f.write(json.dumps(traction.to_json()))

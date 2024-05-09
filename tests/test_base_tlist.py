@@ -1,8 +1,8 @@
-from typing import List, Dict, Union, Optional, TypeVar, Generic, get_args
+from typing import TypeVar, Generic
 
 import pytest
 
-from pytractions.base import Base, JSONIncompatibleError, TList, TDict, TypeNode
+from pytractions.base import Base, TList, TDict
 
 # Jsonable test cases
 
@@ -68,12 +68,12 @@ def test_contains_ok():
 
 def test_base_list_new_fail():
     with pytest.raises(TypeError):
-        l: TList[int] = TList[int](["a"])
+        TList[int](["a"])
 
 
 def test_base_list_new_complex_fail():
     with pytest.raises(TypeError):
-        l: TList[TDict[int, str]] = TList[TDict[int, str]]([TDict[int, int]({10: 10})])
+        TList[TDict[int, str]]([TDict[int, int]({10: 10})])
 
 
 def test_base_list_new_generic_fail():
@@ -81,11 +81,12 @@ def test_base_list_new_generic_fail():
         l: TList[T]
 
     with pytest.raises(TypeError):
-        tc = TestC[int](l=TList[int](["a"]))
+        TestC[int](l=TList[int](["a"]))
+
 
 def test_base_list_new_generic_no_type_fail():
     with pytest.raises(TypeError):
-        l = TList([1,2,3])
+        TList([1, 2, 3])
 
 
 def test_base_list_append_fail():
@@ -121,7 +122,7 @@ def test_contains_fail():
 def test_base_list_add_fail():
     l: TList[int] = TList[int]([10])
     with pytest.raises(TypeError):
-        l2 = l + TList[str](["a", "a"])
+        l + TList[str](["a", "a"])
 
 
 def test_base_list_len():
