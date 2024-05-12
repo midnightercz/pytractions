@@ -241,3 +241,4 @@ def test_base_content_to_json():
     print(tc_content)
     tc2 = TestC4.content_from_json(tc_content)
     assert tc == tc2
+

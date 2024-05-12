@@ -103,7 +103,13 @@ class TypeNode:
                 stack.insert(0, (ch, n, current))
             if type(current.type_) is TypeVar:
                 if current.type_ in params_map:
-                    current.type_ = params_map[current.type_]
+                    if hasattr(params_map[current.type_], "__args__"):
+                        replaced_tn = TypeNode.from_type(params_map[current.type_])
+                        current.type_ = replaced_tn.type_
+                        current.children = replaced_tn.children
+
+                    else:
+                        current.type_ = params_map[current.type_]
 
     def to_type(self, types_cache={}, params_map={}):
         """Return new type for TypeNode or already existing type from cache."""
