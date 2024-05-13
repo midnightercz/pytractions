@@ -1,5 +1,5 @@
-from pytraction.base import Traction, STMD
-from pytraction.tractor import Tractor, MultiTractor
+from .base import Traction, STMD
+from .tractor import Tractor, MultiTractor
 
 import inspect
 
