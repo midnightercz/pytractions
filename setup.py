@@ -10,6 +10,9 @@ import sys
 import sys
 from setuptools import setup, find_packages
 
+from pytractions.pkgutils import traction_entry_points
+
+import pytractions.transformations
 
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -45,5 +48,11 @@ setup(
         "streamlit-extras",
         "streamlit_option_menu"
     ],
-    include_package_data=True
+    include_package_data=True,
+    setup_requires=['typing_extensions'],
+    entry_points={
+        "tractions": [
+            x for x in traction_entry_points(pytractions.transformations)
+        ],
+    }
 )
