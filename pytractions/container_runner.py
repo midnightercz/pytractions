@@ -163,12 +163,12 @@ cat $(workspaces.outputs.path)/{tid}::state
     return spec
 
 
-def generate_tekton_task(traction, docker_image, io_map={}, args_map={}, resource_map={}):
+def generate_tekton_task(traction, docker_image):
     """Generate tekton task."""
-    results = {}
-    for f, fv in traction._fields.items():
-        if f.startswith("o_"):
-            results.append({"name": f, "description": getattr(traction, "d_" + f, None) or ""})
+    # results = {}
+    # for f, fv in traction._fields.items():
+    #     if f.startswith("o_"):
+    #         results.append({"name": f, "description": getattr(traction, "d_" + f, None) or ""})
     result = {
         "apiVersion": "tekton.dev/v1beta1",
         "kind": "Task",
@@ -176,7 +176,7 @@ def generate_tekton_task(traction, docker_image, io_map={}, args_map={}, resourc
             "name": tekton_task_name(traction.__name__),
         },
         "spec": generate_task_spec(
-            traction, docker_image, io_map=io_map, resource_map=resource_map, args_map=args_map
+            traction, docker_image, id_in_tractor="uid"
         ),
     }
     return result
