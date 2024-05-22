@@ -41,6 +41,7 @@ setup(
         "dill",
         "mypy",
         "typing_inspect",
+        "typing_extensions"
         "dataclasses_json",
         "pyyaml",
         "lark",
