@@ -175,9 +175,7 @@ def generate_tekton_task(traction, docker_image):
         "metadata": {
             "name": tekton_task_name(traction.__name__),
         },
-        "spec": generate_task_spec(
-            traction, docker_image, id_in_tractor="uid"
-        ),
+        "spec": generate_task_spec(traction, docker_image, id_in_tractor="uid"),
     }
     return result
 
