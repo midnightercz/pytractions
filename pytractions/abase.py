@@ -1,6 +1,5 @@
 from abc import abstractmethod
 from typing import Any, Dict, Generic, TypeVar, Tuple
-from typing_extensions import Self
 
 
 class ABase:
@@ -52,7 +51,7 @@ class ABase:
         ...
 
     @abstractmethod
-    def from_json(cls, json_data) -> Self:  # pragma: no cover
+    def from_json(cls, json_data) -> "ABase":  # pragma: no cover
         """Deserialize class from a json data."""
         ...
 
@@ -165,7 +164,7 @@ class ATList(ABase, Generic[T]):
         ...
 
     @abstractmethod
-    def from_json(cls, json_data, _locals={}) -> Self:
+    def from_json(cls, json_data, _locals={}) -> "ABase":
         """Deserialize TList from json data."""
         ...
 
@@ -269,6 +268,6 @@ class ATDict(ABase, Generic[T, TT]):
         ...
 
     @abstractmethod
-    def from_json(cls, json_data, _locals={}) -> Self:
+    def from_json(cls, json_data, _locals={}) -> "ABase":
         """Deserialize TDict from json."""
         ...

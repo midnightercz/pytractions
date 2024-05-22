@@ -1,8 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 import dataclasses
 from typing import Optional, Dict, Any, Tuple, List
-from typing_extensions import Self
-
 
 from .base import (
     Base,
@@ -355,7 +353,7 @@ class Tractor(Traction, metaclass=TractorMeta):
             else:
                 traction.state = TractionState.FINISHED
 
-    def _run(self, on_update: Optional[OnUpdateCallable] = None) -> Self:  # pragma: no cover
+    def _run(self, on_update: Optional[OnUpdateCallable] = None) -> "Tractor":  # pragma: no cover
         for tname, traction in self.tractions.items():
             traction.run(on_update=on_update)
             if on_update:
@@ -372,7 +370,7 @@ class Tractor(Traction, metaclass=TractorMeta):
         self,
         on_update: Optional[OnUpdateCallable] = None,
         on_error: Optional[OnErrorCallable] = None,
-    ) -> Self:
+    ) -> "Tractor":
         """Run the tractor."""
         _on_update: OnUpdateCallable = on_update or on_update_empty
         _on_error: OnErrorCallable = on_error or on_update_empty
@@ -447,7 +445,7 @@ class Tractor(Traction, metaclass=TractorMeta):
         return pre_order["root"]
 
     @classmethod
-    def from_json(cls, json_data: Dict[str, Any]) -> Self:
+    def from_json(cls, json_data: Dict[str, Any]) -> "Tractor":
         """Deserialize tractor from json."""
         args = {}
         outs = {}

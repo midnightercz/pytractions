@@ -26,7 +26,6 @@ from typing import (
     _UnionGenericAlias,
     get_args,
 )
-from typing_extensions import Self
 
 import dataclasses
 
@@ -818,14 +817,14 @@ class Base(ABase, metaclass=BaseMeta):
         return pre_order["root"]
 
     @classmethod
-    def from_json(cls, json_data: JSON_COMPATIBLE, _locals={}) -> Self:
+    def from_json(cls, json_data: JSON_COMPATIBLE, _locals={}) -> _Base:
         """Oposite to `Base.to_json` method. Method returns dumped instance of a Base class."""
         stack: List[
             Tuple[
                 Dict[str, JSON_COMPATIBLE],
                 str,
                 Dict[str, JSON_COMPATIBLE],
-                Type[Optional[Self]],
+                Type[Optional[Base]],
                 Dict[str, ANY],
             ]
         ] = []
@@ -1099,7 +1098,7 @@ class TList(Base, ATList, Generic[T]):
         return pre_order["root"]
 
     @classmethod
-    def from_json(cls, json_data, _locals={}) -> Self:
+    def from_json(cls, json_data, _locals={}) -> _Base:
         """Deserialize TList from json data."""
         stack = []
         post_order = []
@@ -1400,7 +1399,7 @@ class TDict(Base, ATDict, Generic[TK, TV]):
         return pre_order["root"]
 
     @classmethod
-    def from_json(cls, json_data, _locals={}) -> Self:
+    def from_json(cls, json_data, _locals={}) -> "TDict":
         """Deserialize TDict from json."""
         stack = []
         post_order = []
@@ -2091,7 +2090,7 @@ class Traction(Base, metaclass=TractionMeta):
         self,
         on_update: Optional[OnUpdateCallable] = None,
         on_error: Optional[OnErrorCallable] = None,
-    ) -> Self:
+    ) -> "Traction":
         """Start execution of the Traction.
 
         * When traction is in `TractionState.READY` it runs the
@@ -2178,7 +2177,7 @@ class Traction(Base, metaclass=TractionMeta):
         raise NotImplementedError
 
     @classmethod
-    def from_json(cls, json_data, _locals={}) -> Self:
+    def from_json(cls, json_data, _locals={}) -> "Traction":
         """Deserialize class instance from json representation."""
         args = {}
         outs = {}
@@ -2455,7 +2454,7 @@ class STMD(Traction, metaclass=STMDMeta):
     def run(
         self,
         on_update: Optional[OnUpdateCallable] = None,
-    ) -> Self:
+    ) -> "STMD":
         """Run the STMD class."""
         _on_update: OnUpdateCallable = lambda step: None
         if on_update:

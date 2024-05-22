@@ -40,8 +40,6 @@ setup(
     install_requires=[
         "dill",
         "mypy",
-        "typing_inspect",
-        "typing_extensions"
         "dataclasses_json",
         "pyyaml",
         "lark",
@@ -50,7 +48,6 @@ setup(
         "streamlit_option_menu"
     ],
     include_package_data=True,
-    setup_requires=['typing_extensions'],
     entry_points={
         "tractions": [
             x for x in traction_entry_points(pytractions.transformations)

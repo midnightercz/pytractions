@@ -2,7 +2,6 @@ import inspect
 import importlib
 import json
 from typing import get_origin, TypeVar, Union, ForwardRef, Dict, Any, Tuple, List
-from typing_extensions import Self
 import sys
 
 
@@ -483,7 +482,7 @@ class TypeNode:
         return pre_order["root"]
 
     @classmethod
-    def from_json(cls, json_data, _locals={}) -> Self:
+    def from_json(cls, json_data, _locals={}) -> "TypeNode":
         """Load TypeNode from json."""
         root_parent = cls(None)
         root_parent.children = [None]
