@@ -1,5 +1,4 @@
 import argparse
-import dataclasses
 import enum
 import json
 import sys
@@ -9,7 +8,11 @@ from typing import _UnionGenericAlias
 
 from .base import TypeNode, ANY, TList, TDict
 from .runner_utils import (
-    parse_traction_str, StrParam, str_presenter, str_param, get_traction_defaults
+    parse_traction_str,
+    StrParam,
+    str_presenter,
+    str_param,
+    get_traction_defaults,
 )
 
 
@@ -180,7 +183,6 @@ def generate_tekton_task(traction, docker_image):
         "spec": generate_task_spec(traction, docker_image, id_in_tractor="uid"),
     }
     return result
-
 
 
 def generate_tekton_pipeline(tractor, docker_image):
@@ -458,7 +460,7 @@ def make_parsers(subparsers):
         "--store-output",
         action="append",
         help="mapping of output=/file/path where specific output should be stored",
-        default=[]
+        default=[],
     )
     run_parser.set_defaults(command=run_main)
 

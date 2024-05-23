@@ -6,7 +6,7 @@ import yaml
 
 from .monitor import StructuredMonitor
 from .base import Traction
-from .runner_utils import parse_traction_str, generate_traction_ari, gen_default_inputs
+from .runner_utils import parse_traction_str, gen_default_inputs
 
 
 class SimpleRunner:

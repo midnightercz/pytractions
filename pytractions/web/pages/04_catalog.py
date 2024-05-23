@@ -122,11 +122,11 @@ background-color: #f9f9f9;
         """,
         )
         with tc:
-            tc.write(t['module'] + "." + t["name"])
+            tc.write(t["module"] + "." + t["name"])
             tc.write("description: " + (t["docs"] or ""))
             tc.multiselect(
                 "Tags",
-                key=d['name'] + "." + t["name"] + "-" + "tags",
+                key=d["name"] + "." + t["name"] + "-" + "tags",
                 options=t["tags"],
                 default=t["tags"],
                 disabled=True,

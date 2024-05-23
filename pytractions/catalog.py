@@ -117,23 +117,21 @@ def _type_to_str(type_json):
 def convert_types_to_str(t_meta):
     """Return string representation of attribute type."""
     t_meta["inputs"] = [
-        {"name": i["name"],
-         "type": _type_to_str(i["type"]),
-         "docs": str(i['docs'])} for i in t_meta["inputs"]
+        {"name": i["name"], "type": _type_to_str(i["type"]), "docs": str(i["docs"])}
+        for i in t_meta["inputs"]
     ]
     t_meta["outputs"] = [
-        {"name": i["name"],
-         "type": _type_to_str(i["type"]),
-         "docs": str(i['docs'])} for i in t_meta["outputs"]
+        {"name": i["name"], "type": _type_to_str(i["type"]), "docs": str(i["docs"])}
+        for i in t_meta["outputs"]
     ]
     t_meta["resources"] = [
-        {"name": i["name"],
-         "type": _type_to_str(i["type"]),
-         "docs": str(i['docs'])} for i in t_meta["resources"]
+        {"name": i["name"], "type": _type_to_str(i["type"]), "docs": str(i["docs"])}
+        for i in t_meta["resources"]
     ]
-    t_meta["args"] = [{"name": i["name"],
-                       "type": _type_to_str(i["type"]),
-                       "docs": str(i['docs'])} for i in t_meta["args"]]
+    t_meta["args"] = [
+        {"name": i["name"], "type": _type_to_str(i["type"]), "docs": str(i["docs"])}
+        for i in t_meta["args"]
+    ]
     return t_meta
 
 

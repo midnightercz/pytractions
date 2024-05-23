@@ -10,19 +10,21 @@ from .base import TypeNode, ANY, TList, TDict, JSON_COMPATIBLE, Base
 
 
 class StrUnion(yaml.YAMLObject):
+    """Class for different yaml string formatting."""
+
     yaml_tag = "OneOf"
 
     def __init__(self, _list):
+        """Initialize StrUnion."""
         self.choices = _list
 
     def __getitem__(self, n):
+        """Get item from choices."""
         return self.choices[n]
 
     def __setitem__(self, n, x):
+        """Set item in choices."""
         self.choices[n] = x
-
-    def __str__(self):
-        return str(self.choices)
 
 
 class StrParam:
@@ -43,6 +45,7 @@ def str_presenter(dumper, data):
 def str_param(dumper, data):
     """Yaml str param representer with indent."""
     return dumper.represent_scalar("tag:yaml.org,2002:str", data.strparam, style="|")
+
 
 def str_multichoice(dumper, data):
     """Yaml str param representer with indent."""
@@ -192,35 +195,20 @@ def get_traction_defaults(traction):
 
 def gen_default_inputs(traction_cls):
     """Get defaults for all traction attributes."""
-    defaults = {
-        str: "string",
-        int: 12345,
-        float: 1.2345,
-        None: None,
-        bool: False,
-        type(None): None
-    }
+    defaults = {str: "string", int: 12345, float: 1.2345, None: None, bool: False, type(None): None}
     pre_order: Dict[str, Any] = {}
     # stack is list of (current_cls_to_process, current_parent, current_key, current_default)
     stack: List[Tuple[Type[Base], Dict[str, Any], str, Optional[JSON_COMPATIBLE]]] = []
-    current=traction_cls
-    current_parent=pre_order
-    parent_key="root"
+    current = traction_cls
+    current_parent = pre_order
+    parent_key = "root"
     current_default = None
 
     current_parent[parent_key] = {}
     for f, ftype in current._fields.items():
-        if not (f.startswith("a_") or
-                f.startswith("i_") or
-                f.startswith("r_")):
+        if not (f.startswith("a_") or f.startswith("i_") or f.startswith("r_")):
             continue
-        if type(current.__dataclass_fields__[f].default) in (
-            str,
-            int,
-            float,
-            None,
-            bool
-        ):
+        if type(current.__dataclass_fields__[f].default) in (str, int, float, None, bool):
             stack.append(
                 (
                     ftype,
@@ -234,16 +222,10 @@ def gen_default_inputs(traction_cls):
 
     while stack:
         current, current_parent, parent_key, current_default = stack.pop(0)
-        if current.__class__ == _UnionGenericAlias:# and current._name != "Optional":
+        if current.__class__ == _UnionGenericAlias:  # and current._name != "Optional":
             current_parent[parent_key] = StrUnion([None] * len(current.__args__))
             for n, uarg in enumerate(current.__args__):
-                if type(uarg) in (
-                    str,
-                    int,
-                    float,
-                    None,
-                    bool
-                ):
+                if type(uarg) in (str, int, float, None, bool):
                     stack.append(
                         (
                             uarg,
@@ -264,13 +246,7 @@ def gen_default_inputs(traction_cls):
             print(current_parent, parent_key)
             current_parent[parent_key] = {}
             for f, ftype in current._fields.items():
-                if type(current.__dataclass_fields__[f].default) in (
-                    str,
-                    int,
-                    float,
-                    None,
-                    bool
-                ):
+                if type(current.__dataclass_fields__[f].default) in (str, int, float, None, bool):
                     stack.append(
                         (
                             ftype,
@@ -282,5 +258,7 @@ def gen_default_inputs(traction_cls):
                 else:
                     stack.append((ftype, current_parent[parent_key], f, None))
         else:
-            current_parent[parent_key] = defaults[current] if current_default is None else current_default
+            current_parent[parent_key] = (
+                defaults[current] if current_default is None else current_default
+            )
     return pre_order["root"]
