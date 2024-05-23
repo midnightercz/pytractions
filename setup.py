@@ -2,12 +2,6 @@
 
 """setup.py"""
 
-import os
-import re
-import sys
-
-# import pkg_resources
-import sys
 from setuptools import setup, find_packages
 
 from pytractions.pkgutils import traction_entry_points

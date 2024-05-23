@@ -80,7 +80,7 @@ def tractions_discovery(
                 args_type_filter=args_type_filter,
                 type_to_str=type_to_str,
             )
-            if dist:
+            if dist and dist not in ret:
                 ret.append(dist)
     return ret
 
@@ -117,15 +117,23 @@ def _type_to_str(type_json):
 def convert_types_to_str(t_meta):
     """Return string representation of attribute type."""
     t_meta["inputs"] = [
-        {"name": i["name"], "type": _type_to_str(i["type"])} for i in t_meta["inputs"]
+        {"name": i["name"],
+         "type": _type_to_str(i["type"]),
+         "docs": str(i['docs'])} for i in t_meta["inputs"]
     ]
     t_meta["outputs"] = [
-        {"name": i["name"], "type": _type_to_str(i["type"])} for i in t_meta["outputs"]
+        {"name": i["name"],
+         "type": _type_to_str(i["type"]),
+         "docs": str(i['docs'])} for i in t_meta["outputs"]
     ]
     t_meta["resources"] = [
-        {"name": i["name"], "type": _type_to_str(i["type"])} for i in t_meta["resources"]
+        {"name": i["name"],
+         "type": _type_to_str(i["type"]),
+         "docs": str(i['docs'])} for i in t_meta["resources"]
     ]
-    t_meta["args"] = [{"name": i["name"], "type": _type_to_str(i["type"])} for i in t_meta["args"]]
+    t_meta["args"] = [{"name": i["name"],
+                       "type": _type_to_str(i["type"]),
+                       "docs": str(i['docs'])} for i in t_meta["args"]]
     return t_meta
 
 
@@ -147,22 +155,22 @@ def inspect_traction_ep(traction_ep, tag_filter=None, name_filter=None, type_fil
         return {}
 
     t["inputs"] = [
-        {"name": k, "type": v.type_to_json(), "docs": traction._fields.get("d_" + k, None)}
+        {"name": k, "type": v.type_to_json(), "docs": getattr(traction, "d_" + k, None)}
         for k, v in traction._fields.items()
         if k.startswith("i_")
     ]
     t["outputs"] = [
-        {"name": k, "type": v.type_to_json(), "docs": traction._fields.get("d_" + k, None)}
+        {"name": k, "type": v.type_to_json(), "docs": getattr(traction, "d_" + k, None)}
         for k, v in traction._fields.items()
         if k.startswith("o_")
     ]
     t["resources"] = [
-        {"name": k, "type": v.type_to_json(), "docs": traction._fields.get("d_" + k, None)}
+        {"name": k, "type": v.type_to_json(), "docs": getattr(traction, "d_" + k, None)}
         for k, v in traction._fields.items()
         if k.startswith("r_")
     ]
     t["args"] = [
-        {"name": k, "type": v.type_to_json(), "docs": traction._fields.get("d_" + k, None)}
+        {"name": k, "type": v.type_to_json(), "docs": getattr(traction, "d_" + k, None)}
         for k, v in traction._fields.items()
         if k.startswith("a_")
     ]

@@ -1803,7 +1803,7 @@ class TractionMeta(BaseMeta):
                 if attr != "d_" and attr.replace("d_", "", 1) not in all_attrs["__annotations__"]:
                     raise TypeError(
                         f"Attribute {attr.replace('d_', '', 1)} is not defined for description "
-                        "{attr}: {all_attrs}"
+                        f"{attr}: {all_attrs}"
                     )
             else:
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or d_")

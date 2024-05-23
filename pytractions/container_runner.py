@@ -478,6 +478,7 @@ def make_parsers(subparsers):
         "--store-output",
         action="append",
         help="mapping of output=/file/path where specific output should be stored",
+        default=[]
     )
     run_parser.set_defaults(command=run_main)
 
