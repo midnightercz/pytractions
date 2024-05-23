@@ -8,7 +8,9 @@ import yaml
 from typing import _UnionGenericAlias
 
 from .base import TypeNode, ANY, TList, TDict
-from .runner_utils import parse_traction_str, StrParam, str_presenter, str_param
+from .runner_utils import (
+    parse_traction_str, StrParam, str_presenter, str_param, get_traction_defaults
+)
 
 
 def enum_param(dumper, data):
@@ -179,28 +181,6 @@ def generate_tekton_task(traction, docker_image):
     }
     return result
 
-
-def get_traction_defaults(traction):
-    """Get defaults for all traction attributes."""
-    defaults = {}
-    for f in traction._fields:
-        if hasattr(traction, f):
-            tf = getattr(traction, f, dataclasses._MISSING_TYPE)
-        else:
-            tf = traction.__dataclass_fields__[f].default
-        if f.startswith("a_"):
-            if not isinstance(tf, dataclasses._MISSING_TYPE):
-                defaults[f] = StrParam(yaml.dump(tf.content_to_json()))
-    if f.startswith("i_"):
-        if not isinstance(tf, dataclasses._MISSING_TYPE):
-            defaults[f] = StrParam(yaml.dump(tf.content_to_json()))
-        # if f.startswith("o_"):
-        #     if not isinstance(tf, dataclasses._MISSING_TYPE):
-        #         defaults[f] = tf.data
-        if f.startswith("r_"):
-            if not isinstance(tf, dataclasses._MISSING_TYPE):
-                defaults[f] = StrParam(yaml.dump(tf.content_to_json()))
-    return defaults
 
 
 def generate_tekton_pipeline(tractor, docker_image):

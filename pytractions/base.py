@@ -753,6 +753,7 @@ class Base(ABase, metaclass=BaseMeta):
                         int,
                         float,
                         None,
+                        bool
                     ):
                         stack.append(
                             (

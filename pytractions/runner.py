@@ -6,7 +6,7 @@ import yaml
 
 from .monitor import StructuredMonitor
 from .base import Traction
-from .runner_utils import parse_traction_str, generate_traction_ari
+from .runner_utils import parse_traction_str, generate_traction_ari, gen_default_inputs
 
 
 class SimpleRunner:
@@ -107,19 +107,23 @@ def resubmit_main(args):
 def gen_inputs_main(args):
     """Generate inputs for the traction."""
     traction_cls = parse_traction_str(args.traction)
-    print(generate_traction_ari(traction_cls))
+    defaults = gen_default_inputs(traction_cls)
+    yaml_out = []
+    for k, v in defaults.items():
+        yaml_out.append({"name": k, "data": v})
+    print(yaml.dump_all(yaml_out))
 
 
 def make_parsers(subparsers):
     """Make runner parser."""
-    p_runner = subparsers.add_parser("run", help="Run pytraction module")
+    p_runner = subparsers.add_parser("local_run", help="Run pytraction module")
     p_runner.add_argument("traction", help="Path of traction to run (module:traction)", type=str)
     p_runner.add_argument(
         "--monitor", "-m", help="Path to monitor directory", type=str, default="monitor"
     )
     p_runner.set_defaults(command=run_main)
 
-    p_resubmit = subparsers.add_parser("resubmit", help="Run pytraction module")
+    p_resubmit = subparsers.add_parser("local_resubmit", help="Run pytraction module")
     p_resubmit.add_argument(
         "--monitor", "-m", help="Path to monitor directory", type=str, default="monitor"
     )

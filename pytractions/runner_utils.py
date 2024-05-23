@@ -1,11 +1,28 @@
 import enum
+import dataclasses
 import importlib
-from typing import _UnionGenericAlias
+from typing import _UnionGenericAlias, Any, Optional, Dict, Type, Tuple, List
 
 from lark import Lark, Transformer
 import yaml
 
-from .base import TypeNode, ANY, TList, TDict
+from .base import TypeNode, ANY, TList, TDict, JSON_COMPATIBLE, Base
+
+
+class StrUnion(yaml.YAMLObject):
+    yaml_tag = "OneOf"
+
+    def __init__(self, _list):
+        self.choices = _list
+
+    def __getitem__(self, n):
+        return self.choices[n]
+
+    def __setitem__(self, n, x):
+        self.choices[n] = x
+
+    def __str__(self):
+        return str(self.choices)
 
 
 class StrParam:
@@ -24,6 +41,10 @@ def str_presenter(dumper, data):
 
 
 def str_param(dumper, data):
+    """Yaml str param representer with indent."""
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data.strparam, style="|")
+
+def str_multichoice(dumper, data):
     """Yaml str param representer with indent."""
     return dumper.represent_scalar("tag:yaml.org,2002:str", data.strparam, style="|")
 
@@ -147,3 +168,119 @@ def generate_traction_ari(traction):
         ]
     )
     return ari_str
+
+
+def get_traction_defaults(traction):
+    """Get defaults for all traction attributes."""
+    defaults = {}
+    for f in traction._fields:
+        if hasattr(traction, f):
+            tf = getattr(traction, f, dataclasses._MISSING_TYPE)
+        else:
+            tf = traction.__dataclass_fields__[f].default
+        if f.startswith("a_"):
+            if not isinstance(tf, dataclasses._MISSING_TYPE):
+                defaults[f] = StrParam(yaml.dump(tf.content_to_json()))
+    if f.startswith("i_"):
+        if not isinstance(tf, dataclasses._MISSING_TYPE):
+            defaults[f] = StrParam(yaml.dump(tf.content_to_json()))
+        if f.startswith("r_"):
+            if not isinstance(tf, dataclasses._MISSING_TYPE):
+                defaults[f] = StrParam(yaml.dump(tf.content_to_json()))
+    return defaults
+
+
+def gen_default_inputs(traction_cls):
+    """Get defaults for all traction attributes."""
+    defaults = {
+        str: "string",
+        int: 12345,
+        float: 1.2345,
+        None: None,
+        bool: False,
+        type(None): None
+    }
+    pre_order: Dict[str, Any] = {}
+    # stack is list of (current_cls_to_process, current_parent, current_key, current_default)
+    stack: List[Tuple[Type[Base], Dict[str, Any], str, Optional[JSON_COMPATIBLE]]] = []
+    current=traction_cls
+    current_parent=pre_order
+    parent_key="root"
+    current_default = None
+
+    current_parent[parent_key] = {}
+    for f, ftype in current._fields.items():
+        if not (f.startswith("a_") or
+                f.startswith("i_") or
+                f.startswith("r_")):
+            continue
+        if type(current.__dataclass_fields__[f].default) in (
+            str,
+            int,
+            float,
+            None,
+            bool
+        ):
+            stack.append(
+                (
+                    ftype,
+                    current_parent[parent_key],
+                    f,
+                    current.__dataclass_fields__[f].default,
+                )
+            )
+        else:
+            stack.append((ftype, current_parent[parent_key], f, None))
+
+    while stack:
+        current, current_parent, parent_key, current_default = stack.pop(0)
+        if current.__class__ == _UnionGenericAlias:# and current._name != "Optional":
+            current_parent[parent_key] = StrUnion([None] * len(current.__args__))
+            for n, uarg in enumerate(current.__args__):
+                if type(uarg) in (
+                    str,
+                    int,
+                    float,
+                    None,
+                    bool
+                ):
+                    stack.append(
+                        (
+                            uarg,
+                            current_parent[parent_key],
+                            n,
+                            uarg,
+                        )
+                    )
+                else:
+                    stack.append((uarg, current_parent[parent_key], n, None))
+        elif issubclass(current, enum.Enum):
+            current_parent[parent_key] = list(current.__members__.keys())
+        elif TypeNode.from_type(current) == TypeNode.from_type(TList[ANY]):
+            current_parent[parent_key] = [None]
+            stack.append((current._params[0], current_parent[parent_key], 0, None))
+
+        elif hasattr(current, "_fields"):
+            print(current_parent, parent_key)
+            current_parent[parent_key] = {}
+            for f, ftype in current._fields.items():
+                if type(current.__dataclass_fields__[f].default) in (
+                    str,
+                    int,
+                    float,
+                    None,
+                    bool
+                ):
+                    stack.append(
+                        (
+                            ftype,
+                            current_parent[parent_key],
+                            f,
+                            current.__dataclass_fields__[f].default,
+                        )
+                    )
+                else:
+                    stack.append((ftype, current_parent[parent_key], f, None))
+        else:
+            current_parent[parent_key] = defaults[current] if current_default is None else current_default
+    return pre_order["root"]
