@@ -1,5 +1,6 @@
-import json
 import argparse
+import json
+import logging
 import sys
 import os
 import yaml
@@ -7,6 +8,12 @@ import yaml
 from .monitor import StructuredMonitor
 from .base import Traction
 from .runner_utils import parse_traction_str, gen_default_inputs
+
+
+LOGGER = logging.getLogger()
+sh = logging.StreamHandler(stream=sys.stdout)
+sh.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+LOGGER.addHandler(sh)
 
 
 class SimpleRunner:
@@ -81,6 +88,8 @@ def run_main(args):
     """Run action."""
     traction_cls = parse_traction_str(args.traction)
     traction_init_fields = {}
+    LOGGER.setLevel(getattr(logging, args.level))
+
     docs = yaml.safe_load_all(sys.stdin.read())
     for doc in docs:
         name, data, data_file = doc["name"], doc.get("data"), doc.get("data_file")
@@ -93,6 +102,7 @@ def run_main(args):
             yaml.safe_load(data)
         )
     traction = traction_cls(uid="0", **traction_init_fields)
+    LOGGER.info("Running simple runner on directory {args.monitor}")
     runner = SimpleRunner(traction, args.monitor)
     runner.run()
 
@@ -120,6 +130,14 @@ def make_parsers(subparsers):
     p_runner.add_argument("traction", help="Path of traction to run (module:traction)", type=str)
     p_runner.add_argument(
         "--monitor", "-m", help="Path to monitor directory", type=str, default="monitor"
+    )
+    p_runner.add_argument(
+        "--level",
+        "-l",
+        help="Set log level",
+        type=str,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
     )
     p_runner.set_defaults(command=run_main)
 

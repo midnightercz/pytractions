@@ -4,6 +4,7 @@ import datetime
 import hashlib
 import inspect
 import json
+import logging
 from types import prepare_class, resolve_bases
 import enum
 import sys
@@ -34,6 +35,8 @@ from .utils import ANY
 from .types import TypeNode, JSON_COMPATIBLE
 from .abase import ABase
 from .abase import ATList, ATDict
+
+LOGGER = logging.getLogger(__name__)
 
 _Base = ForwardRef("Base")
 _Traction = ForwardRef("Traction")
@@ -2121,14 +2124,17 @@ class Traction(Base, metaclass=TractionMeta):
             self.stats.started = isodate_now()
 
             self.state = TractionState.PREP
+            LOGGER.debug(f"Starting traction {self.fullname} pre_run")
             self._pre_run()
             _on_update(self)  # type: ignore
         try:
             if self.state not in (TractionState.PREP, TractionState.ERROR):
+                LOGGER.debug(f"Skipping traction {self.fullname} as state is {self.state}")
                 return self
             if not self.skip:
                 self.state = TractionState.RUNNING
                 _on_update(self)  # type: ignore
+                LOGGER.debug(f"Running traction {self.fullname}")
                 self._run(on_update=_on_update)
         except TractionFailedError:
             self.state = TractionState.FAILED
@@ -2140,6 +2146,7 @@ class Traction(Base, metaclass=TractionMeta):
         else:
             self.state = TractionState.FINISHED
         finally:
+            LOGGER.debug(f"Traction {self.fullname} finished")
             self._finish_stats()
             _on_update(self)  # type: ignore
         return self
@@ -2389,6 +2396,7 @@ class STMD(Traction, metaclass=STMDMeta):
         """Run the traction on input for given index."""
         traction = self._copy_traction(index)
         self.tractions_state[index] = TractionState.RUNNING
+        LOGGER.info(f"Running STMD traction {traction.fullname}")
         traction.run(on_update=on_update)
         self.tractions_state[index] = traction.state
         outputs = {}
@@ -2464,6 +2472,7 @@ class STMD(Traction, metaclass=STMDMeta):
         if self.state not in (TractionState.READY, TractionState.ERROR):
             return self
 
+        LOGGER.info(f"Running STMD {self.fullname}")
         self._reset_stats()
         self.stats.started = isodate_now()
 

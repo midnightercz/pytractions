@@ -1,6 +1,7 @@
 import argparse
 import enum
 import json
+import logging
 import sys
 import re
 import yaml
@@ -14,6 +15,12 @@ from .runner_utils import (
     str_param,
     get_traction_defaults,
 )
+
+
+LOGGER = logging.getLogger()
+sh = logging.StreamHandler(stream=sys.stdout)
+sh.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+LOGGER.addHandler(sh)
 
 
 def enum_param(dumper, data):
@@ -394,6 +401,7 @@ def generate_tekton_task_run_main(args):
 
 def run_main(args):
     """Run traction in the container."""
+    LOGGER.setLevel(getattr(logging, args.level))
     traction_cls = parse_traction_str(args.traction)
     traction_init_fields = {}
     docs = yaml.safe_load_all(sys.stdin.read())
@@ -408,6 +416,7 @@ def run_main(args):
             yaml.safe_load(data)
         )
     traction = traction_cls(uid="0", **traction_init_fields)
+    LOGGER.info(f"Running traction {args.traction}")
     traction.run()
     outputs_map = {}
     for store_output in args.store_output:
@@ -419,6 +428,7 @@ def run_main(args):
 
     for f, ftype in traction._fields.items():
         if f in outputs_map:
+            LOGGER.info(f"Storing output {f} to {outputs_map[f]}")
             if f == "stats":
                 o_yaml = yaml.safe_dump(
                     {"name": f, "data": yaml.safe_dump(getattr(traction, f).content_to_json())}
@@ -461,6 +471,14 @@ def make_parsers(subparsers):
         action="append",
         help="mapping of output=/file/path where specific output should be stored",
         default=[],
+    )
+    run_parser.add_argument(
+        "--level",
+        "-l",
+        help="Set log level",
+        type=str,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
     )
     run_parser.set_defaults(command=run_main)
 

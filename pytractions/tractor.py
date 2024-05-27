@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 import dataclasses
+import logging
 from typing import Optional, Dict, Any, Tuple, List
 
 from .base import (
@@ -26,6 +27,9 @@ from .base import (
     isodate_now,
 )
 from .exc import UninitiatedResource
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class _TractorOutputOwner(Base):
@@ -265,6 +269,7 @@ class Tractor(Traction, metaclass=TractorMeta):
         return init_fields
 
     def _init_traction(self, traction_name, traction):
+        LOGGER.info("Init traction %s", traction_name)
         init_fields = {}
         for ft, field in traction.__dataclass_fields__.items():
             # set all inputs for the traction created at the end of this method
@@ -508,6 +513,7 @@ class MultiTractor(Tractor, metaclass=TractorMeta):
 
     def _traction_runner(self, t_name, traction, on_update=None):
         traction = self._init_traction(t_name, traction)
+        LOGGER.info(f"Running traction {traction.full_name}")
         traction.run(on_update=on_update)
         return traction
 
