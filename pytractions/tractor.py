@@ -271,6 +271,7 @@ class Tractor(Traction, metaclass=TractorMeta):
     def _init_traction(self, traction_name, traction):
         LOGGER.info("Init traction %s", traction_name)
         init_fields = {}
+
         for ft, field in traction.__dataclass_fields__.items():
             # set all inputs for the traction created at the end of this method
             # to outputs of traction copy in self.tractions
@@ -319,14 +320,14 @@ class Tractor(Traction, metaclass=TractorMeta):
 
     def __post_init__(self):
         """Tractor post init."""
-        if not self.tractions:
-            self.tractions = TDict[str, Traction]({})
-            for f in self._fields:
-                # Copy all tractions
-                if f.startswith("t_"):
-                    traction = getattr(self, f)
-                    new_traction = self._init_traction(f, traction)
-                    self.tractions[f] = new_traction
+        # if not self.tractions:
+        self.tractions = TDict[str, Traction]({})
+        for f in self._fields:
+            # Copy all tractions
+            if f.startswith("t_"):
+                traction = getattr(self, f)
+                new_traction = self._init_traction(f, traction)
+                self.tractions[f] = new_traction
         for f in self._fields:
             # set tractor output to outputs of copied tractions
             if f.startswith("o_"):
