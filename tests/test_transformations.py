@@ -45,8 +45,28 @@ def test_filter_duplicates():
 def test_list_multiplier():
     t_list_multiplier = ListMultiplier[int, str](
         uid="test-list-multiplier",
-        i_list=In[TList[int]](data=TList[int]([1, 2, 3, 4, 5])),
+        i_list=In[TList[In[int]]](
+            data=TList[In[int]](
+                [
+                    In[int](data=1),
+                    In[int](data=1),
+                    In[int](data=1),
+                    In[int](data=1),
+                    In[int](data=1),
+                ]
+            )
+        ),
         i_scalar=In[str](data="a"),
     )
     t_list_multiplier.run()
-    assert t_list_multiplier.o_list == Out[TList[str]](data=TList[str](["a", "a", "a", "a", "a"]))
+    assert t_list_multiplier.o_list == Out[TList[Out[str]]](
+        data=TList[Out[str]](
+            [
+                Out[str](data="a"),
+                Out[str](data="a"),
+                Out[str](data="a"),
+                Out[str](data="a"),
+                Out[str](data="a"),
+            ]
+        )
+    )

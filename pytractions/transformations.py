@@ -1,5 +1,5 @@
 from typing import TypeVar, Generic
-from .base import In, Out, Traction, OnUpdateCallable, TList, Arg, Base
+from .base import In, Out, Traction, OnUpdateCallable, TList, Arg
 
 T = TypeVar("T")
 X = TypeVar("X")
@@ -45,9 +45,9 @@ class Extractor(Traction, Generic[T, X]):
 class ListMultiplier(Traction, Generic[T, X]):
     """Multiply list by scalar."""
 
-    i_list: In[TList[T]]
+    i_list: In[TList[In[T]]]
     i_scalar: In[X]
-    o_list: Out[TList[X]]
+    o_list: Out[TList[Out[X]]]
 
     d_: str = """Takes lengh of input list and creates output list of the same length filled
 with scalar value."""
@@ -57,9 +57,8 @@ with scalar value."""
 
     def _run(self, on_update: OnUpdateCallable):
         for _ in range(len(self.i_list.data)):
-            if isinstance(self.i_scalar.data, Base):
-                self.o_list.data.append(
-                    self.i_scalar.data.content_from_json(self.i_scalar.data.content_to_json())
+            self.o_list.data.append(
+                Out[self._params[1]](
+                    data=self.i_scalar.content_from_json(self.i_scalar.content_to_json()).data
                 )
-            else:
-                self.o_list.data.append(self.i_scalar.data)
+            )
