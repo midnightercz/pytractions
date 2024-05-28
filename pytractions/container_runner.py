@@ -14,6 +14,7 @@ from .runner_utils import (
     str_presenter,
     str_param,
     get_traction_defaults,
+    gen_default_inputs,
 )
 
 
@@ -290,15 +291,12 @@ def shift(yaml_data):
 def generate_tekton_task_run(traction):
     """Generate tekton task run."""
     params = []
+    default_inputs = gen_default_inputs(traction)
     for f, fv in traction._fields.items():
         if f.startswith("a_") or f.startswith("i_") or f.startswith("r_"):
             param = {
                 "name": f,
-                "value": shift(
-                    yaml.dump(
-                        traction._fields[f].type_defaults_to_json(), explicit_start=True
-                    ).rstrip()
-                ),
+                "value": shift(yaml.dump(default_inputs[f], explicit_start=True).rstrip()),
             }
             params.append(param)
     result = {
@@ -320,15 +318,12 @@ def generate_tekton_task_run(traction):
 def generate_tekton_pipeline_run(traction):
     """Generate tekton pipeline run."""
     params = []
+    default_inputs = gen_default_inputs(traction)
     for f, fv in traction._fields.items():
         if f.startswith("a_") or f.startswith("i_") or f.startswith("r_"):
             param = {
                 "name": f,
-                "value": shift(
-                    yaml.dump(
-                        traction._fields[f].type_defaults_to_json(), explicit_start=True
-                    ).rstrip()
-                ),
+                "value": shift(yaml.dump(default_inputs[f], explicit_start=True).rstrip()),
             }
             params.append(param)
     result = {
