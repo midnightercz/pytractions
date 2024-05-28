@@ -341,10 +341,6 @@ class Tractor(Traction, metaclass=TractorMeta):
                     for maf in fo._fields:
                         if ("#", f, maf) in self._margs_map:
                             setattr(fo, maf, getattr(self, self._margs_map[("#", f, maf)]))
-            if f.startswith("r_"):
-                fo = getattr(self, f)
-                if isinstance(fo, TRes):
-                    raise UninitiatedResource(f"{f}")
 
     def resubmit_from(self, traction_name: str):
         """Run tractor from specific traction."""
@@ -359,6 +355,13 @@ class Tractor(Traction, metaclass=TractorMeta):
                 traction.state = TractionState.FINISHED
 
     def _run(self, on_update: Optional[OnUpdateCallable] = None) -> "Tractor":  # pragma: no cover
+        # Check for uninitialized resources
+        for f in self._fields:
+            if f.startswith("r_"):
+                fo = getattr(self, f)
+                if isinstance(fo, TRes):
+                    raise UninitiatedResource(f"{f}")
+
         for tname, traction in self.tractions.items():
             traction.run(on_update=on_update)
             if on_update:
