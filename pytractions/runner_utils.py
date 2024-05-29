@@ -243,7 +243,6 @@ def gen_default_inputs(traction_cls):
             stack.append((current._params[0], current_parent[parent_key], 0, None))
 
         elif hasattr(current, "_fields"):
-            print(current_parent, parent_key)
             current_parent[parent_key] = {}
             for f, ftype in current._fields.items():
                 if type(current.__dataclass_fields__[f].default) in (str, int, float, None, bool):

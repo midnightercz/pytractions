@@ -100,7 +100,7 @@ def generate_traction_name_str(traction, include_module=False):
         return f"{module}{traction.__name__}"
 
 
-def generate_task_spec(traction, docker_image, inputs_map={}, id_in_tractor=None):
+def generate_task_spec(traction, docker_image, inputs_map={}, id_in_tractor=None, volumes={}):
     """Generate tekton task spec."""
     params = []
     results = []
@@ -166,17 +166,23 @@ cat <<EOF |
 {delimiter}
 {inputs_str}
 EOF
-python -m pytraction.container_runner run {store_results_str}\\
+python -m pytractions.container_runner run {store_results_str}\\
     "{traction.__module__}:{generate_traction_name_str(traction)}"
 cat $(workspaces.outputs.path)/{tid}::stats
 cat $(workspaces.outputs.path)/{tid}::state
+result = $(cat $(workspaces.outputs.path)/{tid}::state)
+[ $result != "finished" ] && exit 1
 """,
         }
     )
+    if volumes:
+        steps[-1]["volumeMounts"] = []
+    for name, path in volumes.items():
+        steps[-1]["volumeMounts"].append({"name": name, "mountPath": path})
     return spec
 
 
-def generate_tekton_task(traction, docker_image):
+def generate_tekton_task(traction, docker_image, volumes={}):
     """Generate tekton task."""
     # results = {}
     # for f, fv in traction._fields.items():
@@ -188,12 +194,12 @@ def generate_tekton_task(traction, docker_image):
         "metadata": {
             "name": tekton_task_name(traction.__name__),
         },
-        "spec": generate_task_spec(traction, docker_image, id_in_tractor="uid"),
+        "spec": generate_task_spec(traction, docker_image, id_in_tractor="uid", volumes=volumes),
     }
     return result
 
 
-def generate_tekton_pipeline(tractor, docker_image):
+def generate_tekton_pipeline(tractor, docker_image, volumes={}):
     """Generate tekton pipeline."""
     waves = {}
     params = []
@@ -310,6 +316,17 @@ def generate_tekton_task_run(traction):
                 "name": tekton_task_name(traction.__name__),
             },
             "params": params,
+            "workspaces": [
+                {
+                    "name": "outputs",
+                    "volumeClaimTemplate": {
+                        "spec": {
+                            "accessModes": ["ReadWriteOnce"],
+                            "resources": {"requests": {"storage": "1Gi"}},
+                        }
+                    },
+                }
+            ],
         },
     }
     return result
@@ -363,16 +380,17 @@ def field_from_json_str(json_str):
 def generate_tekton_task_main(args):
     """Run tenton Task yaml generation."""
     traction_cls = parse_traction_str(args.traction)
+    volumes = dict([vol.split(":") for vol in args.volume])
     if args.type == "tractor":
         print(
             yaml.dump(
-                generate_tekton_pipeline(traction_cls, args.docker_image),
+                generate_tekton_pipeline(traction_cls, args.docker_image, volumes=volumes),
             )
         )
     else:
         print(
             yaml.dump(
-                generate_tekton_task(traction_cls, args.docker_image),
+                generate_tekton_task(traction_cls, args.docker_image, volumes=volumes),
             )
         )
 
@@ -402,6 +420,7 @@ def run_main(args):
     docs = yaml.safe_load_all(sys.stdin.read())
     for doc in docs:
         name, data, data_file = doc["name"], doc.get("data"), doc.get("data_file")
+        LOGGER.info("Reading input %s", name)
         if data_file:
             data = yaml.safe_load(open(data_file).read())
             data = data["data"]
@@ -448,6 +467,9 @@ def make_parsers(subparsers):
     )
     p_generate_tekton_task.add_argument("traction", help="Traction to describe")
     p_generate_tekton_task.add_argument("docker_image", help="docker image for tekton task")
+    p_generate_tekton_task.add_argument(
+        "--volume", help="volume points for the task", action="append", default=[]
+    )
     p_generate_tekton_task.set_defaults(command=generate_tekton_task_main)
 
     p_generate_tekton_task_run = subparsers.add_parser(
