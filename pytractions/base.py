@@ -1833,6 +1833,17 @@ class TractionMeta(BaseMeta):
         for f, ftype in attrs["_fields"].items():
             # Do not include outputs in init
             if f.startswith("o_") and f not in attrs:
+                if inspect.isclass(ftype._params[0]) and issubclass(ftype._params[0], Base):
+                    for ff, fft in ftype._params[0]._fields.items():
+                        df = ftype._params[0].__dataclass_fields__[ff]
+                        if (
+                            df.default is dataclasses.MISSING
+                            and df.default_factory is dataclasses.MISSING
+                        ):
+                            raise TypeError(
+                                f"Cannot use {ftype._params[0]} for output, as it "
+                                f"doesn't have default value for field {ff}"
+                            )
                 attrs[f] = dataclasses.field(
                     init=False,
                     default_factory=DefaultOut(type_=ftype._params[0], params=(ftype._params)),
@@ -2326,6 +2337,17 @@ class STMDMeta(TractionMeta):
         for f, ftype in attrs["_fields"].items():
             # Do not include outputs in init
             if f.startswith("o_") and f not in attrs:
+                if inspect.isclass(ftype._params[0]) and issubclass(ftype._params[0], Base):
+                    for ff, ft in ftype._params[0]._fields.items():
+                        df = ftype._params[0].__dataclass_fields__[f]
+                        if (
+                            df.default is dataclasses.MISSING
+                            and df.default_factory is dataclasses.MISSING
+                        ):
+                            raise TypeError(
+                                f"Cannot use {ftype._params[0]} for output, as it "
+                                f"doesn't have default value for field {ff}"
+                            )
                 attrs[f] = dataclasses.field(
                     init=False,
                     default_factory=DefaultOut(type_=ftype._params[0], params=(ftype._params)),
