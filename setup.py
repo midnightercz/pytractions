@@ -37,6 +37,7 @@ setup(
         "dataclasses_json",
         "pyyaml",
         "lark",
+        "jsonschema",
         "streamlit",
         "streamlit-extras",
         "streamlit_option_menu"
