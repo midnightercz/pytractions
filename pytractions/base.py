@@ -2260,7 +2260,6 @@ class STMDMeta(TractionMeta):
         ):
             if attr.startswith("i_"):
                 child_input_type = all_attrs["_traction"]._fields[attr]._params[0]
-                print("CH TYPE", child_input_type)
                 if type_type_node != TypeNode.from_type(
                     In[TList[child_input_type]]
                 ) and TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(
@@ -2272,8 +2271,6 @@ class STMDMeta(TractionMeta):
                     )
             elif attr.startswith("o_"):
                 child_input_type = all_attrs["_traction"]._fields[attr]._params[0]
-                print("CH TYPE", child_input_type)
-                print("Type node type", type_type_node)
                 if type_type_node != TypeNode.from_type(Out[TList[child_input_type]]):
                     raise TypeError(
                         f"Attribute {attr} has to be type Out[TList[ANY]], but is {type_}"
@@ -2465,7 +2462,6 @@ class STMD(Traction, metaclass=STMDMeta):
                         data=getattr(self, ft).data[index]
                     )
 
-        print("INIT FIELDS", init_fields)
         init_fields["uid"] = "%s:%d" % (self.uid, index)
         # create copy of existing traction
         # print("INIT FIELDS", index, init_fields)
@@ -2489,7 +2485,6 @@ class STMD(Traction, metaclass=STMDMeta):
 
             for o in outputs:
                 o_type = getattr(self, o).data._params[0]
-                print("O_TYPE", o_type)
                 for i in range(len(first_in.data)):
                     getattr(self, o).data.append(o_type())
 
@@ -2565,8 +2560,6 @@ class STMD(Traction, metaclass=STMDMeta):
                     ):
                         res = executor.submit(self._traction_runner, i, on_update=on_update)
                         ft_results[res] = i
-                    else:
-                        print(f"{i} skipped")
                 _on_update(self)
                 for ft in as_completed(ft_results):
                     i = ft_results[ft]
