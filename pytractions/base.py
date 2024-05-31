@@ -2259,17 +2259,24 @@ class STMDMeta(TractionMeta):
             "tractions_state",
         ):
             if attr.startswith("i_"):
-                if type_type_node != TypeNode.from_type(In[TList[In[ANY]]]) and TypeNode.from_type(
-                    type_, subclass_check=False
-                ) != TypeNode.from_type(STMDSingleIn[ANY]):
+                child_input_type = all_attrs["_traction"]._fields[attr]._params[0]
+                print("CH TYPE", child_input_type)
+                if type_type_node != TypeNode.from_type(
+                    In[TList[child_input_type]]
+                ) and TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(
+                    STMDSingleIn[child_input_type]
+                ):
                     raise TypeError(
-                        f"Attribute {attr} has to be type In[TList[In[ANY]]] or STMDSingleIn[ANY], "
+                        f"Attribute {attr} has to be type In[TList[ANY]] or STMDSingleIn[ANY], "
                         f"but is {type_}"
                     )
             elif attr.startswith("o_"):
-                if type_type_node != TypeNode.from_type(Out[TList[Out[ANY]]]):
+                child_input_type = all_attrs["_traction"]._fields[attr]._params[0]
+                print("CH TYPE", child_input_type)
+                print("Type node type", type_type_node)
+                if type_type_node != TypeNode.from_type(Out[TList[child_input_type]]):
                     raise TypeError(
-                        f"Attribute {attr} has to be type Out[TList[Out[ANY]]], but is {type_}"
+                        f"Attribute {attr} has to be type Out[TList[ANY]], but is {type_}"
                     )
             elif attr.startswith("a_"):
                 if type_type_node != TypeNode.from_type(Arg[ANY]):
@@ -2424,7 +2431,7 @@ class STMD(Traction, metaclass=STMDMeta):
         outputs = {}
         for o in traction._fields:
             if o.startswith("o_"):
-                outputs[o] = getattr(traction, o)
+                outputs[o] = getattr(traction, o).data
         return outputs
 
     def _copy_traction(self, index, connect_inputs=True):
@@ -2454,8 +2461,11 @@ class STMD(Traction, metaclass=STMDMeta):
                         data=getattr(self, ft).data
                     )
                 else:
-                    init_fields[ft] = getattr(self, ft).data[index]
+                    init_fields[ft] = In.__class_getitem__(*getattr(self, ft)._params[0]._params)(
+                        data=getattr(self, ft).data[index]
+                    )
 
+        print("INIT FIELDS", init_fields)
         init_fields["uid"] = "%s:%d" % (self.uid, index)
         # create copy of existing traction
         # print("INIT FIELDS", index, init_fields)
@@ -2464,7 +2474,7 @@ class STMD(Traction, metaclass=STMDMeta):
         for ft in traction._fields:
             try:
                 if ft.startswith("o_"):
-                    getattr(self, ft).data[index] = getattr(ret, ft)
+                    getattr(self, ft).data[index] = getattr(ret, ft).data
             except Exception as e:
                 raise RuntimeError(f"Failed to copy traction {self._traction}. Field {ft}") from e
         return ret
@@ -2478,9 +2488,10 @@ class STMD(Traction, metaclass=STMDMeta):
             )
 
             for o in outputs:
-                o_type = getattr(self, o).data._params[0]._params[0]
+                o_type = getattr(self, o).data._params[0]
+                print("O_TYPE", o_type)
                 for i in range(len(first_in.data)):
-                    getattr(self, o).data.append(NoOut[o_type]())
+                    getattr(self, o).data.append(o_type())
 
     def run(
         self,
@@ -2566,7 +2577,7 @@ class STMD(Traction, metaclass=STMDMeta):
                     t_outputs = ft.result()
                     for o in outputs:
                         # getattr(self, o).data[i].data = getattr(nt, o).data
-                        getattr(self, o).data[i].data = t_outputs[o].data
+                        getattr(self, o).data[i] = t_outputs[o]
                     # if self.a_delete_after_finished.a:
                     #    self.tractions[i] = None
             # if self.a_delete_after_finished.a:
@@ -2576,7 +2587,7 @@ class STMD(Traction, metaclass=STMDMeta):
             for i in range(0, len(first_in.data)):
                 res = self._traction_runner(i, on_update=on_update)
                 for o in outputs:
-                    getattr(self, o).data[i].data = res[o].data
+                    getattr(self, o).data[i] = res[o]
         self.state = TractionState.FINISHED
         _on_update(self)
         self._finish_stats()

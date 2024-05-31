@@ -10,63 +10,33 @@ from pytractions.transformations import Flatten, FilterDuplicates, ListMultiplie
 def test_flatten():
     t_flatten = Flatten[int](
         uid="test-flatten",
-        i_complex=In[TList[In[TList[In[int]]]]](
-            data=TList[In[TList[In[int]]]](
+        i_complex=In[TList[TList[int]]](
+            data=TList[TList[int]](
                 [
-                    In[TList[In[int]]](data=TList[In[int]]([In[int](data=1), In[int](data=2)])),
-                    In[TList[In[int]]](data=TList[In[int]]([In[int](data=3), In[int](data=4)])),
+                    TList[int]([1, 2]),
+                    TList[int]([3, 4]),
                 ]
             )
         ),
     )
     t_flatten.run()
-    print(t_flatten.o_flat)
-    assert t_flatten.o_flat == Out[TList[Out[int]]](
-        data=TList[Out[int]](
-            [Out[int](data=1), Out[int](data=2), Out[int](data=3), Out[int](data=4)]
-        )
-    )
+    assert t_flatten.o_flat == Out[TList[int]](data=TList[int]([1, 2, 3, 4]))
 
 
 def test_filter_duplicates():
     t_filter_duplicates = FilterDuplicates[int](
         uid="test-filter-duplicates",
-        i_list=In[TList[In[int]]](
-            data=TList[In[int]]([In[int](data=1), In[int](data=2), In[int](data=1)])
-        ),
+        i_list=In[TList[int]](data=TList[int]([1, 1, 1, 2])),
     )
     t_filter_duplicates.run()
-    print(t_filter_duplicates.o_list)
-    assert t_filter_duplicates.o_list == Out[TList[Out[int]]](
-        data=TList[Out[int]]([Out[int](data=1), Out[int](data=2)])
-    )
+    assert t_filter_duplicates.o_list == Out[TList[int]](data=TList[int]([1, 2]))
 
 
 def test_list_multiplier():
     t_list_multiplier = ListMultiplier[int, str](
         uid="test-list-multiplier",
-        i_list=In[TList[In[int]]](
-            data=TList[In[int]](
-                [
-                    In[int](data=1),
-                    In[int](data=1),
-                    In[int](data=1),
-                    In[int](data=1),
-                    In[int](data=1),
-                ]
-            )
-        ),
+        i_list=In[TList[int]](data=TList[int]([1, 1, 1, 1, 1])),
         i_scalar=In[str](data="a"),
     )
     t_list_multiplier.run()
-    assert t_list_multiplier.o_list == Out[TList[Out[str]]](
-        data=TList[Out[str]](
-            [
-                Out[str](data="a"),
-                Out[str](data="a"),
-                Out[str](data="a"),
-                Out[str](data="a"),
-                Out[str](data="a"),
-            ]
-        )
-    )
+    assert t_list_multiplier.o_list == Out[TList[str]](data=TList[str](["a", "a", "a", "a", "a"]))

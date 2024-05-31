@@ -50,9 +50,9 @@ class EmptyTraction(Traction):
 class Double(Traction):
     """Double the input and divide by coeficient."""
 
-    i_input: In[int]
+    i_input: In[float]
     i_coeficient: In[float]
-    o_output: Out[int]
+    o_output: Out[float]
 
     def _run(self, on_update) -> None:  # pragma: no cover
         if not self.i_input.data:
@@ -67,18 +67,18 @@ class STMDDouble(STMD):
 
     _traction: Type[Traction] = Double
 
-    i_input: In[TList[In[int]]]
+    i_input: In[TList[float]]
     i_coeficient: STMDSingleIn[float]
 
-    o_output: Out[TList[Out[int]]]
+    o_output: Out[TList[float]]
 
 
 class Half(Traction):
     """Half the input and multiply by coeficient."""
 
-    i_input: In[int]
+    i_input: In[float]
     i_coeficient: In[float]
-    o_output: Out[int]
+    o_output: Out[float]
 
     def _run(self, on_update) -> None:  # pragma: no cover
         if not self.i_input.data:
@@ -93,15 +93,15 @@ class STMDHalf(STMD):
 
     _traction: Type[Traction] = Half
 
-    i_input: In[TList[In[int]]]
+    i_input: In[TList[float]]
     i_coeficient: STMDSingleIn[float]
-    o_output: Out[TList[Out[int]]]
+    o_output: Out[TList[float]]
 
 
 class Calculator(Tractor):
     """Calculator."""
 
-    i_inputs: In[TList[In[int]]] = In[TList[In[int]]]()
+    i_inputs: In[TList[float]] = In[TList[float]]()
     i_coeficient: STMDSingleIn[float] = STMDSingleIn[float]()
     a_pool_size: Arg[int] = Arg[int](a=30)
 
@@ -121,7 +121,7 @@ class Calculator(Tractor):
         a_pool_size=a_pool_size,
     )
 
-    o_output: Out[TList[Out[int]]] = t_half.o_output
+    o_output: Out[TList[float]] = t_half.o_output
 
 
 def test_stmd_attr_validation():
@@ -201,9 +201,20 @@ def test_stmd_attr_validation():
     # custom attr
     with pytest.raises(TypeError):
 
-        class TestSTMD8(STMD):
+        class TestSTMD(STMD):
             _traction: Type[Traction] = EmptyTraction
             i_input: In[TList[In[int]]]
+            o_output: Out[TList[Out[int]]]
+            r_res: Res[NOPResource]
+            a_arg: Arg[str]
+            custom: str
+
+    # wrong inner type
+    with pytest.raises(TypeError):
+
+        class TestSTMD8(STMD):
+            _traction: Type[Traction] = EmptyTraction
+            i_input: In[TList[str]]
             o_output: Out[TList[Out[int]]]
             r_res: Res[NOPResource]
             a_arg: Arg[str]
@@ -213,7 +224,7 @@ def test_stmd_attr_validation():
 def test_stmd_calculator():
     c = Calculator(
         uid="calculator",
-        i_inputs=In[TList[In[int]]](data=TList[In[int]]([In[int](data=x) for x in range(1, 10)])),
+        i_inputs=In[TList[float]](data=TList[float]([float(x) for x in range(1, 10)])),
         i_coeficient=STMDSingleIn[float](data=0.5),
     )
     c.run()
@@ -245,34 +256,24 @@ class G_TestTractor(Tractor):
 def test_stmd_tractor(fixture_isodate_now) -> None:
     class TestSTMD(STMD):
         a_multiplier: Arg[float] = Arg[float](a=0.0)
-        i_in1: In[TList[In[Union[float, int]]]] = In[TList[In[Union[float, int]]]](
-            data=TList[In[Union[float, int]]]([])
+        i_in1: In[TList[Union[float, int]]] = In[TList[Union[float, int]]](
+            data=TList[Union[float, int]]([])
         )
 
         _traction: Type[Traction] = G_TestTractor
 
-        o_out1: Out[TList[Out[float]]] = Out[TList[Out[float]]](data=TList[Out[float]]([]))
+        o_out1: Out[TList[float]] = Out[TList[float]](data=TList[float]([]))
 
-    stmd_in1 = In[TList[In[float]]](
-        data=TList[In[float]](
-            [
-                In[Union[float, int]](data=1.0),
-                In[Union[float, int]](data=2.0),
-                In[Union[float, int]](data=3.0),
-                In[Union[float, int]](data=4.0),
-                In[Union[float, int]](data=5.0),
-            ]
-        )
-    )
+    stmd_in1 = In[TList[float]](data=TList[float]([1.0, 2.0, 3.0, 4.0, 5.0]))
     stmd1 = TestSTMD(
         uid="tt1", a_pool_size=Arg[int](a=1), a_multiplier=Arg[float](a=10.0), i_in1=stmd_in1
     )
     stmd1.run()
-    assert stmd1.o_out1.data[0].data == 100.0
-    assert stmd1.o_out1.data[1].data == 200.0
-    assert stmd1.o_out1.data[2].data == 300.0
-    assert stmd1.o_out1.data[3].data == 400.0
-    assert stmd1.o_out1.data[4].data == 500.0
+    assert stmd1.o_out1.data[0] == 100.0
+    assert stmd1.o_out1.data[1] == 200.0
+    assert stmd1.o_out1.data[2] == 300.0
+    assert stmd1.o_out1.data[3] == 400.0
+    assert stmd1.o_out1.data[4] == 500.0
 
 
 def test_stmd_local(fixture_isodate_now) -> None:
@@ -282,29 +283,19 @@ def test_stmd_local(fixture_isodate_now) -> None:
 
         _traction: Type[Traction] = G_TTest1
 
-        o_out1: Out[TList[Out[float]]] = Out[TList[Out[float]]](data=TList[Out[float]]([]))
-        i_in1: In[TList[In[float]]]
+        o_out1: Out[TList[float]] = Out[TList[float]](data=TList[float]([]))
+        i_in1: In[TList[float]]
 
-    stmd_in1 = In[TList[In[float]]](
-        data=TList[In[float]](
-            [
-                In[Union[float, int]](data=1.0),
-                In[Union[float, int]](data=2.0),
-                In[Union[float, int]](data=3.0),
-                In[Union[float, int]](data=4.0),
-                In[Union[float, int]](data=5.0),
-            ]
-        )
-    )
+    stmd_in1 = In[TList[float]](data=TList[float]([1.0, 2.0, 3.0, 4.0, 5.0]))
     stmd1 = TestSTMD(
         uid="tt1", a_pool_size=Arg[int](a=1), a_multiplier=Arg[float](a=10.0), i_in1=stmd_in1
     )
     stmd1.run()
-    assert stmd1.o_out1.data[0].data == 10.0
-    assert stmd1.o_out1.data[1].data == 20.0
-    assert stmd1.o_out1.data[2].data == 30.0
-    assert stmd1.o_out1.data[3].data == 40.0
-    assert stmd1.o_out1.data[4].data == 50.0
+    assert stmd1.o_out1.data[0] == 10.0
+    assert stmd1.o_out1.data[1] == 20.0
+    assert stmd1.o_out1.data[2] == 30.0
+    assert stmd1.o_out1.data[3] == 40.0
+    assert stmd1.o_out1.data[4] == 50.0
 
 
 def test_stmd_threads(fixture_isodate_now) -> None:
@@ -314,17 +305,17 @@ def test_stmd_threads(fixture_isodate_now) -> None:
 
         _traction: Type[Traction] = G_TTest1
 
-        o_out1: Out[TList[Out[float]]] = Out[TList[Out[float]]](data=TList[Out[float]]([]))
-        i_in1: In[TList[In[float]]]
+        o_out1: Out[TList[float]] = Out[TList[float]](data=TList[float]([]))
+        i_in1: In[TList[float]]
 
-    stmd_in1 = In[TList[In[float]]](
-        data=TList[In[float]](
+    stmd_in1 = In[TList[float]](
+        data=TList[float](
             [
-                In[Union[float, int]](data=1.0),
-                In[Union[float, int]](data=2.0),
-                In[Union[float, int]](data=3.0),
-                In[Union[float, int]](data=4.0),
-                In[Union[float, int]](data=5.0),
+                1.0,
+                2.0,
+                3.0,
+                4.0,
+                5.0,
             ]
         )
     )
@@ -336,11 +327,11 @@ def test_stmd_threads(fixture_isodate_now) -> None:
         i_in1=stmd_in1,
     )
     stmd1.run()
-    assert stmd1.o_out1.data[0].data == 10.0
-    assert stmd1.o_out1.data[1].data == 20.0
-    assert stmd1.o_out1.data[2].data == 30.0
-    assert stmd1.o_out1.data[3].data == 40.0
-    assert stmd1.o_out1.data[4].data == 50.0
+    assert stmd1.o_out1.data[0] == 10.0
+    assert stmd1.o_out1.data[1] == 20.0
+    assert stmd1.o_out1.data[2] == 30.0
+    assert stmd1.o_out1.data[3] == 40.0
+    assert stmd1.o_out1.data[4] == 50.0
 
 
 class GTestSTMD(STMD):
@@ -350,20 +341,20 @@ class GTestSTMD(STMD):
 
     _traction: Type[Traction] = G_TTest1
 
-    o_out1: Out[TList[Out[float]]] = Out[TList[Out[float]]](data=TList[Out[float]]([]))
-    i_in1: In[TList[In[float]]]
+    o_out1: Out[TList[float]] = Out[TList[float]](data=TList[float]([]))
+    i_in1: In[TList[float]]
 
 
 def test_stmd_processes(fixture_isodate_now) -> None:
 
-    stmd_in1 = In[TList[In[float]]](
-        data=TList[In[float]](
+    stmd_in1 = In[TList[float]](
+        data=TList[float](
             [
-                In[Union[float, int]](data=1.0),
-                In[Union[float, int]](data=2.0),
-                In[Union[float, int]](data=3.0),
-                In[Union[float, int]](data=4.0),
-                In[Union[float, int]](data=5.0),
+                1.0,
+                2.0,
+                3.0,
+                4.0,
+                5.0,
             ]
         )
     )
@@ -375,8 +366,8 @@ def test_stmd_processes(fixture_isodate_now) -> None:
         i_in1=stmd_in1,
     )
     stmd1.run()
-    assert stmd1.o_out1.data[0].data == 10.0
-    assert stmd1.o_out1.data[1].data == 20.0
-    assert stmd1.o_out1.data[2].data == 30.0
-    assert stmd1.o_out1.data[3].data == 40.0
-    assert stmd1.o_out1.data[4].data == 50.0
+    assert stmd1.o_out1.data[0] == 10.0
+    assert stmd1.o_out1.data[1] == 20.0
+    assert stmd1.o_out1.data[2] == 30.0
+    assert stmd1.o_out1.data[3] == 40.0
+    assert stmd1.o_out1.data[4] == 50.0
