@@ -22,8 +22,15 @@ classifiers = [
 setup(
     name="pytractions",
     version="0.0.1",
-    description="pytractions",
-    long_description="TBD",
+    description="""Pytractions is python framework for modular programming.""",
+    long_description="""Pytractions is python framework for modular programming.
+    It is based on the concept of tractions, which are small, self-contained modules.
+    Traction fundamental idea is code which is supposed to transform input data
+    to output data while using external functionality provided by libraries, program or
+    external services. Strong emphasis is put on typing and data validation.
+    Indivudual tractions can be combined into pipelines, which can be executed
+    locally, in contianer or as tekton task.
+""",
     long_description_content_type="text/x-rst",
     author="Jindrich Luza",
     author_email="jluza@redhat.com",
