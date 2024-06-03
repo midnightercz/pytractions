@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+  workflow_call:
+    inputs:
+      release:
+        required: true
+        type: string
+    secrets: inherit
 
 jobs:   
   tests:
@@ -27,8 +33,11 @@ jobs:
         run: echo "::set-output name=rev::$(git rev-parse --short HEAD)"
       - name: Building & Pushing Docker Image
         run: |
-          VERSION=${{ steps.getversion.outputs.version }}
+          VERSION="${{ steps.getversion.outputs.version }}"
+          RELEASE="${{ inputs.release }}"
+          REV="${{ steps.getrev.outputs.rev }}"
+          FINAL_VERSION=$([ "$RELEASE" = "true" ] && echo "${REV}-${VERSION}" || echo "${VERSION}")
+          FULL_VERSION="${VERSION}${REV}"
           python setup.py sdist
-          ls $PWD/
-          docker build --build-arg=SDIST="dist/pytractions-${{steps.getversion.outputs.version}}.tar.gz"  -t quay.io/jluza/pytractions:${{ steps.getversion.outputs.version }}-${{ steps.getrev.outputs.rev }} -f docker/Dockerfile .
-          docker push quay.io/jluza/pytractions:${{ steps.getversion.outputs.version }}-${{ steps.getrev.outputs.rev }}
+          docker build --build-arg=SDIST="dist/pytractions-${{steps.getversion.outputs.version}}.tar.gz"  -t quay.io/jluza/pytractions:$FINAL_VERSION -f docker/Dockerfile .
+          docker push quay.io/jluza/pytractions:$FINAL_VERSION
