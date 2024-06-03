@@ -380,21 +380,28 @@ class Base(ABase, metaclass=BaseMeta):
                         stack.insert(0, (p.__orig_qualname__, p._params))
                     else:
                         stack.insert(0, (p.__qualname__, p._params))
+                    if p != current_params[-1]:
+                        stack.insert(0, (",", []))
+
                 elif hasattr(p, "__orig_qualname__"):
                     order.append(p.__qualname__)
-                    order.append(",")
+                    if p != current_params[-1]:
+                        order.append(",")
                 elif hasattr(p, "__qualname__"):
                     order.append(p.__qualname__)
-                    order.append(",")
+                    if p != current_params[-1]:
+                        order.append(",")
                 elif get_origin(p) is ForwardRef:
                     order.append(p.__forward_arg__)
-                    order.append(",")
+                    if p != current_params[-1]:
+                        order.append(",")
                 elif isinstance(p, TypeVar):
                     # for typevar we need to add id to qualname,
                     # otherwise typevar replacement won't work
                     # as class_getitem could return cached version with typevar with different id
                     order.append(f"{p.__name__}[{id(p)}]")
-                    order.append(",")
+                    if p != current_params[-1]:
+                        order.append(",")
         return "".join(order)
 
     def __class_getitem__(cls, param, params_map={}):
