@@ -9,7 +9,6 @@ on:
       release:
         required: true
         type: string
-    secrets: inherit
 
 jobs:   
   tests:
@@ -36,8 +35,9 @@ jobs:
           VERSION="${{ steps.getversion.outputs.version }}"
           RELEASE="${{ inputs.release }}"
           REV="${{ steps.getrev.outputs.rev }}"
-          FINAL_VERSION=$([ "$RELEASE" = "true" ] && echo "${REV}-${VERSION}" || echo "${VERSION}")
+          FINAL_VERSION=$([ "$RELEASE" = "true" ] && echo "${VERSION}" || echo "${VERSION}-${REV}")
+          EXPIRE_LABEL=$([ "$RELEASE" = "true" ] && echo "" || echo "--label quay.expires-after=2d")
           FULL_VERSION="${VERSION}${REV}"
           python setup.py sdist
-          docker build --build-arg=SDIST="dist/pytractions-${{steps.getversion.outputs.version}}.tar.gz"  -t quay.io/jluza/pytractions:$FINAL_VERSION -f docker/Dockerfile .
+          docker build --build-arg=SDIST="dist/pytractions-${{steps.getversion.outputs.version}}.tar.gz"  -t quay.io/jluza/pytractions:$FINAL_VERSION $EXPIRE_LABEL -f docker/Dockerfile .
           docker push quay.io/jluza/pytractions:$FINAL_VERSION
