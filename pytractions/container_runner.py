@@ -55,7 +55,15 @@ def generate_type_description(type_, indent=0):
     if type_ in (str, int, float, bool, type(None)):
         return f"{type_.__name__}"
     elif type_.__class__ == _UnionGenericAlias:
-        return f"Optional[{generate_type_description(type_.__args__[0], indent=indent)}]"
+        print("OPTIONAL args", type_.__name__, type_.__args__)
+        if type_.__name__ == "Optional":
+            return f"Optional[{generate_type_description(type_.__args__[0], indent=indent)}]"
+        else:
+            ret = "Union["
+            for arg in type_.__args__:
+                ret += f"{generate_type_description(arg, indent=indent)}, "
+            ret += "]"
+            return ret
     elif TypeNode.from_type(type_) == TypeNode.from_type(TList[ANY]):
         return f"List[{generate_type_description(type_._params[0], indent=indent)}]"
     elif TypeNode.from_type(type_) == TypeNode.from_type(TDict[ANY, ANY]):
@@ -73,8 +81,8 @@ def generate_type_description(type_, indent=0):
                 if not f.startswith("_")
             ]
         )
-        ret = f"{type_.__name__}(\n{fields}\n)"
-    return ret
+        ret = f"{type_.__name__}(\n{fields}\n{indent * ' '})"
+        return ret
 
 
 def generate_param_description(traction, field):
