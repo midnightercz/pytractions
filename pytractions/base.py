@@ -1038,7 +1038,13 @@ class TList(Base, ATList, Generic[T]):
 
     def index(self, value, start=0, stop=-1):
         """Return index of the value in the list."""
-        return self._list.index(value, start, stop)
+        for i, v in enumerate(self._list, start=start):
+            if v == value:
+                return i
+            if stop != -1 and i > stop:
+                break
+        else:
+            raise ValueError(f"{value} is not in the list")
 
     def insert(self, index, obj):
         """Insert item to the list."""

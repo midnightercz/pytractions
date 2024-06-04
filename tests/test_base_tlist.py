@@ -1,4 +1,4 @@
-from typing import TypeVar, Generic
+from typing import TypeVar, Generic, Union
 
 import pytest
 
@@ -159,6 +159,50 @@ def test_count():
 def test_index():
     l: TList[int] = TList[int]([10, 20, 30])
     assert l.index(20) == 1
+
+
+class TestC(Base):
+    """Test class for complex test cases."""
+
+    x: int
+    y: TDict[str, Union[str, TList[str]]]
+
+
+def test_index_complex():
+    l: TList[TestC] = TList[TestC](
+        [
+            TestC(
+                x=10,
+                y=TDict[str, Union[str, TList[str]]](
+                    {"test": "test1", "foo": TList[str](["a", "b"])}
+                ),
+            ),
+            TestC(
+                x=20,
+                y=TDict[str, Union[str, TList[str]]](
+                    {"test": "test2", "foo": TList[str](["c", "d"])}
+                ),
+            ),
+            TestC(
+                x=30,
+                y=TDict[str, Union[str, TList[str]]](
+                    {"test": "test3", "foo": TList[str](["e", "f"])}
+                ),
+            ),
+        ]
+    )
+    print(l)
+    assert (
+        l.index(
+            TestC(
+                x=20,
+                y=TDict[str, Union[str, TList[str]]](
+                    {"test": "test2", "foo": TList[str](["c", "d"])}
+                ),
+            )
+        )
+        == 1
+    )
 
 
 def test_insert():
