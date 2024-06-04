@@ -55,7 +55,6 @@ def generate_type_description(type_, indent=0):
     if type_ in (str, int, float, bool, type(None)):
         return f"{type_.__name__}"
     elif type_.__class__ == _UnionGenericAlias:
-        print("OPTIONAL args", type_.__name__, type_.__args__)
         if type_.__name__ == "Optional":
             return f"Optional[{generate_type_description(type_.__args__[0], indent=indent)}]"
         else:
