@@ -569,12 +569,14 @@ class Base(ABase, metaclass=BaseMeta):
                 x
                 for x in parent_cls_candidates
                 if TypeNode.from_type(x) == TypeNode.from_type(TList[ANY])
+                and x not in union_uargs
                 and x not in optional_uargs
             ]
             dict_uargs = [
                 x
                 for x in parent_cls_candidates
                 if TypeNode.from_type(x) == TypeNode.from_type(TDict[ANY, ANY])
+                and x not in union_uargs
                 and x not in optional_uargs
             ]
             obj_uargs = [
@@ -616,8 +618,8 @@ class Base(ABase, metaclass=BaseMeta):
                         )
                     )
             elif union_uargs:
-                all_uargs = []
                 for union_uarg in union_uargs:
+                    all_uargs = []
                     for uarg in union_uarg.__args__:
                         all_uargs.append(uarg)
                     stack.append(

@@ -1,4 +1,4 @@
-from typing import TypeVar, Generic
+from typing import TypeVar, Generic, Union
 
 import pytest
 
@@ -355,3 +355,24 @@ def test_base_dict_from_json_simple():
     }
     d: TDict[int, int] = TDict[int, int].from_json(json_dict)
     assert d == TDict[int, int]({10: 10, 20: 20})
+
+
+def test_base_dict_content_from_json():
+    d = TDict[str, Union[str, TList[str]]].content_from_json(
+        {
+            "config_file": "test",
+            "digest": ["sha256:6ef06d8c90c863ba4eb4297f1073ba8cb28c1f6570e2206cdaad2084e2a4715d"],
+            "reference": ["quay.io/namespace/image:1"],
+            "signing_key": "signing_key",
+        }
+    )
+    assert d == TDict[str, Union[str, TList[str]]](
+        {
+            "config_file": "test",
+            "digest": TList[str](
+                ["sha256:6ef06d8c90c863ba4eb4297f1073ba8cb28c1f6570e2206cdaad2084e2a4715d"]
+            ),
+            "reference": TList[str](["quay.io/namespace/image:1"]),
+            "signing_key": "signing_key",
+        }
+    )
