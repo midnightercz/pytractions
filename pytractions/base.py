@@ -673,19 +673,26 @@ class Base(ABase, metaclass=BaseMeta):
                                     parent_path + f".{k}",
                                 )
                             )
-
                     order.insert(
                         0, (d_cls, parent_init_fields, parent_key, init_fields, parent_path)
                     )
                 for o_cls in obj_uargs:
                     init_fields = {}
-                    for f, ftype in o_cls._fields.items():
-                        if ftype in (str, int, float, type(None), bool) and f in _json_dict:
+                    for f in _json_dict:
+                        if f in o_cls._fields:
+                            ftype = o_cls._fields[f]
+                            if ftype in (str, int, float, type(None), bool):
+                                init_fields[f] = _json_dict[f]
+                            else:
+                                stack.append(
+                                    ((ftype,), f, _json_dict[f], init_fields, parent_path + f".{f}")
+                                )
+                        else:
+                            # In this situation field which is uknown to the class is added
+                            # to init fields which fails in initialization of class candidate
+                            # and eliminate it from the candidate list
                             init_fields[f] = _json_dict[f]
-                        elif f in _json_dict:
-                            stack.append(
-                                ((ftype,), f, _json_dict[f], init_fields, parent_path + f".{f}")
-                            )
+
                     order.insert(
                         0, (o_cls, parent_init_fields, parent_key, init_fields, parent_path)
                     )
