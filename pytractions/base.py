@@ -1585,6 +1585,16 @@ class STMDSingleIn(Base, Generic[T]):
             if name == "data":
                 # if not hasattr(self, "_io_store"):
                 #    self._io_store = DefaultIOStore.io_store
+                vtype = (
+                    value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
+                )
+                tt1 = TypeNode.from_type(vtype)
+                tt2 = TypeNode.from_type(self._fields[name])
+                if tt1 != tt2:
+                    raise TypeError(
+                        f"Cannot set attribute {self.__class__}.{name} to type {value}({vtype}),"
+                        f"expected {self._fields[name]}"
+                    )
                 object.__setattr__(self, name, value)
                 # getattr(self.__class__, name).setter(value)
                 return
