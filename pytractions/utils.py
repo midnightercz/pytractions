@@ -1,5 +1,6 @@
 from __future__ import annotations
 import abc
+import dataclasses
 
 from typing import get_origin, get_args
 
@@ -43,6 +44,9 @@ class ANY(metaclass=ANYMeta):
         """Return id of the class."""
         return id(cls)
 
+
+def doc(docstring: str):
+    return dataclasses.field(init=False, repr=False, default=docstring)
 
 # class OType:
 #
