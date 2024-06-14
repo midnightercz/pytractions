@@ -31,7 +31,7 @@ from typing import (
 import dataclasses
 
 from .exc import TractionFailedError
-from .utils import ANY, doc
+from .utils import ANY, doc  # noqa: F401
 from .types import TypeNode, JSON_COMPATIBLE
 from .abase import ABase
 from .abase import ATList, ATDict
@@ -268,13 +268,13 @@ class BaseMeta(type):
                         defaults[f] = dataclasses.field(
                             default=base.__dataclass_fields__[f].default,
                             init=base.__dataclass_fields__[f].init,
-                            repr=base.__dataclass_fields__[f].repr
+                            repr=base.__dataclass_fields__[f].repr,
                         )
                     elif base.__dataclass_fields__[f].default_factory is not dataclasses.MISSING:
                         defaults[f] = dataclasses.field(
                             default_factory=base.__dataclass_fields__[f].default_factory,
                             init=base.__dataclass_fields__[f].init,
-                            repr=base.__dataclass_fields__[f].repr
+                            repr=base.__dataclass_fields__[f].repr,
                         )
 
             for f, ft in getattr(base, "__annotations__", {}).items():

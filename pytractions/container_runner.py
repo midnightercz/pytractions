@@ -3,12 +3,11 @@ import dataclasses
 import enum
 import json
 import jsonschema
-import inspect
 import logging
 import sys
 import re
 import yaml
-from typing import _UnionGenericAlias, Union
+from typing import _UnionGenericAlias
 
 from .base import TypeNode, ANY, TList, TDict, In, Out, Res, Arg, Traction
 from .tractor import Tractor
@@ -101,7 +100,7 @@ def generate_traction_name_str(traction, include_module=False):
         module = traction.__module__ + ":"
     else:
         module = ""
-    if hasattr(traction, '_params') and traction._params:
+    if hasattr(traction, "_params") and traction._params:
         return (
             f"{module}{traction.__orig_qualname__}"
             + f"""[{','.join([generate_traction_name_str(p, include_module=True)
@@ -111,91 +110,8 @@ def generate_traction_name_str(traction, include_module=False):
         return f"{module}{traction.__name__}"
 
 
-def generate_task_spec(traction, docker_image, inputs_map={}, id_in_tractor=None, volumes={}):
-    """Generate tekton task spec."""
-    params = []
-    results = []
-    steps = []
-    spec = {
-        "description": getattr(traction, "d_", None) or "",
-        "params": params,
-        "steps": steps,
-        "workspaces": [{"name": "outputs"}],
-    }
-    for f, fv in traction._fields.items():
-        if f.startswith("a_"):
-            param = {
-                "name": f,
-                "type": "string",
-                "description": generate_param_description(traction, f),
-            }
-            params.append(param)
-        elif f.startswith("i_") and f not in inputs_map:
-            param = {
-                "name": f,
-                "type": "string",
-                "description": generate_param_description(traction, f),
-            }
-            params.append(param)
-        elif f.startswith("r_"):
-            param = {
-                "name": f,
-                "type": "string",
-                "description": generate_param_description(traction, f),
-            }
-            params.append(param)
-        elif f.startswith("o_"):
-            results.append({"name": f, "description": getattr(traction, "d_" + f, None) or ""})
-        elif f in ("stats", "state"):
-            results.append({"name": f})
-    params_str = yaml.dump_all(
-        [{"name": p["name"], "data": StrParam(f'$(params["{p["name"]}"])')} for p in params]
-    )
-    inputs_str = yaml.dump_all(
-        [
-            {"name": k, "data_file": f"$(workspaces.outputs.path)/{v[0]}::{v[1]}"}
-            for k, v in inputs_map.items()
-        ]
-    )
-    delimiter = "---" if inputs_str else ""
-    tid = id_in_tractor or traction.uid
-    store_results_str = " ".join(
-        [
-            f'--store-output {r["name"]}=$(workspaces.outputs.path)/{tid}::{r["name"]}'
-            for r in results
-        ]
-    )
-    steps.append(
-        {
-            "name": "run",
-            "image": docker_image,
-            "workingDir": "/",
-            "script": f"""#!/usr/bin/bash --posix
-cat <<EOF |
-{params_str}
-{delimiter}
-{inputs_str}
-EOF
-python -m pytractions.container_runner run {store_results_str}\\
-    "{traction.__module__}:{generate_traction_name_str(traction)} {arg_params}"
-echo "# Run stats:"
-cat $(workspaces.outputs.path)/{tid}::stats
-echo "# Run state:"
-cat $(workspaces.outputs.path)/{tid}::state
-export result=$(cat $(workspaces.outputs.path)/{tid}::state |\
-python -c "import yaml; import sys; print(yaml.safe_load(sys.stdin)['data'])")
-[ "$result" = "finished" ] || exit 1
-""",
-        }
-    )
-    if volumes:
-        steps[-1]["volumeMounts"] = []
-    for name, path in volumes.items():
-        steps[-1]["volumeMounts"].append({"name": name, "mountPath": path})
-    return spec
-
-
 def is_standard_type(ftype):
+    """Check if type is one of pytractions standard type."""
     if TypeNode.from_type(ftype) == TypeNode.from_type(Res[ANY]):
         return True
     if TypeNode.from_type(ftype) == TypeNode.from_type(In[ANY]):
@@ -213,16 +129,24 @@ def is_standard_type(ftype):
 
 
 class NoDefault:
+    """No default value for the field."""
+
     pass
 
+
 def generate_simple_params(traction, field_name):
+    """Generate simple params for complex data models."""
     params = {}
-    stack = [(field_name,
-              field_name,
-              traction._fields[field_name],
-              traction,
-              getattr(traction, 'd_'+ field_name, ''),
-              "")]
+    stack = [
+        (
+            field_name,
+            field_name,
+            traction._fields[field_name],
+            traction,
+            getattr(traction, "d_" + field_name, ""),
+            "",
+        )
+    ]
     while stack:
         full_fname, fname, ftype, parent_object, field_doc, origin = stack.pop()
         if parent_object.__dataclass_fields__[fname].init is False:
@@ -243,11 +167,13 @@ def generate_simple_params(traction, field_name):
                 if is_standard_type(parent_object):
                     doc = field_doc
                 else:
-                    doc = getattr(parent_object, 'd_'+ fname, '')
+                    doc = getattr(parent_object, "d_" + fname, "")
                 params.setdefault(full_fname, [])
                 if parent_object.__dataclass_fields__[fname].default is not dataclasses.MISSING:
                     if parent_object.__dataclass_fields__[fname].default:
-                        default = parent_object.__dataclass_fields__[fname].default.content_to_json()
+                        default = parent_object.__dataclass_fields__[
+                            fname
+                        ].default.content_to_json()
                     else:
                         default = None
                 else:
@@ -258,7 +184,7 @@ def generate_simple_params(traction, field_name):
                 if is_standard_type(parent_object):
                     doc = field_doc
                 else:
-                    doc = getattr(parent_object, 'd_'+ fname, '')
+                    doc = getattr(parent_object, "d_" + fname, "")
                 if parent_object.__dataclass_fields__[fname].default is not dataclasses.MISSING:
                     default = parent_object.__dataclass_fields__[fname].default.content_to_json()
                 else:
@@ -271,13 +197,13 @@ def generate_simple_params(traction, field_name):
                     if is_standard_type(t):
                         doc = field_doc
                     else:
-                        doc = getattr(parent_object, 'd_'+ fname, '')
-                    stack.append((f'{full_fname}.{f}', f, t, ftype, doc, origin))
+                        doc = getattr(parent_object, "d_" + fname, "")
+                    stack.append((f"{full_fname}.{f}", f, t, ftype, doc, origin))
         else:
             if is_standard_type(parent_object):
                 doc = field_doc
             else:
-                doc = getattr(parent_object, 'd_'+ fname, '')
+                doc = getattr(parent_object, "d_" + fname, "")
             if parent_object.__dataclass_fields__[fname].default is not dataclasses.MISSING:
                 default = parent_object.__dataclass_fields__[fname].default
             else:
@@ -292,18 +218,17 @@ def generate_simple_params(traction, field_name):
                 all_docs.append(f"{origin}: {doc}")
             else:
                 all_docs.append(f"{doc}")
-        param_spec = {
-            "name": fname,
-            "description": "\n".join(all_docs),
-            "ptype": ftype
-        }
+        param_spec = {"name": fname, "description": "\n".join(all_docs), "ptype": ftype}
         if default is not NoDefault and default:
-            param_spec['default'] = json.dumps(default)
+            param_spec["default"] = json.dumps(default)
         final_params.append(param_spec)
 
     return final_params
 
-def generate_task_spec(traction, docker_image, inputs_map={}, id_in_tractor=None, volumes={}, simple_params=False):
+
+def generate_task_spec(
+    traction, docker_image, inputs_map={}, id_in_tractor=None, volumes={}, simple_params=False
+):
     """Generate tekton task spec."""
     params = []
     task_params = []
@@ -341,11 +266,9 @@ def generate_task_spec(traction, docker_image, inputs_map={}, id_in_tractor=None
         elif f in ("stats", "state"):
             results.append({"name": f})
     for p in params:
-        task_params.append(
-            {'name': p['name'], 'type': 'string', 'description': p['description']}
-        )
-        if 'default' in p and p['default']:
-            task_params[-1]['default'] = p['default']
+        task_params.append({"name": p["name"], "type": "string", "description": p["description"]})
+        if "default" in p and p["default"]:
+            task_params[-1]["default"] = p["default"]
 
     tid = id_in_tractor or traction.uid
     store_results_str = " ".join(
@@ -354,7 +277,7 @@ def generate_task_spec(traction, docker_image, inputs_map={}, id_in_tractor=None
             for r in results
         ]
     )
-    
+
     stdin_input = ""
     params_args_str = ""
     if not simple_params:
@@ -368,7 +291,7 @@ def generate_task_spec(traction, docker_image, inputs_map={}, id_in_tractor=None
             ]
         )
         delimiter = "---" if inputs_str else ""
-        io_type="YAML"
+        io_type = "YAML"
         stdin_input = f"""cat <<EOF |
 
 {params_str}
@@ -379,16 +302,16 @@ EOF
     else:
         param_args = []
         for p in params:
-            if p['ptype'] != str:
+            if p["ptype"] != str:
                 pval = f'$(params["{p["name"]}"])'
             else:
                 pval = f'\'"$(params["{p["name"]}"])"\''
             param_args.append(f'{p["name"]}={pval}')
-        for k,v in inputs_map.items():
-            param_args.append(f'{k}=@$(workspaces.outputs.path)/{v[0]}::{v[1]}')
+        for k, v in inputs_map.items():
+            param_args.append(f"{k}=@$(workspaces.outputs.path)/{v[0]}::{v[1]}")
 
         params_args_str = "\\\n    ".join(param_args)
-        io_type="JSON"
+        io_type = "JSON"
 
     steps.append(
         {
@@ -423,16 +346,19 @@ def generate_tekton_task(traction, docker_image, volumes={}, simple_params=False
         "kind": "Task",
         "metadata": {
             "name": tekton_task_name(traction.__name__),
-            "labels": {
-                "app.kubernetes.io/version": "1.0.0"
-            },
+            "labels": {"app.kubernetes.io/version": "1.0.0"},
             "annotations": {
                 "tekton.dev/pipelines.minVersion": "0.12.1",
-                "tekton.dev/tags": "release"
-            }
+                "tekton.dev/tags": "release",
+            },
         },
-        "spec": generate_task_spec(traction, docker_image, id_in_tractor="root", volumes=volumes,
-                                   simple_params=simple_params),
+        "spec": generate_task_spec(
+            traction,
+            docker_image,
+            id_in_tractor="root",
+            volumes=volumes,
+            simple_params=simple_params,
+        ),
     }
     return result
 
@@ -458,8 +384,8 @@ def generate_tekton_pipeline(tractor, docker_image, volumes={}, simple_params=Fa
             else:
                 for p in generate_simple_params(tractor, f):
                     _p = {"name": p["name"], "description": p["description"]}
-                    if p.get('default'):
-                        _p['default'] = p['default']
+                    if p.get("default"):
+                        _p["default"] = p["default"]
                     params.append(_p)
     tasks = []
     for f, tf in tractor._fields.items():
@@ -495,8 +421,11 @@ def generate_tekton_pipeline(tractor, docker_image, volumes={}, simple_params=Fa
             task = {
                 "name": tekton_task_name(f),
                 "taskSpec": generate_task_spec(
-                    tfo, docker_image, inputs_map=inputs_map, id_in_tractor=f,
-                    simple_params=simple_params
+                    tfo,
+                    docker_image,
+                    inputs_map=inputs_map,
+                    id_in_tractor=f,
+                    simple_params=simple_params,
                 ),
                 "params": [{"name": field, "value": value} for field, value in tparams.items()],
                 "workspaces": [{"name": "outputs", "workspace": "outputs"}],
@@ -544,7 +473,12 @@ def generate_tekton_task_run(traction, secrets_to_volumes={}, simple_params=Fals
         if f.startswith("a_") or f.startswith("i_") or f.startswith("r_"):
             if simple_params:
                 for fparam in generate_simple_params(traction, f):
-                    params.append({"name": fparam["name"], "value": '{}'.format(values.get(fparam["name"], ''))})
+                    params.append(
+                        {
+                            "name": fparam["name"],
+                            "value": "{}".format(values.get(fparam["name"], "")),
+                        }
+                    )
             else:
                 param = {
                     "name": f,
@@ -638,13 +572,23 @@ def generate_tekton_task_main(args):
     if args.type == "tractor":
         print(
             yaml.dump(
-                generate_tekton_pipeline(traction_cls, args.docker_image, volumes=volumes, simple_params=args.simple_params),
+                generate_tekton_pipeline(
+                    traction_cls,
+                    args.docker_image,
+                    volumes=volumes,
+                    simple_params=args.simple_params,
+                ),
             )
         )
     else:
         print(
             yaml.dump(
-                generate_tekton_task(traction_cls, args.docker_image, volumes=volumes, simple_params=args.simple_params),
+                generate_tekton_task(
+                    traction_cls,
+                    args.docker_image,
+                    volumes=volumes,
+                    simple_params=args.simple_params,
+                ),
             )
         )
 
@@ -682,13 +626,20 @@ def generate_tekton_task_run_main(args):
     if args.type == "tractor":
         print(
             yaml.dump(
-                generate_tekton_pipeline_run(traction_cls, simple_params=args.simple_params, values=values),
+                generate_tekton_pipeline_run(
+                    traction_cls, simple_params=args.simple_params, values=values
+                ),
             )
         )
     else:
         print(
             yaml.dump(
-                generate_tekton_task_run(traction_cls, secrets_to_volumes=secrets_to_volumes, simple_params=args.simple_params, values=values),
+                generate_tekton_task_run(
+                    traction_cls,
+                    secrets_to_volumes=secrets_to_volumes,
+                    simple_params=args.simple_params,
+                    values=values,
+                ),
             )
         )
 
@@ -770,7 +721,10 @@ def run_main(args):
             else:
                 if args.io_type == "YAML":
                     o_content = yaml.safe_dump(
-                        {"name": f, "data": StrParam(yaml.dump(getattr(traction, f).content_to_json()))}
+                        {
+                            "name": f,
+                            "data": StrParam(yaml.dump(getattr(traction, f).content_to_json())),
+                        }
                     )
                 else:
                     o_content = json.dumps(getattr(traction, f).content_to_json())
@@ -786,9 +740,7 @@ def make_parsers(subparsers):
     p_generate_tekton_task.add_argument(
         "--type", choices=("traction", "tractor"), default="traction"
     )
-    p_generate_tekton_task.add_argument(
-        "--simple-params", action='store_true'
-    )
+    p_generate_tekton_task.add_argument("--simple-params", action="store_true")
     p_generate_tekton_task.add_argument("traction", help="Traction to describe")
     p_generate_tekton_task.add_argument("docker_image", help="docker image for tekton task")
     p_generate_tekton_task.add_argument(
@@ -810,10 +762,13 @@ def make_parsers(subparsers):
         action="append",
         default=[],
     )
+    p_generate_tekton_task_run.add_argument("--simple-params", action="store_true")
     p_generate_tekton_task_run.add_argument(
-        "--simple-params", action='store_true'
+        "values",
+        nargs="*",
+        help="values for task run parameters. Applied only when --simple-params is set."
+        " Format: param=value, where value is json string",
     )
-    p_generate_tekton_task_run.add_argument('values', nargs='*', help='values for task run parameters. Applied only when --simple-params is set. Format: param=value, where value is json string')
 
     p_generate_tekton_task_run.set_defaults(command=generate_tekton_task_run_main)
 
@@ -836,12 +791,19 @@ def make_parsers(subparsers):
     run_parser.add_argument(
         "--io-type",
         "-t",
-        help="Choce way how to pass inputs to the traction. For JSON use PARAM to pass inputs to the traction. For YAML pass YAML formated documents to STDIN",
+        help="Choce way how to pass inputs to the traction. For JSON use PARAM to pass inputs"
+        "to the traction. For YAML pass YAML formated documents to STDIN",
         type=str,
         choices=["YAML", "JSON"],
         default="JSON",
     )
-    run_parser.add_argument('params', help='param to initializer in format param=value|@value, where value is json string or file when prefixed with @', type=str, nargs='*')
+    run_parser.add_argument(
+        "params",
+        help="param to initializer in format param=value|@value,"
+        " where value is json string or file when prefixed with @",
+        type=str,
+        nargs="*",
+    )
     run_parser.set_defaults(command=run_main)
 
 

@@ -46,7 +46,9 @@ class ANY(metaclass=ANYMeta):
 
 
 def doc(docstring: str):
+    """Create dataclass field for doctring fields."""
     return dataclasses.field(init=False, repr=False, default=docstring)
+
 
 # class OType:
 #
