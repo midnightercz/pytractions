@@ -77,7 +77,7 @@ def generate_type_description(type_, indent=0):
     else:
         fields = ",\n".join(
             [
-                " " * (indent + 4) + f"{f}: {generate_type_description(t, indent=indent+4)}"
+                " " * (indent + 4) + f"{f}: {generate_type_description(t, indent=indent + 4)}"
                 for f, t in type_._fields.items()
                 if not f.startswith("_")
             ]

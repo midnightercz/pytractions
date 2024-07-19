@@ -1,4 +1,5 @@
-from .base import Traction, STMD
+from .base import Traction
+from .stmd import STMD
 from .tractor import Tractor, MultiTractor
 
 import inspect

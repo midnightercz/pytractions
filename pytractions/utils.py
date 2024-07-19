@@ -1,6 +1,7 @@
 from __future__ import annotations
 import abc
 import dataclasses
+import datetime
 
 from typing import get_origin, get_args
 
@@ -48,6 +49,11 @@ class ANY(metaclass=ANYMeta):
 def doc(docstring: str):
     """Create dataclass field for doctring fields."""
     return dataclasses.field(init=False, repr=False, default=docstring)
+
+
+def isodate_now() -> str:
+    """Return current datetime in iso8601 format."""
+    return "%s" % (datetime.datetime.utcnow().isoformat())
 
 
 # class OType:

@@ -10,11 +10,11 @@ from pytractions.base import (
     Arg,
     Res,
     Base,
-    STMDExecutorType,
-    STMD,
     STMDSingleIn,
 )
+from pytractions.stmd import STMD
 
+from pytractions.executor import ThreadPoolExecutor, ProcessPoolExecutor, LoopExecutor
 
 from pytractions.tractor import Tractor
 
@@ -103,22 +103,22 @@ class Calculator(Tractor):
 
     i_inputs: In[TList[float]] = In[TList[float]]()
     i_coeficient: STMDSingleIn[float] = STMDSingleIn[float]()
-    a_pool_size: Arg[int] = Arg[int](a=30)
+    a_executor: Arg[Union[LoopExecutor, ProcessPoolExecutor, ThreadPoolExecutor]] = Arg[
+        Union[LoopExecutor, ProcessPoolExecutor, ThreadPoolExecutor]
+    ](a=ThreadPoolExecutor(pool_size=30))
 
     t_double: STMDDouble = STMDDouble(
         uid="double",
         i_input=i_inputs,
         i_coeficient=i_coeficient,
-        a_executor_type=Arg[STMDExecutorType](a=STMDExecutorType.THREAD),
-        a_pool_size=a_pool_size,
+        a_executor=a_executor,
     )
 
     t_half: STMDHalf = STMDHalf(
         uid="half",
         i_input=t_double.o_output,
         i_coeficient=i_coeficient,
-        a_executor_type=Arg[STMDExecutorType](a=STMDExecutorType.THREAD),
-        a_pool_size=a_pool_size,
+        a_executor=a_executor,
     )
 
     o_output: Out[TList[float]] = t_half.o_output
@@ -265,8 +265,15 @@ def test_stmd_tractor(fixture_isodate_now) -> None:
         o_out1: Out[TList[float]] = Out[TList[float]](data=TList[float]([]))
 
     stmd_in1 = In[TList[float]](data=TList[float]([1.0, 2.0, 3.0, 4.0, 5.0]))
+    thread_pool_executor = ThreadPoolExecutor(pool_size=1)
+
     stmd1 = TestSTMD(
-        uid="tt1", a_pool_size=Arg[int](a=1), a_multiplier=Arg[float](a=10.0), i_in1=stmd_in1
+        uid="tt1",
+        a_multiplier=Arg[float](a=10.0),
+        i_in1=stmd_in1,
+        a_executor=Arg[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]](
+            a=thread_pool_executor
+        ),
     )
     stmd1.run()
     assert stmd1.o_out1.data[0] == 100.0
@@ -287,9 +294,7 @@ def test_stmd_local(fixture_isodate_now) -> None:
         i_in1: In[TList[float]]
 
     stmd_in1 = In[TList[float]](data=TList[float]([1.0, 2.0, 3.0, 4.0, 5.0]))
-    stmd1 = TestSTMD(
-        uid="tt1", a_pool_size=Arg[int](a=1), a_multiplier=Arg[float](a=10.0), i_in1=stmd_in1
-    )
+    stmd1 = TestSTMD(uid="tt1", a_multiplier=Arg[float](a=10.0), i_in1=stmd_in1)
     stmd1.run()
     assert stmd1.o_out1.data[0] == 10.0
     assert stmd1.o_out1.data[1] == 20.0
@@ -319,10 +324,12 @@ def test_stmd_threads(fixture_isodate_now) -> None:
             ]
         )
     )
+    thread_pool_executor = ThreadPoolExecutor(pool_size=1)
     stmd1 = TestSTMD(
         uid="tt1",
-        a_executor_type=Arg[STMDExecutorType](a=STMDExecutorType.THREAD),
-        a_pool_size=Arg[int](a=1),
+        a_executor=Arg[Union[ThreadPoolExecutor, ProcessPoolExecutor, LoopExecutor]](
+            a=thread_pool_executor
+        ),
         a_multiplier=Arg[float](a=10.0),
         i_in1=stmd_in1,
     )
@@ -347,6 +354,7 @@ class GTestSTMD(STMD):
 
 def test_stmd_processes(fixture_isodate_now) -> None:
 
+    process_pool_executor = ProcessPoolExecutor(pool_size=1)
     stmd_in1 = In[TList[float]](
         data=TList[float](
             [
@@ -360,8 +368,9 @@ def test_stmd_processes(fixture_isodate_now) -> None:
     )
     stmd1 = GTestSTMD(
         uid="tt1",
-        a_executor_type=Arg[STMDExecutorType](a=STMDExecutorType.PROCESS),
-        a_pool_size=Arg[int](a=2),
+        a_executor=Arg[Union[ThreadPoolExecutor, ProcessPoolExecutor, LoopExecutor]](
+            a=process_pool_executor
+        ),
         a_multiplier=Arg[float](a=10.0),
         i_in1=stmd_in1,
     )
