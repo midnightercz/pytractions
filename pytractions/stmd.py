@@ -1,7 +1,8 @@
 import dataclasses
 import inspect
 import logging
-from typing import Type, Optional, Union
+from typing import Type, Optional, Union, Any, Dict, ClassVar
+from types import prepare_class
 
 from .base import (
     Base,
@@ -191,7 +192,7 @@ class STMD(Traction, metaclass=STMDMeta):
 
     _TYPE: str = "STMD"
     uid: str
-    state: str = "ready"
+    state: str = TractionState.READY
     skip: bool = False
     skip_reason: Optional[str] = ""
     errors: TList[str] = dataclasses.field(default_factory=TList[str])
@@ -207,60 +208,37 @@ class STMD(Traction, metaclass=STMDMeta):
     )
     tractions_state: TList[TractionState] = dataclasses.field(default_factory=TList[TractionState])
 
-    def _traction_runner(self, index, on_update=None):
-        """Run the traction on input for given index."""
-        traction = self._copy_traction(index)
-        self.tractions_state[index] = TractionState.RUNNING
-        LOGGER.info(f"Running STMD traction {traction.fullname}")
-        traction.run(on_update=on_update)
-        self.tractions_state[index] = traction.state
-        outputs = {}
-        for o in traction._fields:
-            if o.startswith("o_"):
-                outputs[o] = getattr(traction, o).data
-        return outputs
+    _wrap_cache: ClassVar[Dict[str, Type[Any]]] = {}
 
-    def _copy_traction(self, index, connect_inputs=True):
-        """After tractor is created, all tractions needs to be copied.
+    @classmethod
+    def wrap(cls, clstowrap, single_inputs={}):
+        """Wrap Traction class into STMD class."""
+        if not inspect.isclass(clstowrap) and not issubclass(clstowrap, Traction):
+            raise ValueError("Can only wrap Traction classes")
 
-        This way it's possible to use same Tractor class multiple times
-        """
-        traction = self._traction
-        init_fields = {}
-        # print("COPY T", traction.__name__, index)
-        for ft, field in traction.__dataclass_fields__.items():
-            # set all inputs for the traction to outputs of traction copy
-            # created bellow
+        if f"STMD{clstowrap.__name__}" in cls._wrap_cache:
+            return cls._wrap_cache[f"STMD{clstowrap.__name__}"]
 
-            if ft.startswith("r_"):
-                init_fields[ft] = getattr(self, ft)
-
-            elif ft.startswith("a_"):
-                init_fields[ft] = getattr(self, ft)
-
-            elif ft.startswith("i_") and connect_inputs:
-                if TypeNode.from_type(self._fields[ft], subclass_check=False) == TypeNode.from_type(
-                    STMDSingleIn[ANY]
-                ):
-                    init_fields[ft] = In.__class_getitem__(*getattr(self, ft)._params)(
-                        data=getattr(self, ft).data
-                    )
+        attrs = {}
+        annotations = {"_traction": Type[Traction]}
+        for k, v in clstowrap._fields.items():
+            if k.startswith("i_"):
+                if k in single_inputs:
+                    annotations[k] = STMDSingleIn[v._params[0]]
                 else:
-                    init_fields[ft] = In.__class_getitem__(*getattr(self, ft)._params[0]._params)(
-                        data=getattr(self, ft).data[index]
-                    )
+                    annotations[k] = In[TList[v._params[0]]]
+            if k.startswith("o_"):
+                annotations[k] = Out[TList[v._params[0]]]
+            if k.startswith("a_") or k.startswith("r_"):
+                annotations[k] = v
 
-        init_fields["uid"] = "%s:%d" % (self.uid, index)
-        # create copy of existing traction
-        # print("INIT FIELDS", index, init_fields)
-        ret = traction(**init_fields)
+        meta, ns, kwds = prepare_class(f"STMD{clstowrap.__name__}", [cls], attrs)
+        kwds["__qualname__"] = f"STMD{clstowrap.__name__}"
+        kwds["_traction"] = clstowrap
+        kwds["__annotations__"] = annotations
 
-        for ft in traction._fields:
-            try:
-                if ft.startswith("o_"):
-                    getattr(self, ft).data[index] = getattr(ret, ft).data
-            except Exception as e:
-                raise RuntimeError(f"Failed to copy traction {self._traction}. Field {ft}") from e
+        ret = meta(kwds["__qualname__"], (cls,), kwds)
+        cls._wrap_cache[kwds["__qualname__"]] = ret
         return ret
 
     def _prep_tractions(self, first_in, outputs):

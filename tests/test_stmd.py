@@ -380,3 +380,34 @@ def test_stmd_processes(fixture_isodate_now) -> None:
     assert stmd1.o_out1.data[2] == 30.0
     assert stmd1.o_out1.data[3] == 40.0
     assert stmd1.o_out1.data[4] == 50.0
+
+
+def test_wrap_stmd(fixture_isodate_now) -> None:
+
+    stmd_in1 = In[TList[float]](
+        data=TList[float](
+            [
+                1.0,
+                2.0,
+                3.0,
+                4.0,
+                5.0,
+            ]
+        )
+    )
+    thread_pool_executor = ThreadPoolExecutor(pool_size=1)
+
+    stmd1 = STMD.wrap(G_TTest1)(
+        uid="tt1",
+        a_executor=Arg[Union[ThreadPoolExecutor, ProcessPoolExecutor, LoopExecutor]](
+            a=thread_pool_executor
+        ),
+        a_multiplier=Arg[float](a=10.0),
+        i_in1=stmd_in1,
+    )
+    stmd1.run()
+    assert stmd1.o_out1.data[0] == 10.0
+    assert stmd1.o_out1.data[1] == 20.0
+    assert stmd1.o_out1.data[2] == 30.0
+    assert stmd1.o_out1.data[3] == 40.0
+    assert stmd1.o_out1.data[4] == 50.0

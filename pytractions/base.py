@@ -1893,6 +1893,7 @@ class TractionMeta(BaseMeta):
 
         cls._before_new(name, attrs, bases)
         ret = super().__new__(cls, name, bases, attrs)
+
         return ret
 
 
