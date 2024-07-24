@@ -317,7 +317,11 @@ class STMD(Traction, metaclass=STMDMeta):
                         )
         args = {}
         for f, ftype in self._fields.items():
-            if f.startswith("a_") and f != "a_executor" and f != "a_delete_after_finished":
+            if f.startswith("a_"):
+                # do not copy stmd special args if those are not in traction
+                if f in ("a_executor", "a_delete_after_finished"):
+                    if f not in self._traction._fields:
+                        continue
                 args[f] = getattr(self, f)
 
         resources = {}
