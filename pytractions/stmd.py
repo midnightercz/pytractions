@@ -349,7 +349,7 @@ class STMD(Traction, metaclass=STMDMeta):
             index = uids.index(uid)
             for o in out:
                 getattr(self, o).data[index] = out[o]
-        self.a_executor.a.shutdown()
+        #self.a_executor.a.shutdown()
 
         self.state = TractionState.FINISHED
         _on_update(self)

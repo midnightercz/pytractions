@@ -60,10 +60,12 @@ class ProcessPoolExecutor(Executor):
         """Initialize executor."""
         self._outputs = {}
         self._outputs_by_uid = {}
+        self._inited = False
 
     def init(self):
         """Start the executor."""
-        self._executor = _ProcessPoolExecutor(max_workers=self.pool_size)
+        if not self._inited:
+            self._executor = _ThreadPoolExecutor(max_workers=self.pool_size)
 
     def shutdown(self):
         """Shutdown the executor."""
@@ -109,10 +111,12 @@ class ThreadPoolExecutor(Executor):
         """Initialize executor."""
         self._outputs = {}
         self._outputs_by_uid = {}
+        self._inited = False
 
     def init(self):
         """Start the executor."""
-        self._executor = _ThreadPoolExecutor(max_workers=self.pool_size)
+        if not self._inited:
+            self._executor = _ThreadPoolExecutor(max_workers=self.pool_size)
 
     def shutdown(self):
         """Shutdown the executor."""
