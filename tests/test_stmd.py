@@ -55,11 +55,11 @@ class Double(Traction):
     o_output: Out[float]
 
     def _run(self, on_update) -> None:  # pragma: no cover
-        if not self.i_input.data:
-            print(self.uid, "DATA", self.i_input.data)
-        if not self.i_coeficient.data:
-            print(self.uid, "COEF", self.i_coeficient.data)
-        self.o_output.data = self.i_input.data * 2 / self.i_coeficient.data
+        if not self.i_input:
+            print(self.uid, "DATA", self.i_input)
+        if not self.i_coeficient:
+            print(self.uid, "COEF", self.i_coeficient)
+        self.o_output = self.i_input * 2 / self.i_coeficient
 
 
 class STMDDouble(STMD):
@@ -81,11 +81,11 @@ class Half(Traction):
     o_output: Out[float]
 
     def _run(self, on_update) -> None:  # pragma: no cover
-        if not self.i_input.data:
-            print(self.uid, "DATA", self.i_input.data)
-        if not self.i_coeficient.data:
-            print(self.uid, "COEF", self.i_coeficient.data)
-        self.o_output.data = self.i_input.data / 2 * self.i_coeficient.data
+        if not self.i_input:
+            print(self.uid, "DATA", self.i_input)
+        if not self.i_coeficient:
+            print(self.uid, "COEF", self.i_coeficient)
+        self.o_output = self.i_input / 2 * self.i_coeficient
 
 
 class STMDHalf(STMD):
@@ -113,15 +113,16 @@ class Calculator(Tractor):
         i_coeficient=i_coeficient,
         a_executor=a_executor,
     )
+    print("RAW", t_double.i_input, id(t_double._raw_o_output))
 
     t_half: STMDHalf = STMDHalf(
         uid="half",
-        i_input=t_double.o_output,
+        i_input=t_double._raw_o_output,
         i_coeficient=i_coeficient,
         a_executor=a_executor,
     )
 
-    o_output: Out[TList[float]] = t_half.o_output
+    o_output: Out[TList[float]] = t_half._raw_o_output
 
 
 def test_stmd_attr_validation():
@@ -238,7 +239,8 @@ class G_TTest1(Traction):
     a_multiplier: Arg[float]
 
     def _run(self, on_update) -> None:  # pragma: no cover
-        self.o_out1.data = self.i_in1.data * self.a_multiplier.a
+        print("I", self.i_in1, "*", "A", self.a_multiplier)
+        self.o_out1 = self.i_in1 * self.a_multiplier
 
 
 class G_TestTractor(Tractor):
@@ -248,9 +250,11 @@ class G_TestTractor(Tractor):
     a_multiplier: Arg[float] = Arg[float](a=1.0)
 
     t_traction_1: G_TTest1 = G_TTest1(uid="1", i_in1=i_in1, a_multiplier=a_multiplier)
-    t_traction_2: G_TTest1 = G_TTest1(uid="1", i_in1=t_traction_1.o_out1, a_multiplier=a_multiplier)
+    t_traction_2: G_TTest1 = G_TTest1(
+        uid="2", i_in1=t_traction_1._raw_o_out1, a_multiplier=a_multiplier
+    )
 
-    o_out1: Out[float] = t_traction_2.o_out1
+    o_out1: Out[float] = t_traction_2._raw_o_out1
 
 
 def test_stmd_tractor(fixture_isodate_now) -> None:
@@ -276,11 +280,11 @@ def test_stmd_tractor(fixture_isodate_now) -> None:
         ),
     )
     stmd1.run()
-    assert stmd1.o_out1.data[0] == 100.0
-    assert stmd1.o_out1.data[1] == 200.0
-    assert stmd1.o_out1.data[2] == 300.0
-    assert stmd1.o_out1.data[3] == 400.0
-    assert stmd1.o_out1.data[4] == 500.0
+    assert stmd1.o_out1[0] == 100.0
+    assert stmd1.o_out1[1] == 200.0
+    assert stmd1.o_out1[2] == 300.0
+    assert stmd1.o_out1[3] == 400.0
+    assert stmd1.o_out1[4] == 500.0
 
 
 def test_stmd_local(fixture_isodate_now) -> None:
@@ -296,11 +300,11 @@ def test_stmd_local(fixture_isodate_now) -> None:
     stmd_in1 = In[TList[float]](data=TList[float]([1.0, 2.0, 3.0, 4.0, 5.0]))
     stmd1 = TestSTMD(uid="tt1", a_multiplier=Arg[float](a=10.0), i_in1=stmd_in1)
     stmd1.run()
-    assert stmd1.o_out1.data[0] == 10.0
-    assert stmd1.o_out1.data[1] == 20.0
-    assert stmd1.o_out1.data[2] == 30.0
-    assert stmd1.o_out1.data[3] == 40.0
-    assert stmd1.o_out1.data[4] == 50.0
+    assert stmd1.o_out1[0] == 10.0
+    assert stmd1.o_out1[1] == 20.0
+    assert stmd1.o_out1[2] == 30.0
+    assert stmd1.o_out1[3] == 40.0
+    assert stmd1.o_out1[4] == 50.0
 
 
 def test_stmd_threads(fixture_isodate_now) -> None:
@@ -334,11 +338,11 @@ def test_stmd_threads(fixture_isodate_now) -> None:
         i_in1=stmd_in1,
     )
     stmd1.run()
-    assert stmd1.o_out1.data[0] == 10.0
-    assert stmd1.o_out1.data[1] == 20.0
-    assert stmd1.o_out1.data[2] == 30.0
-    assert stmd1.o_out1.data[3] == 40.0
-    assert stmd1.o_out1.data[4] == 50.0
+    assert stmd1.o_out1[0] == 10.0
+    assert stmd1.o_out1[1] == 20.0
+    assert stmd1.o_out1[2] == 30.0
+    assert stmd1.o_out1[3] == 40.0
+    assert stmd1.o_out1[4] == 50.0
 
 
 class GTestSTMD(STMD):
@@ -375,11 +379,11 @@ def test_stmd_processes(fixture_isodate_now) -> None:
         i_in1=stmd_in1,
     )
     stmd1.run()
-    assert stmd1.o_out1.data[0] == 10.0
-    assert stmd1.o_out1.data[1] == 20.0
-    assert stmd1.o_out1.data[2] == 30.0
-    assert stmd1.o_out1.data[3] == 40.0
-    assert stmd1.o_out1.data[4] == 50.0
+    assert stmd1.o_out1[0] == 10.0
+    assert stmd1.o_out1[1] == 20.0
+    assert stmd1.o_out1[2] == 30.0
+    assert stmd1.o_out1[3] == 40.0
+    assert stmd1.o_out1[4] == 50.0
 
 
 def test_wrap_stmd(fixture_isodate_now) -> None:
@@ -406,8 +410,8 @@ def test_wrap_stmd(fixture_isodate_now) -> None:
         i_in1=stmd_in1,
     )
     stmd1.run()
-    assert stmd1.o_out1.data[0] == 10.0
-    assert stmd1.o_out1.data[1] == 20.0
-    assert stmd1.o_out1.data[2] == 30.0
-    assert stmd1.o_out1.data[3] == 40.0
-    assert stmd1.o_out1.data[4] == 50.0
+    assert stmd1.o_out1[0] == 10.0
+    assert stmd1.o_out1[1] == 20.0
+    assert stmd1.o_out1[2] == 30.0
+    assert stmd1.o_out1[3] == 40.0
+    assert stmd1.o_out1[4] == 50.0

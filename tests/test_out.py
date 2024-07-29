@@ -50,9 +50,9 @@ def test_out_container_default():
     assert out.data is None
 
     t = TestTraction(uid="test")
-    assert t.o_out.data == OutContainer()
+    assert t.o_out == OutContainer()
 
 
 def test_out_tlist():
     t = TestTractionOutList(uid="test")
-    assert t.o_out.data == TList[str]([])
+    assert t.o_out == TList[str]([])

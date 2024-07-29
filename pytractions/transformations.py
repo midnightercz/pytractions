@@ -12,9 +12,9 @@ class Flatten(Traction, Generic[T]):
     o_flat: Out[TList[T]]
 
     def _run(self, on_update: OnUpdateCallable):
-        for nested in self.i_complex.data:
+        for nested in self.i_complex:
             for item in nested:
-                self.o_flat.data.append(item)
+                self.o_flat.append(item)
 
 
 class FilterDuplicates(Traction, Generic[T]):
@@ -24,9 +24,9 @@ class FilterDuplicates(Traction, Generic[T]):
     o_list: Out[TList[T]]
 
     def _run(self, on_update: OnUpdateCallable):
-        for item in self.i_list.data:
-            if item not in self.o_list.data:
-                self.o_list.data.append(item)
+        for item in self.i_list:
+            if item not in self.o_list:
+                self.o_list.append(item)
 
 
 class Extractor(Traction, Generic[T, X]):
@@ -37,7 +37,7 @@ class Extractor(Traction, Generic[T, X]):
     o_model: Out[X]
 
     def _run(self, on_update: OnUpdateCallable):
-        self.o_model.data = getattr(self.i_model.data, self.a_field.a)
+        self.o_model = getattr("_raw_" + self.i_model, self.a_field.a)
 
 
 class ListMultiplier(Traction, Generic[T, X]):
@@ -54,7 +54,7 @@ with scalar value."""
     d_o_list: str = "Output list."
 
     def _run(self, on_update: OnUpdateCallable):
-        for _ in range(len(self.i_list.data)):
-            self.o_list.data.append(
-                self.i_scalar.content_from_json(self.i_scalar.content_to_json()).data
+        for _ in range(len(self.i_list)):
+            self.o_list.append(
+                self._raw_i_scalar.content_from_json(self._raw_i_scalar.content_to_json()).data
             )

@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 import dataclasses
 import logging
-from typing import Optional, Dict, Any, Tuple, List
+from typing import Optional, Dict, Any, Tuple, List, ClassVar
 
 from .base import (
     Base,
@@ -128,6 +128,7 @@ class TractorMeta(TractionMeta):
                             dst_o[k] = v
 
         outputs_all = []
+        _outputs_all = {}
         for base in bases:
             if hasattr(base, "_outputs_all"):
                 for v in base._outputs_all:
@@ -138,8 +139,10 @@ class TractorMeta(TractionMeta):
                 outputs_map[id(fo)] = ("#", f)
                 output_waves[id(fo)] = 0
                 outputs_all.append(id(fo))
+                _outputs_all[f] = fo
             if f.startswith("o_"):
                 outputs_all.append(id(fo))
+                _outputs_all[f] = fo
             if f.startswith("r_"):
                 resources[id(fo)] = f
             if f.startswith("a_"):
@@ -164,12 +167,12 @@ class TractorMeta(TractionMeta):
                 traction_fields = traction._fields
                 _traction = traction
             for tf in traction_fields:
-                tfo = getattr(_traction, tf)
+                tfo = object.__getattribute__(_traction, tf)
                 if tf.startswith("i_"):
                     if TypeNode.from_type(type(tfo), subclass_check=False) != TypeNode.from_type(
                         NoData[ANY]
                     ):
-                        if id(getattr(_traction, tf)) not in outputs_all:
+                        if id(object.__getattribute__(_traction, tf)) not in outputs_all:
                             raise ValueError(
                                 f"Input {_traction.__class__}[{_traction.uid}]->{tf} is mapped to "
                                 "output which is not known yet"
@@ -180,7 +183,7 @@ class TractorMeta(TractionMeta):
             traction_waves[t] = wave + 1
 
             for tf in _traction._fields:
-                tfo = getattr(_traction, tf)
+                tfo = object.__getattribute__(_traction, tf)
 
                 if tf.startswith("o_"):
                     outputs_all.append(id(tfo))
@@ -190,7 +193,7 @@ class TractorMeta(TractionMeta):
                     if TypeNode.from_type(type(tfo), subclass_check=False) != TypeNode.from_type(
                         NoData[ANY]
                     ):
-                        if id(getattr(_traction, tf)) not in outputs_all:
+                        if id(object.__getattribute__(_traction, tf)) not in outputs_all:
                             raise ValueError(
                                 f"Input {_traction.__class__}[{_traction.uid}]->{tf} is mapped to "
                                 "output which is not known yet"
@@ -212,14 +215,11 @@ class TractorMeta(TractionMeta):
                 elif tf.startswith("a_") and TypeNode.from_type(
                     type(tfo), subclass_check=True
                 ) == TypeNode.from_type(MultiArg):
-                    # print("Multiarg", t, tf)
                     for maf, mafo in tfo._fields.items():
                         if id(mafo) in args:
                             margs_map[(t, tf, maf)] = args[id(mafo)]
 
-        # print("OUTPUTS MAP", outputs_map)
         for f, fo in attrs.items():
-            # print("F", f, id(fo))#, fo)
             if f.startswith("o_"):
                 if id(fo) in outputs_map:
                     t_outputs_map[f] = outputs_map[id(fo)]
@@ -241,8 +241,8 @@ class TractorMeta(TractionMeta):
 class Tractor(Traction, metaclass=TractorMeta):
     """Tractor class."""
 
-    _TYPE: str = "TRACTOR"
-    _CUSTOM_TYPE_TO_JSON: bool = True
+    _TYPE: ClassVar[str] = "TRACTOR"
+    _CUSTOM_TYPE_TO_JSON: ClassVar[bool] = True
     uid: str
     state: str = "ready"
     skip: bool = False
@@ -279,12 +279,12 @@ class Tractor(Traction, metaclass=TractorMeta):
                 if (traction_name, ft) in self._io_map:
                     source, o_name = self._io_map[(traction_name, ft)]
                     if source == "#":
-                        init_fields[ft] = getattr(self, o_name)
+                        init_fields[ft] = object.__getattribute__(self, o_name)
                     else:
-                        init_fields[ft] = getattr(self.tractions[source], o_name)
+                        init_fields[ft] = object.__getattribute__(self.tractions[source], o_name)
             elif ft.startswith("r_"):
                 self_field = self._resources_map[(traction_name, ft)]
-                init_fields[ft] = getattr(self, self_field)
+                init_fields[ft] = object.__getattribute__(self, self_field)
             elif ft.startswith("a_"):
                 # First check if whole argument can be found in map
                 # of global tractor arguments
@@ -293,7 +293,7 @@ class Tractor(Traction, metaclass=TractorMeta):
                     if isinstance(self_field, tuple):
                         init_fields[ft] = getattr(getattr(self, self_field[0]), self_field[1])
                     else:
-                        init_fields[ft] = getattr(self, self_field)
+                        init_fields[ft] = object.__getattribute__(self, self_field)
                 # handle MultiArg type
                 elif TypeNode.from_type(field.type, subclass_check=True) == TypeNode.from_type(
                     MultiArg
@@ -334,14 +334,19 @@ class Tractor(Traction, metaclass=TractorMeta):
                 # regular __setattr__ don't overwrite whole output model but just
                 # data in it to keep connection, so need to use _no_validate_setattr
                 t, tf = self._t_outputs_map[f]
-                self._no_validate_setattr_(f, getattr(self.tractions[t], tf))
-            if f.startswith("a_"):
+                self._no_validate_setattr_(f, object.__getattribute__(self.tractions[t], tf))
+                self._no_validate_setattr_(
+                    "_raw_" + f, object.__getattribute__(self.tractions[t], tf)
+                )
+            elif f.startswith("a_"):
                 # for MulArgs which are mapped to args, overwrite them
                 fo = getattr(self, f)
                 if isinstance(fo, MultiArg):
                     for maf in fo._fields:
                         if ("#", f, maf) in self._margs_map:
                             setattr(fo, maf, getattr(self, self._margs_map[("#", f, maf)]))
+            elif f.startswith("i_"):
+                self._no_validate_setattr_("_raw_" + f, object.__getattribute__(self, f))
 
     def resubmit_from(self, traction_name: str):
         """Run tractor from specific traction."""
@@ -503,8 +508,9 @@ class Tractor(Traction, metaclass=TractorMeta):
 class MultiTractor(Tractor, metaclass=TractorMeta):
     """Multitractor version of tractor."""
 
-    _TYPE: str = "MULTITRACTOR"
+    _TYPE: ClassVar[str] = "MULTITRACTOR"
     uid: str
+    a_pool_size: Arg[int] = dataclasses.field(default=5)
     state: str = "ready"
     skip: bool = False
     skip_reason: Optional[str] = ""
@@ -512,7 +518,6 @@ class MultiTractor(Tractor, metaclass=TractorMeta):
     stats: TractionStats = dataclasses.field(default_factory=TractionStats)
     details: TList[str] = dataclasses.field(default_factory=TList[str])
     tractions: TList[Traction] = dataclasses.field(default_factory=TList[Traction], init=False)
-    a_pool_size: Arg[int]
     a_use_processes: Arg[bool] = Arg[bool](a=False)
 
     def _traction_runner(self, t_name, traction, on_update=None):

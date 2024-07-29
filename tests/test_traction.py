@@ -198,7 +198,7 @@ def test_to_run_failed():
         a_arg: Arg[str]
 
         def _run(self, on_update: OnUpdateCallable) -> None:
-            self.o_output.data = self.i_input.data
+            self.o_output = self.i_input
             raise TractionFailedError
 
     t = TestTraction(
@@ -219,7 +219,7 @@ def test_to_run_error():
         a_arg: Arg[str]
 
         def _run(self, on_update: OnUpdateCallable) -> None:
-            self.o_output.data = self.i_input.data
+            self.o_output = self.i_input
             raise ValueError("test error")
 
     t = TestTraction(

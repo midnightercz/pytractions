@@ -283,6 +283,11 @@ class BaseMeta(type):
         fields.update(
             {k: v for k, v in attrs.get("__annotations__", {}).items() if not k.startswith("_")}
         )
+
+        # Override fields if they are set in child class
+        for f, ft in attrs.get("_fields", {}).items():
+            fields[f] = ft
+
         all_annotations.update(annotations)
         attrs["__annotations__"] = all_annotations
 
@@ -297,7 +302,8 @@ class BaseMeta(type):
         cls._before_new(name, attrs, bases)
         ret = super().__new__(cls, name, bases, attrs)
 
-        ret = dataclasses.dataclass(ret, kw_only=True)
+        ret = dataclasses.dataclass(ret, kw_only=attrs.get("_KW_ONLY", True))
+
         return ret
 
 
@@ -310,7 +316,7 @@ class SerializationError(Exception):
 class Base(ABase, metaclass=BaseMeta):
     """Base class supporting type validation."""
 
-    _CUSTOM_TYPE_TO_JSON: bool = False
+    _CUSTOM_TYPE_TO_JSON: ClassVar[bool] = dataclasses.field(default=False, init=False)
 
     # dataclasses configuration class
     _config: ClassVar[BaseConfig] = BaseConfig()
@@ -321,7 +327,9 @@ class Base(ABase, metaclass=BaseMeta):
     # use to store actual parameters when creating generic subclass
     _params: ClassVar[List[Any]] = []
     # used to store original class when creating generic subclass
-    _orig_cls: Optional[Type[Any]] = None
+    _orig_cls: Optional[Type[Any]] = dataclasses.field(default=None, init=False)
+
+    _KW_ONLY: ClassVar[bool] = True
 
     def __post_init__(self):
         """Initialize class after init."""
@@ -967,7 +975,7 @@ class TList(Base, ATList, Generic[T]):
     Example usage: TList[str](['foo'])
     """
 
-    _list: List[T]
+    _list: List[T] = dataclasses.field(default_factory=list)
 
     def __new__(cls, *args, **kwargs):
         """Return new TList instance."""
@@ -1099,7 +1107,13 @@ class TList(Base, ATList, Generic[T]):
                     "$data": {},
                 }
                 for f in current._fields:
-                    stack.append((getattr(current, f), current_parent[parent_key]["$data"], f))
+                    stack.append(
+                        (
+                            object.__getattribute__(current, f),
+                            current_parent[parent_key]["$data"],
+                            f,
+                        )
+                    )
             elif isinstance(current, (TList, ATDict)):
                 current_parent[parent_key] = current.to_json()
             elif isinstance(current, (enum.Enum)):
@@ -1228,7 +1242,7 @@ class TDict(Base, ATDict, Generic[TK, TV]):
     Example usage: TDict[str, int]({'foo': 1})
     """
 
-    _dict: Dict[TK, TV]
+    _dict: Dict[TK, TV] = dataclasses.field(default_factory=dict)
 
     def __new__(cls, *args, **kwargs):
         """Return new TDict instance."""
@@ -1399,7 +1413,13 @@ class TDict(Base, ATDict, Generic[TK, TV]):
                     "$data": {},
                 }
                 for f in current._fields:
-                    stack.append((getattr(current, f), current_parent[parent_key]["$data"], f))
+                    stack.append(
+                        (
+                            object.__getattribute__(current, f),
+                            current_parent[parent_key]["$data"],
+                            f,
+                        )
+                    )
             elif isinstance(current, (TList, TDict)):
                 current_parent[parent_key] = current.to_json()
             elif isinstance(current, (enum.Enum)):
@@ -1552,7 +1572,9 @@ class STMDSingleIn(Base, Generic[T]):
     and to `In` you can only assign `STMDSingleIn` and `In`
     """
 
-    _TYPE: str = "IN"
+    _TYPE: ClassVar[str] = "IN"
+
+    _KW_ONLY: ClassVar[bool] = False
 
     _ref: Optional[T] = dataclasses.field(repr=False, init=False, default=None, compare=False)
     # data here are actually not used after input is assigned to some output
@@ -1577,10 +1599,7 @@ class STMDSingleIn(Base, Generic[T]):
             # old_uid = self._uid
             self._uid = None
             object.__setattr__(self, name, value)
-            # new_uid = self.uid
-            # self._io_store.move_data(old_uid, new_uid)
             return
-
         if not name.startswith("_"):  # do not check for private attrs
             properties = dict(inspect.getmembers(self.__class__, lambda o: isinstance(o, property)))
             if name not in self._fields and not self._config.allow_extra and name not in properties:
@@ -1622,7 +1641,6 @@ class STMDSingleIn(Base, Generic[T]):
         """Get attribute."""
         if name == "data":
             return object.__getattribute__(self, "data")
-            # return object.__getattribute__(self, '_io_store').data(self.uid)
         else:
             ret = object.__getattribute__(self, name)
             return ret
@@ -1647,7 +1665,8 @@ class In(STMDSingleIn, Generic[T]):
     Example: In[str](data='foo')
     """
 
-    data: Optional[T] = None
+    # data: Optional[T] = None
+    pass
 
 
 class TIn(In, Generic[T]):
@@ -1659,13 +1678,15 @@ class TIn(In, Generic[T]):
     Example: TIn[str](data='foo')
     """
 
-    data: Optional[T] = None
+    # data: Optional[T] = None
+    pass
 
 
 class NoData(In, Generic[T]):
     """Special type of input indicating input hasn't been connected to any output."""
 
-    data: Optional[T] = None
+    # data: Optional[T] = None
+    pass
 
 
 # Currently not used
@@ -1704,11 +1725,12 @@ class Out(In, Generic[T]):
     Output can be connected only to a Traction input `In` or `STMDSingleIn`
     """
 
-    _TYPE: str = "OUT"
+    _TYPE: ClassVar[str] = "OUT"
+    _KW_ONLY: ClassVar[bool] = True
 
     # _io_store: IOStore = dataclasses.field(repr=False, init=False, compare=False)
-    data: Optional[T] = None
-    _uid: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
+    # data: Optional[T] = None
+    # _uid: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
 
     # def __post_init__(self):
     #     self._io_store = DefaultIOStore.io_store
@@ -1729,11 +1751,7 @@ ANY_OUT_TYPE_NODE = TypeNode.from_type(Out[ANY])
 class NoOut(Out, Generic[T]):
     """Special type of output indicating output hasn't been set yet."""
 
-    data: Optional[T] = None
-    _owner: Optional[_Traction] = dataclasses.field(
-        repr=False, init=False, default=None, compare=False
-    )
-    _name: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
+    pass
 
 
 # class NoData(In, Generic[T]):
@@ -1748,7 +1766,7 @@ class Res(Base, Generic[T]):
     Usage: Res[GithubClient](r=gh_client)
     """
 
-    _TYPE: str = "RES"
+    _TYPE: ClassVar[str] = "RES"
     r: T
 
 
@@ -1758,7 +1776,7 @@ class TRes(Res, Generic[T]):
     Usage: Res[GithubClient](r=gh_client)
     """
 
-    _TYPE: str = "RES"
+    _TYPE: ClassVar[str] = "RES"
     r: Optional[T] = None
 
     def __post_init__(self):
@@ -1775,7 +1793,7 @@ class Arg(Base, Generic[T]):
     Usage: Arg[int](a=10)
     """
 
-    _TYPE: str = "ARG"
+    _TYPE: ClassVar[str] = "ARG"
     a: T
 
 
@@ -1818,15 +1836,25 @@ class TractionMeta(BaseMeta):
             """Check attribute on class creation."""
             type_type_node = TypeNode.from_type(type_, subclass_check=False)
             if attr.startswith("i_"):
-                if type_type_node != ANY_IN_TYPE_NODE:
+                if (
+                    type_type_node == ANY_OUT_TYPE_NODE
+                    or type_type_node == ANY_ARG_TYPE_NODE
+                    or type_type_node == ANY_RES_TYPE_NODE
+                ):
                     raise TypeError(f"Attribute {attr} has to be type In[ANY], but is {type_}")
             elif attr.startswith("o_"):
-                if type_type_node != ANY_OUT_TYPE_NODE:
+                if (
+                    type_type_node == ANY_IN_TYPE_NODE
+                    or type_type_node == ANY_ARG_TYPE_NODE
+                    or type_type_node == ANY_RES_TYPE_NODE
+                ):
                     raise TypeError(f"Attribute {attr} has to be type Out[ANY], but is {type_}")
             elif attr.startswith("a_"):
-                if type_type_node != ANY_ARG_TYPE_NODE and TypeNode.from_type(
-                    type_, subclass_check=True
-                ) != TypeNode.from_type(MultiArg):
+                if (
+                    type_type_node == ANY_IN_TYPE_NODE
+                    or type_type_node == ANY_OUT_TYPE_NODE
+                    or type_type_node == ANY_RES_TYPE_NODE
+                ):
                     raise TypeError(
                         f"Attribute {attr} has to be type Arg[ANY] or MultiArg, but is {type_}"
                     )
@@ -1847,6 +1875,16 @@ class TractionMeta(BaseMeta):
             else:
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or d_")
 
+            if (
+                not attr.startswith("i_")
+                and not attr.startswith("a_")
+                and not attr.startswith("r_")
+                and not attr.startswith("o_")
+                and not attr.startswith("d_")
+            ):
+                if not isinstance(type_, dataclasses.Field):
+                    raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or d_")
+
     def __new__(cls, name, bases, attrs):
         """Create new traction class."""
         annotations = attrs.get("__annotations__", {})
@@ -1865,9 +1903,32 @@ class TractionMeta(BaseMeta):
             k: v for k, v in attrs.get("__annotations__", {}).items() if not k.startswith("_")
         }
 
-        for f, ftype in attrs["_fields"].items():
+        for f, ftype in list(attrs["_fields"].items()):
             # Do not include outputs in init
+            if f.startswith("a_"):
+                if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Arg[ANY]):
+                    attrs[f] = Arg[ftype]
+                    ftype = attrs[f]
+                    attrs["_fields"][f] = ftype
+            if f.startswith("i_"):
+                if TypeNode.from_type(ftype) != TypeNode.from_type(STMDSingleIn[ANY]):
+                    attrs[f] = In[ftype]
+                    ftype = attrs[f]
+                    attrs["_fields"][f] = ftype
+                if f.startswith("i_") and f not in attrs:
+                    attrs[f] = dataclasses.field(default_factory=NoData[ftype._params])
+            if f.startswith("r_"):
+                if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Res[ANY]):
+                    attrs[f] = Res[ftype]
+                    ftype = attrs[f]
+                    attrs["_fields"][f] = ftype
+
             if f.startswith("o_") and f not in attrs:
+                if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Out[ANY]):
+                    attrs[f] = Out[ftype]
+                    ftype = attrs[f]
+                    attrs["_fields"][f] = ftype
+
                 if inspect.isclass(ftype._params[0]) and issubclass(ftype._params[0], Base):
                     for ff, fft in ftype._params[0]._fields.items():
                         df = ftype._params[0].__dataclass_fields__[ff]
@@ -1884,12 +1945,11 @@ class TractionMeta(BaseMeta):
                     default_factory=DefaultOut(type_=ftype._params[0], params=(ftype._params)),
                 )
             # Set all inputs to NoData after as default
-            if f.startswith("i_") and f not in attrs:
-                attrs[f] = dataclasses.field(default_factory=NoData[ftype._params])
 
-        attrs["_fields"] = {
-            k: v for k, v in attrs.get("__annotations__", {}).items() if not k.startswith("_")
-        }
+        print("ATTRS", attrs)
+        # attrs["_fields"] = {
+        #    k: v for k, v in attrs.get("__annotations__", {}).items() if not k.startswith("_")
+        # }
 
         cls._before_new(name, attrs, bases)
         ret = super().__new__(cls, name, bases, attrs)
@@ -1983,8 +2043,8 @@ class Traction(Base, metaclass=TractionMeta):
     itself will not be overwritten
     """
 
-    _TYPE: str = "TRACTION"
-    _CUSTOM_TYPE_TO_JSON: bool = False
+    _TYPE: ClassVar[str] = "TRACTION"
+    _CUSTOM_TYPE_TO_JSON: ClassVar[bool] = False
 
     uid: str
     "Unique identifier of the current traction."
@@ -2009,11 +2069,14 @@ class Traction(Base, metaclass=TractionMeta):
             if not f.startswith("o_") and not f.startswith("i_"):
                 continue
             # do not set owner to tractor inputs
-            if TypeNode.from_type(getattr(self, f).__class__) == TypeNode.from_type(TIn[ANY]):
+            self._no_validate_setattr_("_raw_" + f, super().__getattribute__(f))
+            if TypeNode.from_type(super().__getattribute__(f).__class__) == TypeNode.from_type(
+                TIn[ANY]
+            ):
                 continue
-            if not getattr(self, f)._owner:
-                getattr(self, f)._name = f
-                getattr(self, f)._owner = self
+            if not super().__getattribute__(f)._owner:
+                super().__getattribute__(f)._name = f
+                super().__getattribute__(f)._owner = self
 
     def __getattribute_orig__(self, name: str) -> Any:
         """Get attribute of the class instance - unmodified version."""
@@ -2021,14 +2084,22 @@ class Traction(Base, metaclass=TractionMeta):
 
     def __getattribute__(self, name: str) -> Any:
         """Get attribute of the class instance - with special handler for inputs."""
+        if name.startswith("a_"):
+            return super().__getattribute__(name).a
+        if name.startswith("r_"):
+            return super().__getattribute__(name).r
+        if name.startswith("o_"):
+            return super().__getattribute__(name).data
+
         if name.startswith("i_"):
-            if name not in super().__getattribute__("_fields"):
+            if name not in self._fields:
                 _class = super().__getattribute__("__class__")
                 raise AttributeError(f"{_class} doesn't have attribute {name}")
             if super().__getattribute__(name)._ref:
-                return super().__getattribute__(name)._ref
-            # else:
-            #    return NoData[super().__getattribute__(name)._params]()
+                return super().__getattribute__(name)._ref.data
+            else:
+                return super().__getattribute__(name).data
+
         return super().__getattribute__(name)
 
     def _validate_setattr_(self, name: str, value: Any) -> None:
@@ -2037,30 +2108,61 @@ class Traction(Base, metaclass=TractionMeta):
             if name not in self._fields and not self._config.allow_extra:
                 raise AttributeError(f"{self.__class__} doesn't have attribute {name}")
 
-        if name.startswith("i_") or name.startswith("o_") or name.startswith("a_"):
+        wrapped = True
+        if (
+            name.startswith("i_")
+            or name.startswith("o_")
+            or name.startswith("a_")
+            or name.startswith("r_")
+        ):
             vtype = value.__class__
             tt1 = TypeNode.from_type(vtype, subclass_check=True)
-            tt2 = TypeNode.from_type(self._fields[name])
-            if tt1 != tt2:  # and tt2 != tt1:
+            if (
+                tt1 == TypeNode.from_type(Arg[ANY])
+                or tt1 == TypeNode.from_type(STMDSingleIn[ANY])
+                or tt1 == TypeNode.from_type(Res[ANY])
+                or tt1 == TypeNode.from_type(Out[ANY])
+            ):
+                tt2 = TypeNode.from_type(self._fields[name])
+            else:
+                tt2 = TypeNode.from_type(self._fields[name]._params[0])
+                # Value is not wrapped in Arg, In, Out or Res
+                wrapped = False
+            if tt1 != tt2:
                 raise TypeError(
                     f"Cannot set attribute {self.__class__}.{name} to type {vtype}, "
-                    f"expected  {self._fields[name]}"
+                    f"expected  {tt2}"
                 )
 
         if name.startswith("i_"):
             # Need to check with hasattr first to make sure inputs can be initialized
             if hasattr(self, name):
-
                 # Allow overwrite default input values
-                if getattr(self, name) == self.__dataclass_fields__[name].default:
-                    self._no_validate_setattr_(name, value)
+                if super().__getattribute__(name) == self.__dataclass_fields__[
+                    name
+                ].default or TypeNode.from_type(
+                    super().__getattribute__(name)
+                ) == TypeNode.from_type(
+                    NoData[ANY]
+                ):
+                    if wrapped:
+                        self._no_validate_setattr_(name, value)
+                        self._no_validate_setattr_("_raw_" + name, value)
+                    else:
+                        wrapped_val = self._fields[name](data=value)
+                        self._no_validate_setattr_(name, wrapped_val)
+                        self._no_validate_setattr_("_raw_" + name, wrapped_val)
                     return
                 connected = (
-                    TypeNode.from_type(type(getattr(self, name)), subclass_check=False)
+                    TypeNode.from_type(type(getattr(self, "_raw_" + name)), subclass_check=False)
                     != TypeNode.from_type(NoData[ANY])
-                    and TypeNode.from_type(type(getattr(self, name)), subclass_check=False)
+                    and TypeNode.from_type(
+                        type(getattr(self, "_raw_" + name)), subclass_check=False
+                    )
                     != ANY_IN_TYPE_NODE
-                    and TypeNode.from_type(type(getattr(self, name)), subclass_check=False)
+                    and TypeNode.from_type(
+                        type(getattr(self, "_raw_" + name)), subclass_check=False
+                    )
                     != TypeNode.from_type(TIn[ANY])
                 )
                 if connected:
@@ -2068,20 +2170,72 @@ class Traction(Base, metaclass=TractionMeta):
 
             # in the case input is not set, initialize it
             elif not hasattr(self, name):
-                super().__setattr__(name, value)
-
-            super().__getattribute__(name)._ref = value
+                if wrapped:
+                    self._no_validate_setattr_(name, value)
+                    self._no_validate_setattr_("_raw_" + name, value)
+                    super().__getattribute__(name)._ref = value
+                else:
+                    self._no_validate_setattr_(name, self._fields[name](data=value))
             return
 
         elif name.startswith("o_"):
             if not hasattr(self, name):
                 # output is set for the first time
-                super().__setattr__(name, value)
+
+                if wrapped:
+                    super().__setattr__(name, self._fields[name](data=value.data))
+                else:
+                    self._no_validate_setattr_(name, self._fields[name](data=value))
             if not self.__getattribute_orig__(name)._owner:
                 self.__getattribute_orig__(name)._owner = self
                 self.__getattribute_orig__(name)._name = name
             # Do not overwrite whole output container, rather just copy update data
-            self.__getattribute_orig__(name).data = value.data
+            if wrapped:
+                self.__getattribute_orig__(name).data = value.data
+            else:
+                self.__getattribute_orig__(name).data = value
+            return
+        elif name.startswith("a_"):
+            # arg is set for the first time
+            if not hasattr(self, name):
+                if wrapped:
+                    super().__setattr__(name, value)
+                else:
+                    super().__setattr__(name, self._fields[name](a=value))
+            else:
+                if super().__getattribute__(name) == self.__dataclass_fields__[name].default:
+                    if wrapped:
+                        self._no_validate_setattr_(name, value)
+                    else:
+                        self._no_validate_setattr_(name, self._fields[name](a=value))
+                else:
+                    if wrapped:
+                        self.__getattribute_orig__(name).a = value.a
+                    else:
+                        self.__getattribute_orig__(name).a = value
+            return
+        elif name.startswith("r_"):
+            if not hasattr(self, name):
+                if wrapped:
+                    super().__setattr__(name, value)
+                else:
+                    super().__setattr__(name, self._fields[name](r=value))
+            else:
+                if super().__getattribute__(name) == self.__dataclass_fields__[name].default:
+                    if wrapped:
+                        self._no_validate_setattr_(name, value)
+                    else:
+                        self._no_validate_setattr_(name, self._fields[name](value))
+                else:
+                    if wrapped:
+                        if TypeNode.from_type(vtype, subclass_check=True) == TypeNode.from_type(
+                            TRes[ANY]
+                        ):
+                            self._no_validate_setattr_(name, value)
+                        else:
+                            self.__getattribute_orig__(name).r = value.r
+                    else:
+                        self.__getattribute_orig__(name).r = value
             return
 
         super().__setattr__(name, value)
@@ -2101,16 +2255,24 @@ class Traction(Base, metaclass=TractionMeta):
         for f in self._fields:
             if f.startswith("i_"):
                 if (
-                    hasattr(getattr(self, f), "_owner")
-                    and getattr(self, f)._owner
-                    and getattr(self, f)._owner != self
+                    hasattr(getattr(self, "_raw_" + f), "_owner")
+                    and getattr(self, "_raw_" + f)._owner
+                    and getattr(self, "_raw_" + f)._owner != self
                 ):
                     ret["$data"][f] = (
-                        getattr(self, f)._owner.fullname + "#" + getattr(self, f)._name
+                        getattr(self, "_raw_" + f)._owner.fullname
+                        + "#"
+                        + getattr(self, "_raw_" + f)._name
                     )
                 else:
-                    i_json = getattr(self, f).to_json()
+                    i_json = getattr(self, "_raw_" + f).to_json()
                     ret["$data"][f] = i_json
+            elif f.startswith("o_"):
+                ret["$data"][f] = getattr(self, "_raw_" + f).to_json()
+            elif f.startswith("a_"):
+                ret["$data"][f] = object.__getattribute__(self, f).to_json()
+            elif f.startswith("r_"):
+                ret["$data"][f] = object.__getattribute__(self, f).to_json()
             elif isinstance(getattr(self, f), (enum.Enum)):
                 ret["$data"][f] = getattr(self, f).value
             elif isinstance(getattr(self, f), (int, str, bool, float, type(None))):

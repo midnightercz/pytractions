@@ -1,6 +1,5 @@
 from pytractions.base import (
     TList,
-    Out,
     In,
 )
 
@@ -20,7 +19,7 @@ def test_flatten():
         ),
     )
     t_flatten.run()
-    assert t_flatten.o_flat == Out[TList[int]](data=TList[int]([1, 2, 3, 4]))
+    assert t_flatten.o_flat == TList[int]([1, 2, 3, 4])
 
 
 def test_filter_duplicates():
@@ -29,7 +28,7 @@ def test_filter_duplicates():
         i_list=In[TList[int]](data=TList[int]([1, 1, 1, 2])),
     )
     t_filter_duplicates.run()
-    assert t_filter_duplicates.o_list == Out[TList[int]](data=TList[int]([1, 2]))
+    assert t_filter_duplicates.o_list == TList[int]([1, 2])
 
 
 def test_list_multiplier():
@@ -39,4 +38,4 @@ def test_list_multiplier():
         i_scalar=In[str](data="a"),
     )
     t_list_multiplier.run()
-    assert t_list_multiplier.o_list == Out[TList[str]](data=TList[str](["a", "a", "a", "a", "a"]))
+    assert t_list_multiplier.o_list == TList[str](["a", "a", "a", "a", "a"])

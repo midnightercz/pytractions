@@ -55,7 +55,7 @@ class TestTraction(Traction):
     r_seq: Res[Seq]
 
     def _run(self, on_update: OnUpdateCallable) -> None:
-        self.o_output.data = self.i_input.data + self.r_seq.r.inc()
+        self.o_output = self.i_input + self.r_seq.inc()
 
 
 class TestTractor(Tractor):
@@ -65,8 +65,12 @@ class TestTractor(Tractor):
     r_seq: Res[Seq] = TRes[Seq]()
 
     t_t1: TestTraction = TestTraction(uid="1", i_input=i_in1, r_seq=r_seq)
+    print(t_t1)
 
-    o_out1: Out[int] = t_t1.o_output
+    o_out1: Out[int] = t_t1._raw_o_output
+
+
+print("----")
 
 
 class TestTractor2(Tractor):
@@ -75,15 +79,19 @@ class TestTractor2(Tractor):
     i_in1: In[int] = TIn()
     r_seq: Res[Seq] = TRes[Seq]()
 
+    print("R_SEQ", r_seq, id(r_seq))
+
     t_tractor1: TestTractor = TestTractor(uid="1", i_in1=i_in1, r_seq=r_seq)
 
-    o_out1: Out[int] = t_tractor1.o_out1
+    print(object.__getattribute__(t_tractor1, "r_seq"))
+
+    o_out1: Out[int] = t_tractor1._raw_o_out1
 
 
 def test_tractor_nested():
     seq = Seq(val=10)
     t = TestTractor2(uid="1", i_in1=In[int](data=1), r_seq=Res[Seq](r=seq))
     t.run()
-    assert t.o_out1.data == 12
-    assert t.tractions["t_tractor1"].o_out1.data == 12
-    assert t.tractions["t_tractor1"].i_in1.data == 1
+    assert t.o_out1 == 12
+    assert t.tractions["t_tractor1"].o_out1 == 12
+    assert t.tractions["t_tractor1"].i_in1 == 1

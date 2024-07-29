@@ -47,7 +47,7 @@ def _execute_traction(uid, traction, inputs, args, resources, on_update=None):
     outputs = {}
     for o in traction._fields:
         if o.startswith("o_"):
-            outputs[o] = getattr(traction, o).data
+            outputs[o] = getattr(traction, o)
     return outputs
 
 
@@ -65,7 +65,7 @@ class ProcessPoolExecutor(Executor):
     def init(self):
         """Start the executor."""
         if not self._inited:
-            self._executor = _ThreadPoolExecutor(max_workers=self.pool_size)
+            self._executor = _ProcessPoolExecutor(max_workers=self.pool_size)
 
     def shutdown(self):
         """Shutdown the executor."""

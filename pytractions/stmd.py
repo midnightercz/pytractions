@@ -190,7 +190,7 @@ _loop_executor = LoopExecutor()
 class STMD(Traction, metaclass=STMDMeta):
     """STMD class."""
 
-    _TYPE: str = "STMD"
+    _TYPE: ClassVar[str] = "STMD"
     uid: str
     state: str = TractionState.READY
     skip: bool = False
@@ -245,14 +245,12 @@ class STMD(Traction, metaclass=STMDMeta):
         """Prepare tractions for the run."""
         if self.state == TractionState.READY:
             self.tractions_state.clear()
-            self.tractions_state.extend(
-                TList[TractionState]([TractionState.READY] * len(first_in.data))
-            )
+            self.tractions_state.extend(TList[TractionState]([TractionState.READY] * len(first_in)))
 
             for o in outputs:
-                o_type = getattr(self, o).data._params[0]
-                for i in range(len(first_in.data)):
-                    getattr(self, o).data.append(o_type())
+                o_type = getattr(self, "_raw_" + o).data._params[0]
+                for i in range(len(first_in)):
+                    getattr(self, "_raw_" + o).data.append(o_type())
 
     def run(
         self,
@@ -286,35 +284,33 @@ class STMD(Traction, metaclass=STMDMeta):
                 outputs[f] = getattr(self, f)
 
         inputs = []
-        for i in range(len(getattr(self, first_in_field).data)):
+        for i in range(len(getattr(self, first_in_field))):
             inputs.append({})
             for f, ftype in self._fields.items():
                 if f.startswith("i_"):
-                    if getattr(self, f).data is None:
+                    if getattr(self, f) is None:
                         raise ValueError(f"{self.fullname}: No input data for '{f}'")
                     if TypeNode.from_type(
                         self._fields[f], subclass_check=False
-                    ) != TypeNode.from_type(STMDSingleIn[ANY]) and len(
-                        getattr(self, f).data
-                    ) != len(
-                        getattr(self, first_in_field).data
+                    ) != TypeNode.from_type(STMDSingleIn[ANY]) and len(getattr(self, f)) != len(
+                        getattr(self, first_in_field)
                     ):
                         raise ValueError(
                             f"{self.__class__}: Input {f} has length"
-                            f" {len(getattr(self, f).data)} but "
-                            f"others have length {len(getattr(self, first_in_field).data)}"
+                            f" {len(getattr(self, f))} but "
+                            f"others have length {len(getattr(self, first_in_field))}"
                         )
 
                     if TypeNode.from_type(
                         self._fields[f], subclass_check=False
                     ) == TypeNode.from_type(STMDSingleIn[ANY]):
-                        inputs[i][f] = In.__class_getitem__(*getattr(self, f)._params)(
-                            data=getattr(self, f).data
+                        inputs[i][f] = In.__class_getitem__(*getattr(self, "_raw_" + f)._params)(
+                            data=getattr(self, f)
                         )
                     else:
-                        inputs[i][f] = In.__class_getitem__(*getattr(self, f)._params[0]._params)(
-                            data=getattr(self, f).data[i]
-                        )
+                        inputs[i][f] = In.__class_getitem__(
+                            *getattr(self, "_raw_" + f)._params[0]._params
+                        )(data=getattr(self, f)[i])
         args = {}
         for f, ftype in self._fields.items():
             if f.startswith("a_"):
@@ -333,23 +329,23 @@ class STMD(Traction, metaclass=STMDMeta):
         self.state = TractionState.RUNNING
         _on_update(self)
 
-        self.a_executor.a.init()
-        for i in range(0, len(getattr(self, first_in_field).data)):
+        self.a_executor.init()
+        for i in range(0, len(getattr(self, first_in_field))):
             if self.tractions_state[i] in (
                 TractionState.READY,
                 TractionState.ERROR,
             ):
                 uid = "%s:%d" % (self.uid, i)
-                self.a_executor.a.execute(
+                self.a_executor.execute(
                     uid, self._traction, inputs[i], args, resources, on_update=_on_update
                 )
 
-        uids = ["%s:%d" % (self.uid, i) for i in range(len(getattr(self, first_in_field).data))]
-        for uid, out in self.a_executor.a.get_outputs(uids).items():
+        uids = ["%s:%d" % (self.uid, i) for i in range(len(getattr(self, first_in_field)))]
+        for uid, out in self.a_executor.get_outputs(uids).items():
             index = uids.index(uid)
             for o in out:
-                getattr(self, o).data[index] = out[o]
-        #self.a_executor.a.shutdown()
+                getattr(self, o)[index] = out[o]
+        # self.a_executor.a.shutdown()
 
         self.state = TractionState.FINISHED
         _on_update(self)
