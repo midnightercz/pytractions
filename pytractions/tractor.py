@@ -14,6 +14,7 @@ from .base import (
     Arg,
     MultiArg,
     STMDSingleIn,
+    In,
     Out,
     Res,
     ANY,
@@ -25,6 +26,11 @@ from .base import (
     NoData,
     TRes,
     isodate_now,
+    ANY_IN_TYPE_NODE,
+    ANY_OUT_TYPE_NODE,
+    ANY_ARG_TYPE_NODE,
+    ANY_RES_TYPE_NODE,
+    is_wrapped
 )
 from .exc import UninitiatedResource
 
@@ -53,26 +59,39 @@ class TractorMeta(TractionMeta):
             "details",
             "tractions",
         ):
+            type_type_node = TypeNode.from_type(type_, subclass_check=False)
             if attr.startswith("i_"):
-                if TypeNode.from_type(type_, subclass_check=True) != TypeNode.from_type(
-                    STMDSingleIn[ANY]
+                if (
+                    type_type_node == ANY_OUT_TYPE_NODE
+                    or type_type_node == ANY_ARG_TYPE_NODE
+                    or type_type_node == ANY_RES_TYPE_NODE
                 ):
                     raise TypeError(
                         f"Attribute {attr} has to be type STMDSingleIn[ANY], In[ANY], or TIn[ANY] "
                         f"but is {type_}"
                     )
             elif attr.startswith("o_"):
-                if type_type_node != TypeNode.from_type(Out[ANY]):
+                if (
+                    type_type_node == ANY_IN_TYPE_NODE
+                    or type_type_node == ANY_ARG_TYPE_NODE
+                    or type_type_node == ANY_RES_TYPE_NODE
+                ):
                     raise TypeError(f"Attribute {attr} has to be type Out[ANY], but is {type_}")
             elif attr.startswith("a_"):
-                if type_type_node != TypeNode.from_type(Arg[ANY]) and TypeNode.from_type(
-                    type_, subclass_check=True
-                ) != TypeNode.from_type(MultiArg):
+                if (
+                    type_type_node == ANY_IN_TYPE_NODE
+                    or type_type_node == ANY_OUT_TYPE_NODE
+                    or type_type_node == ANY_RES_TYPE_NODE
+                ):
                     raise TypeError(
                         f"Attribute {attr} has to be type Arg[ANY] or MultiArg, but is {type_}"
                     )
             elif attr.startswith("r_"):
-                if type_type_node != TypeNode.from_type(Res[ANY]):
+                if (
+                    type_type_node == ANY_IN_TYPE_NODE
+                    or type_type_node == ANY_OUT_TYPE_NODE
+                    or type_type_node == ANY_ARG_TYPE_NODE
+                ):
                     raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
             elif attr.startswith("t_"):
                 if TypeNode.from_type(type_, subclass_check=True) != TypeNode.from_type(Traction):
@@ -172,7 +191,7 @@ class TractorMeta(TractionMeta):
                     if TypeNode.from_type(type(tfo), subclass_check=False) != TypeNode.from_type(
                         NoData[ANY]
                     ):
-                        if id(object.__getattribute__(_traction, tf)) not in outputs_all:
+                        if id(tfo) not in outputs_all and id(tfo.data) not in outputs_all:
                             raise ValueError(
                                 f"Input {_traction.__class__}[{_traction.uid}]->{tf} is mapped to "
                                 "output which is not known yet"
@@ -180,6 +199,9 @@ class TractorMeta(TractionMeta):
                     if id(tfo) in outputs_map:
                         io_map[(t, tf)] = outputs_map[id(tfo)]
                         wave = max(output_waves[id(tfo)], wave)
+                    elif id(tfo.data) in outputs_map:
+                        io_map[(t, tf)] = outputs_map[id(tfo.data)]
+                        wave = max(output_waves[id(tfo.data)], wave)
             traction_waves[t] = wave + 1
 
             for tf in _traction._fields:
@@ -193,14 +215,18 @@ class TractorMeta(TractionMeta):
                     if TypeNode.from_type(type(tfo), subclass_check=False) != TypeNode.from_type(
                         NoData[ANY]
                     ):
-                        if id(object.__getattribute__(_traction, tf)) not in outputs_all:
+                        if id(tfo.data) not in outputs_all and id(tfo) not in outputs_all:
                             raise ValueError(
                                 f"Input {_traction.__class__}[{_traction.uid}]->{tf} is mapped to "
                                 "output which is not known yet"
                             )
                     if id(tfo) in outputs_map:
                         io_map[(t, tf)] = outputs_map[id(tfo)]
+                    if id(tfo.data) in outputs_map:
+                        io_map[(t, tf)] = outputs_map[id(tfo.data)]
                 elif tf.startswith("r_"):
+                    if id(tfo.r) in resources:
+                        resources_map[(t, tf)] = resources[id(tfo)]
                     if id(tfo) in resources:
                         resources_map[(t, tf)] = resources[id(tfo)]
                     else:
@@ -209,8 +235,14 @@ class TractorMeta(TractionMeta):
                 elif tf.startswith("a_") and id(tfo) in args:
                     args_map[(t, tf)] = args[id(tfo)]
 
+                elif tf.startswith("a_") and id(tfo.a) in args:
+                    args_map[(t, tf)] = args[id(tfo.a)]
+
                 elif tf.startswith("a_") and id(tfo) in margs:
                     args_map[(t, tf)] = margs[id(tfo)]
+
+                elif tf.startswith("a_") and id(tfo.a) in margs:
+                    args_map[(t, tf)] = margs[id(tfo.a)]
 
                 elif tf.startswith("a_") and TypeNode.from_type(
                     type(tfo), subclass_check=True
@@ -510,7 +542,7 @@ class MultiTractor(Tractor, metaclass=TractorMeta):
 
     _TYPE: ClassVar[str] = "MULTITRACTOR"
     uid: str
-    a_pool_size: Arg[int] = dataclasses.field(default=5)
+    a_pool_size: Arg[int] = Arg[int](a=5)
     state: str = "ready"
     skip: bool = False
     skip_reason: Optional[str] = ""

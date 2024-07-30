@@ -310,7 +310,6 @@ def test_traction_json(fixture_isodate_now):
         o_out1: Out[int]
 
         def _run(self, on_update) -> None:  # pragma: no cover
-            print("IN", self.i_in1)
             self.o_out1 = self.i_in1 + 10
 
     t1 = TTest1(uid="1")
@@ -499,7 +498,6 @@ def test_tractor_run() -> None:
         a_reducer: Arg[float]
 
         def _run(self, on_update) -> None:  # pragma: no cover
-            print("IN", self.i_in1, id(self._raw_i_in1))
             self.o_out1 = (self.i_in1 + 1) / float(self.a_reducer)
 
     class TestTractor(Tractor):
@@ -513,16 +511,12 @@ def test_tractor_run() -> None:
         t_ttest3: TTest2 = TTest2(uid="3", a_reducer=a_reducer)
         t_ttest4: TTest2 = TTest2(uid="4", a_reducer=a_reducer)
 
-        print(">>>----------")
-
         t_ttest1.i_in1 = i_in1
-        print("T I IN", id(i_in1), id(t_ttest1._raw_i_in1))
 
         t_ttest2.i_in1 = t_ttest1._raw_o_out1
         t_ttest3.i_in1 = t_ttest2._raw_o_out1
         t_ttest4.i_in1 = t_ttest3._raw_o_out1
 
-        print("----------<<<")
 
         o_out1: Out[float] = t_ttest4._raw_o_out1
 

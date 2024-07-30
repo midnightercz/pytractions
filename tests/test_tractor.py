@@ -8,22 +8,22 @@ def test_tractor_attr():
     with pytest.raises(TypeError):
 
         class TT1(Tractor):
-            i_in1: int
+            i_in1: Out[int]
 
     with pytest.raises(TypeError):
 
         class TT2(Tractor):
-            o_out1: int
+            o_out1: In[int]
 
     with pytest.raises(TypeError):
 
         class TT3(Tractor):
-            a_arg1: int
+            a_arg1: Res[int]
 
     with pytest.raises(TypeError):
 
         class TT4(Tractor):
-            r_res1: int
+            r_res1: In[int]
 
     with pytest.raises(TypeError):
 

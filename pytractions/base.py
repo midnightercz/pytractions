@@ -1859,7 +1859,11 @@ class TractionMeta(BaseMeta):
                         f"Attribute {attr} has to be type Arg[ANY] or MultiArg, but is {type_}"
                     )
             elif attr.startswith("r_"):
-                if type_type_node != ANY_RES_TYPE_NODE:
+                if (
+                    type_type_node == ANY_IN_TYPE_NODE
+                    or type_type_node == ANY_OUT_TYPE_NODE
+                    or type_type_node == ANY_ARG_TYPE_NODE
+                ):
                     raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
             elif attr == "d_":
                 if type_type_node != TypeNode.from_type(str):
@@ -1907,46 +1911,40 @@ class TractionMeta(BaseMeta):
             # Do not include outputs in init
             if f.startswith("a_"):
                 if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Arg[ANY]):
-                    attrs[f] = Arg[ftype]
-                    ftype = attrs[f]
-                    attrs["_fields"][f] = ftype
+                    attrs["_fields"][f] =  Arg[ftype]
             if f.startswith("i_"):
                 if TypeNode.from_type(ftype) != TypeNode.from_type(STMDSingleIn[ANY]):
-                    attrs[f] = In[ftype]
-                    ftype = attrs[f]
-                    attrs["_fields"][f] = ftype
+                    attrs["_fields"][f] = In[ftype]
                 if f.startswith("i_") and f not in attrs:
-                    attrs[f] = dataclasses.field(default_factory=NoData[ftype._params])
+                    attrs[f] = dataclasses.field(default_factory=NoData[attrs["_fields"][f]._params])
             if f.startswith("r_"):
                 if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Res[ANY]):
-                    attrs[f] = Res[ftype]
-                    ftype = attrs[f]
-                    attrs["_fields"][f] = ftype
+                    attrs["_fields"][f] = Res[ftype]
 
-            if f.startswith("o_") and f not in attrs:
+            if f.startswith("o_"):
                 if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Out[ANY]):
-                    attrs[f] = Out[ftype]
-                    ftype = attrs[f]
-                    attrs["_fields"][f] = ftype
+                    attrs["_fields"][f] = Out[ftype]
 
-                if inspect.isclass(ftype._params[0]) and issubclass(ftype._params[0], Base):
-                    for ff, fft in ftype._params[0]._fields.items():
-                        df = ftype._params[0].__dataclass_fields__[ff]
+                ftype_final = ftype._params[0] if is_wrapped(ftype) else ftype
+
+                if inspect.isclass(ftype_final) and issubclass(ftype_final, Base):
+                    for ff, fft in ftype._fields.items():
+                        df = ftype.__dataclass_fields__[ff]
                         if (
                             df.default is dataclasses.MISSING
                             and df.default_factory is dataclasses.MISSING
                         ):
                             raise TypeError(
-                                f"Cannot use {ftype._params[0]} for output, as it "
+                                f"Cannot use {ftype} for output, as it "
                                 f"doesn't have default value for field {ff}"
                             )
-                attrs[f] = dataclasses.field(
-                    init=False,
-                    default_factory=DefaultOut(type_=ftype._params[0], params=(ftype._params)),
-                )
+                if f not in attrs:
+                    attrs[f] = dataclasses.field(
+                        init=False,
+                        default_factory=DefaultOut(type_=ftype_final, params=(attrs["_fields"][f]._params)),
+                    )
             # Set all inputs to NoData after as default
 
-        print("ATTRS", attrs)
         # attrs["_fields"] = {
         #    k: v for k, v in attrs.get("__annotations__", {}).items() if not k.startswith("_")
         # }
@@ -1978,6 +1976,18 @@ class TractionState(str, enum.Enum):
 
 OnUpdateCallable = Callable[[_Traction], None]
 OnErrorCallable = Callable[[_Traction], None]
+
+
+def is_wrapped(objcls):
+    tt1 = TypeNode.from_type(objcls, subclass_check=True)
+    if (
+        tt1 == TypeNode.from_type(Arg[ANY])
+        or tt1 == TypeNode.from_type(STMDSingleIn[ANY])
+        or tt1 == TypeNode.from_type(Res[ANY])
+        or tt1 == TypeNode.from_type(Out[ANY])
+    ):
+        return True
+    return False
 
 
 class Traction(Base, metaclass=TractionMeta):
@@ -2117,12 +2127,7 @@ class Traction(Base, metaclass=TractionMeta):
         ):
             vtype = value.__class__
             tt1 = TypeNode.from_type(vtype, subclass_check=True)
-            if (
-                tt1 == TypeNode.from_type(Arg[ANY])
-                or tt1 == TypeNode.from_type(STMDSingleIn[ANY])
-                or tt1 == TypeNode.from_type(Res[ANY])
-                or tt1 == TypeNode.from_type(Out[ANY])
-            ):
+            if is_wrapped(vtype):
                 tt2 = TypeNode.from_type(self._fields[name])
             else:
                 tt2 = TypeNode.from_type(self._fields[name]._params[0])
@@ -2181,7 +2186,6 @@ class Traction(Base, metaclass=TractionMeta):
         elif name.startswith("o_"):
             if not hasattr(self, name):
                 # output is set for the first time
-
                 if wrapped:
                     super().__setattr__(name, self._fields[name](data=value.data))
                 else:
