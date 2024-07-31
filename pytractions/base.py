@@ -2234,7 +2234,7 @@ class Traction(Base, metaclass=TractionMeta):
                     if wrapped:
                         self._no_validate_setattr_(name, value)
                     else:
-                        self._no_validate_setattr_(name, self._fields[name](value))
+                        self._no_validate_setattr_(name, self._fields[name](r=value))
                 else:
                     if wrapped:
                         if TypeNode.from_type(vtype, subclass_check=True) == TypeNode.from_type(

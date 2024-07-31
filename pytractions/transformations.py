@@ -37,7 +37,7 @@ class Extractor(Traction, Generic[T, X]):
     o_model: Out[X]
 
     def _run(self, on_update: OnUpdateCallable):
-        self.o_model = getattr("_raw_" + self.i_model, self.a_field.a)
+        self.o_model = getattr(self.i_model, self.a_field)
 
 
 class ListMultiplier(Traction, Generic[T, X]):
