@@ -131,7 +131,7 @@ def test_stmd_attr_validation():
 
         class TestSTMD1(STMD):
             _traction: Type[Traction] = EmptyTraction
-            i_input: In[int]
+            i_input: Out[int]
             o_output: Out[TList[Out[int]]]
             r_res: Res[NOPResource]
             a_arg: Arg[int]
@@ -142,7 +142,7 @@ def test_stmd_attr_validation():
         class TestSTMD2(STMD):
             _traction: Type[Traction] = EmptyTraction
             i_input: In[TList[In[int]]]
-            o_output: TList[Out[int]]
+            o_output: Res[TList[Arg[int]]]
             r_res: Res[NOPResource]
             a_arg: Arg[int]
 
@@ -156,7 +156,7 @@ def test_stmd_attr_validation():
             r_res: Arg[NOPResource]
             a_arg: Arg[int]
 
-    # wrong resource
+    # wrong arg
     with pytest.raises(TypeError):
 
         class TestSTMD4(STMD):

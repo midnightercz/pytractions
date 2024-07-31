@@ -22,6 +22,11 @@ from .base import (
     TractionStats,
     on_update_empty,
     OnUpdateCallable,
+    ANY_IN_TYPE_NODE,
+    ANY_OUT_TYPE_NODE,
+    ANY_RES_TYPE_NODE,
+    ANY_ARG_TYPE_NODE,
+    is_wrapped
 )
 from .executor import ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor
 from .types import TypeNode
@@ -53,27 +58,34 @@ class STMDMeta(TractionMeta):
             "tractions_state",
         ):
             if attr.startswith("i_"):
-                child_input_type = all_attrs["_traction"]._fields[attr]._params[0]
-                if type_type_node != TypeNode.from_type(
-                    In[TList[child_input_type]]
-                ) and TypeNode.from_type(type_, subclass_check=False) != TypeNode.from_type(
-                    STMDSingleIn[child_input_type]
+                if (
+                    type_type_node == ANY_OUT_TYPE_NODE
+                    or type_type_node == ANY_ARG_TYPE_NODE
+                    or type_type_node == ANY_RES_TYPE_NODE
+                ):
+                    raise TypeError(f"Attribute {attr} has to be type In[ANY], but is {type_}")
+            elif attr.startswith("o_"):
+                if (
+                    type_type_node == ANY_IN_TYPE_NODE
+                    or type_type_node == ANY_ARG_TYPE_NODE
+                    or type_type_node == ANY_RES_TYPE_NODE
+                ):
+                    raise TypeError(f"Attribute {attr} has to be type Out[ANY], but is {type_}")
+            elif attr.startswith("a_"):
+                if (
+                    type_type_node == ANY_IN_TYPE_NODE
+                    or type_type_node == ANY_OUT_TYPE_NODE
+                    or type_type_node == ANY_RES_TYPE_NODE
                 ):
                     raise TypeError(
-                        f"Attribute {attr} has to be type In[TList[ANY]] or STMDSingleIn[ANY], "
-                        f"but is {type_}"
+                        f"Attribute {attr} has to be type Arg[ANY] or MultiArg, but is {type_}"
                     )
-            elif attr.startswith("o_"):
-                child_input_type = all_attrs["_traction"]._fields[attr]._params[0]
-                if type_type_node != TypeNode.from_type(Out[TList[child_input_type]]):
-                    raise TypeError(
-                        f"Attribute {attr} has to be type Out[TList[ANY]], but is {type_}"
-                    )
-            elif attr.startswith("a_"):
-                if type_type_node != TypeNode.from_type(Arg[ANY]):
-                    raise TypeError(f"Attribute {attr} has to be type Arg[ANY], but is {type_}")
             elif attr.startswith("r_"):
-                if type_type_node != TypeNode.from_type(Res[ANY]):
+                if (
+                    type_type_node == ANY_IN_TYPE_NODE
+                    or type_type_node == ANY_OUT_TYPE_NODE
+                    or type_type_node == ANY_ARG_TYPE_NODE
+                ):
                     raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
             elif attr == "d_":
                 if type_type_node != TypeNode.from_type(str):
@@ -135,21 +147,31 @@ class STMDMeta(TractionMeta):
         for f, ftype in attrs["_fields"].items():
             # Do not include outputs in init
             if f.startswith("o_") and f not in attrs:
-                if inspect.isclass(ftype._params[0]) and issubclass(ftype._params[0], Base):
-                    for ff, ft in ftype._params[0]._fields.items():
-                        df = ftype._params[0].__dataclass_fields__[f]
+                if is_wrapped(ftype):
+                    _ftype = ftype._params[0]
+                else:
+                    _ftype = ftype
+                if inspect.isclass(_ftype) and issubclass(_ftype, Base):
+                    for ff, ft in _ftype._fields.items():
+                        df = _ftype.__dataclass_fields__[f]
                         if (
                             df.default is dataclasses.MISSING
                             and df.default_factory is dataclasses.MISSING
                         ):
                             raise TypeError(
-                                f"Cannot use {ftype._params[0]} for output, as it "
+                                f"Cannot use {_ftype} for output, as it "
                                 f"doesn't have default value for field {ff}"
                             )
-                attrs[f] = dataclasses.field(
-                    init=False,
-                    default_factory=DefaultOut(type_=ftype._params[0], params=(ftype._params)),
-                )
+                if is_wrapped(ftype):
+                    attrs[f] = dataclasses.field(
+                        init=False,
+                        default_factory=DefaultOut(type_=ftype._params[0], params=ftype._params),
+                    )
+                else:
+                    attrs[f] = dataclasses.field(
+                        init=False,
+                        default_factory=DefaultOut(type_=ftype, params=(ftype,)),
+                    )
 
             # Set all inputs to NoData after as default
             if f.startswith("i_") and f not in attrs:

@@ -2141,7 +2141,7 @@ class Traction(Base, metaclass=TractionMeta):
             if tt1 != tt2:
                 raise TypeError(
                     f"Cannot set attribute {self.__class__}.{name} to type {vtype}, "
-                    f"expected  {tt2}"
+                    f"expected  {tt2.to_type()}"
                 )
 
         if name.startswith("i_"):
