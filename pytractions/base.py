@@ -425,10 +425,15 @@ class Base(ABase, metaclass=BaseMeta):
         # therefore has to compare with id() to get good param replacement
         _param_ids = tuple([id(p) for p in param]) if isinstance(param, tuple) else (id(param),)
         qname = cls._make_qualname(cls, _params)
+
         # if there's already existing class, return it instead
-        if qname in sys.modules[cls.__module__].__dict__:
-            ret = sys.modules[cls.__module__].__dict__[qname]
+        if f"{id(cls)}[{_param_ids}]" in cls._generic_cache:
+            ret = cls._generic_cache[f"{id(cls)}[{_param_ids}]"]
             return ret
+
+        #if qname in sys.modules[cls.__module__].__dict__:
+        #    ret = sys.modules[cls.__module__].__dict__[qname]
+        #    return ret
 
         bases = [x for x in resolve_bases([cls] + list(cls.__bases__)) if x is not Generic]
         attrs = {k: v for k, v in cls._attrs.items() if k not in ("_attrs", "_fields")}
@@ -2187,7 +2192,7 @@ class Traction(Base, metaclass=TractionMeta):
             if not hasattr(self, name):
                 # output is set for the first time
                 if wrapped:
-                    super().__setattr__(name, self._fields[name](data=value.data))
+                    self._no_validate_setattr_(name, self._fields[name](data=value.data))
                 else:
                     self._no_validate_setattr_(name, self._fields[name](data=value))
             if not self.__getattribute_orig__(name)._owner:
@@ -2203,9 +2208,9 @@ class Traction(Base, metaclass=TractionMeta):
             # arg is set for the first time
             if not hasattr(self, name):
                 if wrapped:
-                    super().__setattr__(name, value)
+                    self._no_validate_setattr_(name, value)
                 else:
-                    super().__setattr__(name, self._fields[name](a=value))
+                    self._no_validate_setattr_(name, self._fields[name](a=value))
             else:
                 if super().__getattribute__(name) == self.__dataclass_fields__[name].default:
                     if wrapped:
@@ -2221,9 +2226,9 @@ class Traction(Base, metaclass=TractionMeta):
         elif name.startswith("r_"):
             if not hasattr(self, name):
                 if wrapped:
-                    super().__setattr__(name, value)
+                    self._no_validate_setattr_(name, value)
                 else:
-                    super().__setattr__(name, self._fields[name](r=value))
+                    self._no_validate_setattr_(name, self._fields[name](r=value))
             else:
                 if super().__getattribute__(name) == self.__dataclass_fields__[name].default:
                     if wrapped:

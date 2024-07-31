@@ -63,14 +63,8 @@ class TestTractor(Tractor):
 
     i_in1: In[int] = TIn[int]()
     r_seq: Res[Seq] = TRes[Seq]()
-
     t_t1: TestTraction = TestTraction(uid="1", i_input=i_in1, r_seq=r_seq)
-    print(t_t1)
-
     o_out1: Out[int] = t_t1._raw_o_output
-
-
-print("----")
 
 
 class TestTractor2(Tractor):
@@ -78,13 +72,7 @@ class TestTractor2(Tractor):
 
     i_in1: In[int] = TIn()
     r_seq: Res[Seq] = TRes[Seq]()
-
-    print("R_SEQ", r_seq, id(r_seq))
-
     t_tractor1: TestTractor = TestTractor(uid="1", i_in1=i_in1, r_seq=r_seq)
-
-    print(object.__getattribute__(t_tractor1, "r_seq"))
-
     o_out1: Out[int] = t_tractor1._raw_o_out1
 
 

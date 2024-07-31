@@ -103,8 +103,8 @@ class Calculator(Tractor):
 
     i_inputs: In[TList[float]] = In[TList[float]]()
     i_coeficient: STMDSingleIn[float] = STMDSingleIn[float]()
-    a_executor: Arg[Union[LoopExecutor, ProcessPoolExecutor, ThreadPoolExecutor]] = Arg[
-        Union[LoopExecutor, ProcessPoolExecutor, ThreadPoolExecutor]
+    a_executor: Arg[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]] = Arg[
+        Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]
     ](a=ThreadPoolExecutor(pool_size=30))
 
     t_double: STMDDouble = STMDDouble(
@@ -331,7 +331,7 @@ def test_stmd_threads(fixture_isodate_now) -> None:
     thread_pool_executor = ThreadPoolExecutor(pool_size=1)
     stmd1 = TestSTMD(
         uid="tt1",
-        a_executor=Arg[Union[ThreadPoolExecutor, ProcessPoolExecutor, LoopExecutor]](
+        a_executor=Arg[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]](
             a=thread_pool_executor
         ),
         a_multiplier=Arg[float](a=10.0),
@@ -372,7 +372,7 @@ def test_stmd_processes(fixture_isodate_now) -> None:
     )
     stmd1 = GTestSTMD(
         uid="tt1",
-        a_executor=Arg[Union[ThreadPoolExecutor, ProcessPoolExecutor, LoopExecutor]](
+        a_executor=Arg[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]](
             a=process_pool_executor
         ),
         a_multiplier=Arg[float](a=10.0),
@@ -403,7 +403,7 @@ def test_wrap_stmd(fixture_isodate_now) -> None:
 
     stmd1 = STMD.wrap(G_TTest1)(
         uid="tt1",
-        a_executor=Arg[Union[ThreadPoolExecutor, ProcessPoolExecutor, LoopExecutor]](
+        a_executor=Arg[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]](
             a=thread_pool_executor
         ),
         a_multiplier=Arg[float](a=10.0),
