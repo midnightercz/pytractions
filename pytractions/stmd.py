@@ -7,7 +7,6 @@ from types import prepare_class
 from .base import (
     Base,
     ANY,
-    Res,
     Arg,
     In,
     Out,
@@ -26,7 +25,7 @@ from .base import (
     ANY_OUT_TYPE_NODE,
     ANY_RES_TYPE_NODE,
     ANY_ARG_TYPE_NODE,
-    is_wrapped
+    is_wrapped,
 )
 from .executor import ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor
 from .types import TypeNode

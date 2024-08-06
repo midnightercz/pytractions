@@ -442,12 +442,12 @@ def test_base_type_nested_to_json():
 
 
 def test_type_union():
-    print('---')
+    print("---")
     t1 = TypeNode.from_type(Union[int, str])
     t2 = TypeNode.from_type(Union[str, int])
-    print('---')
+    print("---")
     assert t1 == t2
-    print('---')
+    print("---")
 
 
 # Test Generics

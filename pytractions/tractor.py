@@ -13,10 +13,6 @@ from .base import (
     TractionMeta,
     Arg,
     MultiArg,
-    STMDSingleIn,
-    In,
-    Out,
-    Res,
     ANY,
     TypeNode,
     OnUpdateCallable,
@@ -30,7 +26,6 @@ from .base import (
     ANY_OUT_TYPE_NODE,
     ANY_ARG_TYPE_NODE,
     ANY_RES_TYPE_NODE,
-    is_wrapped
 )
 from .exc import UninitiatedResource
 

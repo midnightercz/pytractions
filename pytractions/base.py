@@ -425,14 +425,13 @@ class Base(ABase, metaclass=BaseMeta):
         # param ids for caching as TypeVars are class instances
         # therefore has to compare with id() to get good param replacement
         _param_ids = tuple([id(p) for p in param]) if isinstance(param, tuple) else (id(param),)
-        qname = cls._make_qualname(cls, _params)
 
         # if there's already existing class, return it instead
         if f"{id(cls)}[{_param_ids}]" in cls._generic_cache:
             ret = cls._generic_cache[f"{id(cls)}[{_param_ids}]"]
             return ret
 
-        #if qname in sys.modules[cls.__module__].__dict__:
+        # if qname in sys.modules[cls.__module__].__dict__:
         #    ret = sys.modules[cls.__module__].__dict__[qname]
         #    return ret
 
@@ -698,8 +697,8 @@ class Base(ABase, metaclass=BaseMeta):
                 for o_cls in obj_uargs:
                     init_fields = {}
                     for f in _json_dict:
-                        _f = ([
-                            k for k, v in o_cls._SERIALIZE_REPLACE_FIELDS.items() if v == f] or [f]
+                        _f = (
+                            [k for k, v in o_cls._SERIALIZE_REPLACE_FIELDS.items() if v == f] or [f]
                         )[0]
                         if _f in o_cls._fields:
                             ftype = o_cls._fields[_f]
@@ -707,7 +706,13 @@ class Base(ABase, metaclass=BaseMeta):
                                 init_fields[_f] = _json_dict[f]
                             else:
                                 stack.append(
-                                    ((ftype,), _f, _json_dict[f], init_fields, parent_path + f".{_f}")
+                                    (
+                                        (ftype,),
+                                        _f,
+                                        _json_dict[f],
+                                        init_fields,
+                                        parent_path + f".{_f}",
+                                    )
                                 )
                         else:
                             # In this situation field which is uknown to the class is added
@@ -805,7 +810,9 @@ class Base(ABase, metaclass=BaseMeta):
                             )
                         )
                     else:
-                        _f = ([k for k, v in cls._SERIALIZE_REPLACE_FIELDS.items() if v == f] or [f])[0]
+                        _f = (
+                            [k for k, v in cls._SERIALIZE_REPLACE_FIELDS.items() if v == f] or [f]
+                        )[0]
                         stack.append((ftype, current_parent[parent_key], _f, None))
             else:
                 current_parent[parent_key] = {
@@ -882,8 +889,9 @@ class Base(ABase, metaclass=BaseMeta):
 
         while stack:
             parent_args, parent_key, data, type_, type_args = stack.pop(0)
-            _parent_key = ([
-                k for k, v in cls._SERIALIZE_REPLACE_FIELDS.items() if v == parent_key] or [parent_key]
+            _parent_key = (
+                [k for k, v in cls._SERIALIZE_REPLACE_FIELDS.items() if v == parent_key]
+                or [parent_key]
             )[0]
             if hasattr(type_, "__qualname__") and type_.__qualname__ in (
                 "Optional",
@@ -1926,12 +1934,14 @@ class TractionMeta(BaseMeta):
             # Do not include outputs in init
             if f.startswith("a_"):
                 if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Arg[ANY]):
-                    attrs["_fields"][f] =  Arg[ftype]
+                    attrs["_fields"][f] = Arg[ftype]
             if f.startswith("i_"):
                 if TypeNode.from_type(ftype) != TypeNode.from_type(STMDSingleIn[ANY]):
                     attrs["_fields"][f] = In[ftype]
                 if f.startswith("i_") and f not in attrs:
-                    attrs[f] = dataclasses.field(default_factory=NoData[attrs["_fields"][f]._params])
+                    attrs[f] = dataclasses.field(
+                        default_factory=NoData[attrs["_fields"][f]._params]
+                    )
             if f.startswith("r_"):
                 if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Res[ANY]):
                     attrs["_fields"][f] = Res[ftype]
@@ -1956,7 +1966,9 @@ class TractionMeta(BaseMeta):
                 if f not in attrs:
                     attrs[f] = dataclasses.field(
                         init=False,
-                        default_factory=DefaultOut(type_=ftype_final, params=(attrs["_fields"][f]._params)),
+                        default_factory=DefaultOut(
+                            type_=ftype_final, params=(attrs["_fields"][f]._params)
+                        ),
                     )
             # Set all inputs to NoData after as default
 
@@ -1994,6 +2006,7 @@ OnErrorCallable = Callable[[_Traction], None]
 
 
 def is_wrapped(objcls):
+    """Determine if objcls is Arg, In, Out or Res Wrapper."""
     tt1 = TypeNode.from_type(objcls, subclass_check=True)
     if (
         tt1 == TypeNode.from_type(Arg[ANY])

@@ -188,9 +188,11 @@ class TypeNode:
                     current_node.children.append(node)
 
             elif current_node.op == "all":
-                print("SORTED n1", [n.type_ for n in  sorted(current_node.n1.children)])
-                print("SORTED n2", [n.type_ for n in  sorted(current_node.n2.children)])
-                for ch1, ch2 in zip(sorted(current_node.n1.children), sorted(current_node.n2.children)):
+                print("SORTED n1", [n.type_ for n in sorted(current_node.n1.children)])
+                print("SORTED n2", [n.type_ for n in sorted(current_node.n2.children)])
+                for ch1, ch2 in zip(
+                    sorted(current_node.n1.children), sorted(current_node.n2.children)
+                ):
                     op = self.__determine_op(ch1, ch2)
                     node = CMPNode(ch1, ch2, op, op)
                     stack.insert(0, node)

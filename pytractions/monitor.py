@@ -27,7 +27,7 @@ class StructuredMonitor:
                 if f.startswith("i_"):
                     fpath = os.path.join(self.path, f"{traction.uid}::{f}.json")
                     with open(fpath, "w") as fp:
-                        fp.write(json.dumps(getattr(traction, "_raw_"+f).to_json()))
+                        fp.write(json.dumps(getattr(traction, "_raw_" + f).to_json()))
 
         else:
             if traction.state != self.traction_states[traction.uid]:

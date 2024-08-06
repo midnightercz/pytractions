@@ -517,7 +517,6 @@ def test_tractor_run() -> None:
         t_ttest3.i_in1 = t_ttest2._raw_o_out1
         t_ttest4.i_in1 = t_ttest3._raw_o_out1
 
-
         o_out1: Out[float] = t_ttest4._raw_o_out1
 
     tt = TestTractor(
