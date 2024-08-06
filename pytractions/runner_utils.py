@@ -62,7 +62,7 @@ type: fullname | fullname "[" typelist "]"
 fullname: name ":" name
 typelist: type | type "," typelist
 name: NAME
-NAME: /([a-zA-Z_])+([a-zA-Z_\.])*/
+NAME: /([a-zA-Z_])+([a-z0-9A-Z_\.])*/
 """
 
 

@@ -358,6 +358,7 @@ def test_type_json():
     tjson = t.to_json()
     print(tjson)
     t2 = TypeNode.from_json(tjson)
+    print(t2.to_json())
     assert t == t2
 
 
@@ -440,9 +441,16 @@ def test_base_type_nested_to_json():
     }
 
 
+def test_type_union():
+    print('---')
+    t1 = TypeNode.from_type(Union[int, str])
+    t2 = TypeNode.from_type(Union[str, int])
+    print('---')
+    assert t1 == t2
+    print('---')
+
+
 # Test Generics
-
-
 def test_generic_wrong_param_count():
     class TestC(Base, Generic[T, T2]):
         a: T

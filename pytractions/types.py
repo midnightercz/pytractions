@@ -57,6 +57,10 @@ class TypeNode:
         self.subclass_check = subclass_check
         self.children = []
 
+    def __lt__(self, other):
+        """Return if TypeNode is less than other."""
+        return str(self.type_) < str(other.type_)
+
     @classmethod
     def from_type(cls, type_, subclass_check=True):
         """Create TypeNode from provided type)."""
@@ -184,7 +188,9 @@ class TypeNode:
                     current_node.children.append(node)
 
             elif current_node.op == "all":
-                for ch1, ch2 in zip(current_node.n1.children, current_node.n2.children):
+                print("SORTED n1", [n.type_ for n in  sorted(current_node.n1.children)])
+                print("SORTED n2", [n.type_ for n in  sorted(current_node.n2.children)])
+                for ch1, ch2 in zip(sorted(current_node.n1.children), sorted(current_node.n2.children)):
                     op = self.__determine_op(ch1, ch2)
                     node = CMPNode(ch1, ch2, op, op)
                     stack.insert(0, node)
@@ -507,7 +513,7 @@ class TypeNode:
                         else:
                             _type_o = getattr(_type_o, path_part)
                     else:
-                        _type_o = None
+                        _type_o = type(None)
 
             type_node = cls(_type_o)
             type_node.children = [None] * len(_args)

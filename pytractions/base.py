@@ -317,6 +317,7 @@ class Base(ABase, metaclass=BaseMeta):
     """Base class supporting type validation."""
 
     _CUSTOM_TYPE_TO_JSON: ClassVar[bool] = dataclasses.field(default=False, init=False)
+    _SERIALIZE_REPLACE_FIELDS: ClassVar[dict] = {}
 
     # dataclasses configuration class
     _config: ClassVar[BaseConfig] = BaseConfig()
@@ -520,7 +521,8 @@ class Base(ABase, metaclass=BaseMeta):
                     "$data": {},
                 }
                 for f in current._fields:
-                    stack.append((getattr(current, f), current_parent[parent_key]["$data"], f))
+                    _f = self._SERIALIZE_REPLACE_FIELDS.get(f, f)
+                    stack.append((getattr(current, f), current_parent[parent_key]["$data"], _f))
             elif isinstance(current, (ATList, ATDict)):
                 current_parent[parent_key] = current.to_json()
             elif isinstance(current, (enum.Enum)):
@@ -538,7 +540,8 @@ class Base(ABase, metaclass=BaseMeta):
         pre_order: Dict[str, Any] = {"root": {}}
         stack: List[Tuple[Base, Dict[str, Any], str]] = []
         for f in self._fields:
-            stack.append((getattr(self, f), pre_order["root"], f))
+            _f = self._SERIALIZE_REPLACE_FIELDS.get(f, f)
+            stack.append((getattr(self, f), pre_order["root"], _f))
         while stack:
             current, current_parent, parent_key = stack.pop(0)
             if isinstance(current, (ATList, ATDict, Base)):
@@ -695,19 +698,22 @@ class Base(ABase, metaclass=BaseMeta):
                 for o_cls in obj_uargs:
                     init_fields = {}
                     for f in _json_dict:
-                        if f in o_cls._fields:
-                            ftype = o_cls._fields[f]
+                        _f = ([
+                            k for k, v in o_cls._SERIALIZE_REPLACE_FIELDS.items() if v == f] or [f]
+                        )[0]
+                        if _f in o_cls._fields:
+                            ftype = o_cls._fields[_f]
                             if ftype in (str, int, float, type(None), bool):
-                                init_fields[f] = _json_dict[f]
+                                init_fields[_f] = _json_dict[f]
                             else:
                                 stack.append(
-                                    ((ftype,), f, _json_dict[f], init_fields, parent_path + f".{f}")
+                                    ((ftype,), _f, _json_dict[f], init_fields, parent_path + f".{_f}")
                                 )
                         else:
                             # In this situation field which is uknown to the class is added
                             # to init fields which fails in initialization of class candidate
                             # and eliminate it from the candidate list
-                            init_fields[f] = _json_dict[f]
+                            init_fields[_f] = _json_dict[f]
 
                     order.insert(
                         0, (o_cls, parent_init_fields, parent_key, init_fields, parent_path)
@@ -799,7 +805,8 @@ class Base(ABase, metaclass=BaseMeta):
                             )
                         )
                     else:
-                        stack.append((ftype, current_parent[parent_key], f, None))
+                        _f = ([k for k, v in cls._SERIALIZE_REPLACE_FIELDS.items() if v == f] or [f])[0]
+                        stack.append((ftype, current_parent[parent_key], _f, None))
             else:
                 current_parent[parent_key] = {
                     "$type": TypeNode.from_type(current).to_json(),
@@ -875,6 +882,9 @@ class Base(ABase, metaclass=BaseMeta):
 
         while stack:
             parent_args, parent_key, data, type_, type_args = stack.pop(0)
+            _parent_key = ([
+                k for k, v in cls._SERIALIZE_REPLACE_FIELDS.items() if v == parent_key] or [parent_key]
+            )[0]
             if hasattr(type_, "__qualname__") and type_.__qualname__ in (
                 "Optional",
                 "Union",
@@ -885,10 +895,10 @@ class Base(ABase, metaclass=BaseMeta):
                     data_type = TypeNode.from_type(data.__class__).to_json()
                 for uarg in get_args(type_):
                     if TypeNode.from_type(uarg) == TypeNode.from_json(data_type, _locals=_locals):
-                        stack.append((parent_args, parent_key, data, uarg, type_args))
+                        stack.append((parent_args, _parent_key, data, uarg, type_args))
                         break
                 else:
-                    stack.append((parent_args, parent_key, data, type(None), type_args))
+                    stack.append((parent_args, _parent_key, data, type(None), type_args))
 
             elif hasattr(type_, "__qualname__") and type_.__qualname__ == "Union":
                 if isinstance(data, dict):
@@ -900,12 +910,12 @@ class Base(ABase, metaclass=BaseMeta):
                         TypeNode.from_type(uarg).to_json()
                         == TypeNode.from_json(data_type, _locals=_locals).to_json()
                     ):
-                        stack.append((parent_args, parent_key, data, uarg, type_args))
+                        stack.append((parent_args, _parent_key, data, uarg, type_args))
                         break
             elif TypeNode.from_type(type_) == TypeNode.from_type(TList[ANY]):
-                parent_args[parent_key] = type_.from_json(data, _locals=_locals)
+                parent_args[_parent_key] = type_.from_json(data, _locals=_locals)
             elif TypeNode.from_type(type_) == TypeNode.from_type(TDict[ANY, ANY]):
-                parent_args[parent_key] = type_.from_json(data, _locals=_locals)
+                parent_args[_parent_key] = type_.from_json(data, _locals=_locals)
             elif type_ not in (int, str, bool, float, type(None)) and not issubclass(
                 type_, enum.Enum
             ):

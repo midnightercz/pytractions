@@ -98,7 +98,7 @@ def run_main(args):
             data = data["data"]
         if name not in traction_cls._fields:
             raise AttributeError(f"{traction_cls.__name__} doesn't have field {name}")
-        LOGGER.info(f"Loading input: {name}")
+        LOGGER.info(f"Loading input: {name} {yaml.safe_load(data)}")
         traction_init_fields[name] = traction_cls._fields[name].content_from_json(
             yaml.safe_load(data)
         )
