@@ -332,9 +332,12 @@ class Base(ABase, metaclass=BaseMeta):
 
     _KW_ONLY: ClassVar[bool] = True
 
-    def __post_init__(self):
-        """Initialize class after init."""
-        pass
+    @property
+    def _properties(self):
+        if not hasattr(self, "_p_properties"):
+            self._p_properties = dict(inspect.getmembers(self.__class__, lambda o: isinstance(o, property)))
+        return self._p_properties
+
 
     def _no_validate_setattr_(self, name: str, value: Any) -> None:
         """Set attribute without any type validation."""
@@ -343,12 +346,11 @@ class Base(ABase, metaclass=BaseMeta):
     def _validate_setattr_(self, name: str, value: Any) -> None:
         """Set attribute with type validation."""
         if not name.startswith("_"):  # do not check for private attrs
-            properties = dict(inspect.getmembers(self.__class__, lambda o: isinstance(o, property)))
 
-            if name not in self._fields and not self._config.allow_extra and name not in properties:
+            if name not in self._fields and not self._config.allow_extra and name not in self._properties:
                 raise AttributeError(f"{self.__class__} doesn't have attribute {name}")
 
-            if name not in properties:
+            if name not in self._properties:
                 vtype = (
                     value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
                 )
@@ -568,10 +570,16 @@ class Base(ABase, metaclass=BaseMeta):
             Tuple[Type[Any], Dict[str, JSON_COMPATIBLE], Union[str, int], JSON_COMPATIBLE]
         ] = []
         stack.append(((cls,), "root", json_dict, root_init_fields, "#"))
+
+        ANY_LIST_TYPE_NODE = TypeNode.from_type(TList[ANY])
+        ANY_DICT_TYPE_NODE = TypeNode.from_type(TDict[ANY, ANY])
+        BASE_TYPE_NODE = TypeNode.from_type(Base)
+
         while stack:
             (parent_cls_candidates, parent_key, _json_dict, parent_init_fields, parent_path) = (
                 stack.pop(0)
             )
+            #print(parent_cls_candidates, parent_key, len(stack))
             optional_uargs = [
                 x
                 for x in parent_cls_candidates
@@ -586,14 +594,14 @@ class Base(ABase, metaclass=BaseMeta):
             list_uargs = [
                 x
                 for x in parent_cls_candidates
-                if TypeNode.from_type(x) == TypeNode.from_type(TList[ANY])
+                if TypeNode.from_type(x) == ANY_LIST_TYPE_NODE
                 and x not in union_uargs
                 and x not in optional_uargs
             ]
             dict_uargs = [
                 x
                 for x in parent_cls_candidates
-                if TypeNode.from_type(x) == TypeNode.from_type(TDict[ANY, ANY])
+                if TypeNode.from_type(x) == ANY_DICT_TYPE_NODE
                 and x not in union_uargs
                 and x not in optional_uargs
             ]
@@ -602,7 +610,7 @@ class Base(ABase, metaclass=BaseMeta):
                 for x in parent_cls_candidates
                 if x not in list_uargs
                 and x not in dict_uargs
-                and TypeNode.from_type(x) == TypeNode.from_type(Base)
+                and TypeNode.from_type(x) == BASE_TYPE_NODE
                 and x not in optional_uargs
                 and x not in union_uargs
             ]
@@ -660,16 +668,15 @@ class Base(ABase, metaclass=BaseMeta):
                     if isinstance(value, (str, int, float, type(None), bool)):
                         init_fields[n] = value
                     else:
-                        for n, value in enumerate(_json_dict):
-                            stack.append(
-                                (
-                                    [x._params[0] for x in list_uargs],
-                                    n,
-                                    value,
-                                    init_fields,
-                                    parent_path + f".{n}",
-                                )
+                        stack.append(
+                            (
+                                [x._params[0] for x in list_uargs],
+                                n,
+                                value,
+                                init_fields,
+                                parent_path + f".{n}",
                             )
+                        )
                 for l_cls in list_uargs:
                     order.insert(
                         0, (l_cls, parent_init_fields, parent_key, init_fields, parent_path)
@@ -752,9 +759,7 @@ class Base(ABase, metaclass=BaseMeta):
         for cls_candidate, parent_init_fields, parent_key, init_fields, parent_path in order:
             if parent_key in parent_init_fields:
                 continue
-            if TypeNode.from_type(cls_candidate) == TypeNode.from_type(
-                TList[ANY]
-            ) or TypeNode.from_type(cls_candidate) == TypeNode.from_type(TDict[ANY, ANY]):
+            if TypeNode.from_type(cls_candidate) == ANY_LIST_TYPE_NODE or TypeNode.from_type(cls_candidate) == ANY_DICT_TYPE_NODE:
                 try:
                     parent_init_fields[parent_key] = cls_candidate(init_fields)
                 except Exception as e:
@@ -1166,6 +1171,11 @@ class TList(Base, ATList, Generic[T]):
     @classmethod
     def from_json(cls, json_data, _locals={}) -> _Base:
         """Deserialize TList from json data."""
+
+
+        ANY_LIST_TYPE_NODE = TypeNode.from_type(TList[ANY])
+        ANY_DICT_TYPE_NODE = TypeNode.from_type(TDict[ANY, ANY])
+
         stack = []
         post_order = []
         self_type_json = TypeNode.from_type(cls).to_json()
@@ -1203,9 +1213,9 @@ class TList(Base, ATList, Generic[T]):
                         break
                 else:
                     stack.append((parent_args, parent_key, data, type(None), type_args))
-            elif TypeNode.from_type(type_) == TypeNode.from_type(TList[ANY]) or TypeNode.from_type(
+            elif TypeNode.from_type(type_) ==  ANY_LIST_TYPE_NODE or TypeNode.from_type(
                 type_
-            ) == TypeNode.from_type(TDict[ANY, ANY]):
+            ) == ANY_DICT_TYPE_NODE:
                 parent_args[parent_key] = type_.from_json(data, _locals=_locals)
             elif type_ not in (int, str, bool, float, type(None)) and not issubclass(
                 type_, enum.Enum
@@ -1624,8 +1634,7 @@ class STMDSingleIn(Base, Generic[T]):
             object.__setattr__(self, name, value)
             return
         if not name.startswith("_"):  # do not check for private attrs
-            properties = dict(inspect.getmembers(self.__class__, lambda o: isinstance(o, property)))
-            if name not in self._fields and not self._config.allow_extra and name not in properties:
+            if name not in self._fields and not self._config.allow_extra and name not in self._properties:
                 raise AttributeError(f"{self.__class__} doesn't have attribute {name}")
             if name == "data":
                 # if not hasattr(self, "_io_store"):
@@ -1644,7 +1653,7 @@ class STMDSingleIn(Base, Generic[T]):
                 # getattr(self.__class__, name).setter(value)
                 return
                 # return self._io_store.set_data(self.uid, value)
-            elif name not in properties:
+            elif name not in self._properties:
                 vtype = (
                     value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
                 )
@@ -1688,7 +1697,6 @@ class In(STMDSingleIn, Generic[T]):
     Example: In[str](data='foo')
     """
 
-    # data: Optional[T] = None
     pass
 
 

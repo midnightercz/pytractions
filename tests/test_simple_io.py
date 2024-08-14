@@ -122,11 +122,11 @@ def test_tractor_run() -> None:
 
         t_ttest1.i_in1 = i_in1
 
-        t_ttest2.i_in1 = t_ttest1._raw_o_out1
-        t_ttest3.i_in1 = t_ttest2._raw_o_out1
-        t_ttest4.i_in1 = t_ttest3._raw_o_out1
+        t_ttest2.i_in1 = t_ttest1.o_out1
+        t_ttest3.i_in1 = t_ttest2.o_out1
+        t_ttest4.i_in1 = t_ttest3.o_out1
 
-        o_out1: float = t_ttest4._raw_o_out1
+        o_out1: float = t_ttest4._o_out1
 
     tt = TestTractor(
         uid="tt1",
@@ -166,7 +166,7 @@ class TestTractor(Tractor):
     i_in1: int = TIn[int]()
     r_seq: Seq = TRes[Seq]()
     t_t1: TestTraction = TestTraction(uid="1", i_input=i_in1, r_seq=r_seq)
-    o_out1: int = t_t1._raw_o_output
+    o_out1: int = t_t1.o_output
 
 
 class TestTractor2(Tractor):
@@ -175,7 +175,7 @@ class TestTractor2(Tractor):
     i_in1: int = TIn()
     r_seq: Seq = TRes[Seq]()
     t_tractor1: TestTractor = TestTractor(uid="1", i_in1=i_in1, r_seq=r_seq)
-    o_out1: int = t_tractor1._raw_o_out1
+    o_out1: int = t_tractor1.o_out1
 
 
 def test_tractor_nested():

@@ -168,6 +168,7 @@ class TractorMeta(TractionMeta):
                         if id(mafo) in args:
                             margs_map[("#", f, maf)] = args[id(mafo)]
 
+        # Process tractions
         for t in attrs["_fields"]:
             if not t.startswith("t_"):
                 continue
@@ -187,6 +188,9 @@ class TractorMeta(TractionMeta):
                         NoData[ANY]
                     ):
                         if id(tfo) not in outputs_all and id(tfo.data) not in outputs_all:
+                            print("ID FO data", id(tfo.data))
+                            print("ID FO", id(tfo))
+                            print("ALL OUTPUTS", outputs_all)
                             raise ValueError(
                                 f"Input {_traction.__class__}[{_traction.uid}]->{tf} is mapped to "
                                 "output which is not known yet"
@@ -204,8 +208,13 @@ class TractorMeta(TractionMeta):
 
                 if tf.startswith("o_"):
                     outputs_all.append(id(tfo))
+                    outputs_all.append(id(tfo.data))
+                    # add raw output
                     outputs_map[id(tfo)] = (t, tf)
                     output_waves[id(tfo)] = traction_waves[t]
+                    # add output value
+                    outputs_map[id(tfo.data)] = (t, tf)
+                    output_waves[id(tfo.data)] = traction_waves[t]
                 elif tf.startswith("i_"):
                     if TypeNode.from_type(type(tfo), subclass_check=False) != TypeNode.from_type(
                         NoData[ANY]
@@ -400,11 +409,15 @@ class Tractor(Traction, metaclass=TractorMeta):
             if on_update:
                 on_update(self)
             if traction.state == TractionState.ERROR:
+                LOGGER.error(f"traction {traction.full_name} ERROR")
                 self.state = TractionState.ERROR
                 return self
-            if traction.state == TractionState.FAILED:
+            elif traction.state == TractionState.FAILED:
+                LOGGER.error(f"traction {traction.full_name} FAILED")
                 self.state = TractionState.FAILED
                 return self
+            else:
+                LOGGER.info(f"Traction {traction.fullname} FINISHED")
         return self
 
     def run(
@@ -590,4 +603,37 @@ class MultiTractor(Tractor, metaclass=TractorMeta):
                 # data in it to keep connection, so need to use _no_validate_setattr
                 t, tf = self._outputs_map[f]
                 self._no_validate_setattr_(f, getattr(self._tractions[t], tf))
+        return self
+
+class LoopTractorEnd(Exception):
+    pass
+
+class LoopTractor(Tractor):
+    def _run(self, on_update: Optional[OnUpdateCallable] = None) -> "LoopTractor":  # pragma: no cover
+        # Check for uninitialized resources
+        for f in self._fields:
+            if f.startswith("r_"):
+                fo = getattr(self, f)
+                if isinstance(fo, TRes):
+                    raise UninitiatedResource(f"{f}")
+
+        while True:
+            try:
+                for tname, traction in self.tractions.items():
+                    traction.state = TractionState.READY
+                    traction.run(on_update=on_update)
+                    if on_update:
+                        on_update(self)
+                    if traction.state == TractionState.ERROR:
+                        LOGGER.error(f"Traction {traction.fullname} ERROR")
+                        self.state = TractionState.ERROR
+                        return self
+                    elif traction.state == TractionState.FAILED:
+                        LOGGER.error(f"Traction {traction.fullname} FAILED")
+                        self.state = TractionState.FAILED
+                        return self
+                    else:
+                        LOGGER.info(f"Traction {traction.fullname} FINISHED")
+            except LoopTractorEnd:
+                break
         return self

@@ -270,6 +270,7 @@ class STMD(Traction, metaclass=STMDMeta):
 
             for o in outputs:
                 o_type = getattr(self, "_raw_" + o).data._params[0]
+                getattr(self, "_raw_" + o).data.clear()
                 for i in range(len(first_in)):
                     getattr(self, "_raw_" + o).data.append(o_type())
 
@@ -366,6 +367,7 @@ class STMD(Traction, metaclass=STMDMeta):
             index = uids.index(uid)
             for o in out:
                 getattr(self, o)[index] = out[o]
+
         # self.a_executor.a.shutdown()
 
         self.state = TractionState.FINISHED
