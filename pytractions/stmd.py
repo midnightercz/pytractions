@@ -7,6 +7,7 @@ from types import prepare_class
 from .base import (
     Base,
     ANY,
+    Port,
     Arg,
     In,
     Out,
@@ -249,7 +250,7 @@ class STMD(Traction, metaclass=STMDMeta):
                 else:
                     annotations[k] = In[TList[v._params[0]]]
             if k.startswith("o_"):
-                annotations[k] = Out[TList[v._params[0]]]
+                annotations[k] = Port[TList[v._params[0]]]
             if k.startswith("a_") or k.startswith("r_"):
                 annotations[k] = v
 

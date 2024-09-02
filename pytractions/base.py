@@ -95,9 +95,9 @@ class DefaultOut:
             and len(get_args(self.type_)) == 2
             and get_args(self.type_)[-1] is type(None)
         ):
-            ret = Out[self.params]()
+            ret = Port[self.params]()
         else:
-            ret = Out[self.params]()
+            ret = Port[self.params]()
             if isinstance(self.type_, TypeVar):
                 ret.data = None
             else:
@@ -392,8 +392,10 @@ class Base(ABase, metaclass=BaseMeta):
                 elif hasattr(p, "_params"):
                     if hasattr(p, "__orig_qualname__"):
                         stack.insert(0, (p.__orig_qualname__, p._params))
-                    else:
+                    elif hasattr(p, "__qualname__"):
                         stack.insert(0, (p.__qualname__, p._params))
+                    else:
+                        stack.insert(0, (p.__name__, p._params))
                     if p != current_params[-1]:
                         stack.insert(0, (",", []))
 
@@ -579,7 +581,6 @@ class Base(ABase, metaclass=BaseMeta):
             (parent_cls_candidates, parent_key, _json_dict, parent_init_fields, parent_path) = (
                 stack.pop(0)
             )
-            #print(parent_cls_candidates, parent_key, len(stack))
             optional_uargs = [
                 x
                 for x in parent_cls_candidates
@@ -1700,7 +1701,101 @@ class In(STMDSingleIn, Generic[T]):
     pass
 
 
-class TIn(In, Generic[T]):
+
+class NoData(In, Generic[T]):
+    """Special type of input indicating input hasn't been connected to any output."""
+
+    # data: Optional[T] = None
+    pass
+
+
+class Port(Base, Generic[T]):
+    """
+    """
+
+    _TYPE: ClassVar[str] = "PORT"
+
+    _KW_ONLY: ClassVar[bool] = False
+
+    _ref: Optional[T] = dataclasses.field(repr=False, init=False, default=None, compare=False)
+    # data here are actually not used after input is assigned to some output
+    # it's just to deceive mypy
+    data: Optional[T] = None
+    _name: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
+    _owner: Optional[_Traction] = dataclasses.field(
+        repr=False, init=False, default=None, compare=False
+    )
+    # _io_store: IOStore = dataclasses.field(repr=False, init=False, compare=False)
+    _uid: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
+
+    def __post_init__(self):
+        """Post init of STMDIn class."""
+        # Currently not used
+        # self._io_store = DefaultIOStore.io_store
+        pass
+
+    def _validate_setattr_(self, name: str, value: Any) -> None:
+        """Set attribute to class instance with type validation."""
+        if name in ("_name", "_owner"):
+            # old_uid = self._uid
+            self._uid = None
+            object.__setattr__(self, name, value)
+            return
+        if not name.startswith("_"):  # do not check for private attrs
+            if name not in self._fields and not self._config.allow_extra and name not in self._properties:
+                raise AttributeError(f"{self.__class__} doesn't have attribute {name}")
+            if name == "data":
+                # if not hasattr(self, "_io_store"):
+                #    self._io_store = DefaultIOStore.io_store
+                vtype = (
+                    value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
+                )
+                tt1 = TypeNode.from_type(vtype)
+                tt2 = TypeNode.from_type(self._fields[name])
+                if tt1 != tt2:
+                    raise TypeError(
+                        f"Cannot set attribute {self.__class__}.{name} to type {value}({vtype}),"
+                        f"expected {self._fields[name]}"
+                    )
+                object.__setattr__(self, name, value)
+                # getattr(self.__class__, name).setter(value)
+                return
+                # return self._io_store.set_data(self.uid, value)
+            elif name not in self._properties:
+                vtype = (
+                    value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
+                )
+                tt1 = TypeNode.from_type(vtype)
+                tt2 = TypeNode.from_type(self._fields[name])
+                if tt1 != tt2:
+                    raise TypeError(
+                        f"Cannot set attribute {self.__class__}.{name} to type {value}({vtype}),"
+                        f"expected {self._fields[name]}"
+                    )
+            else:
+                getattr(self.__class__, name).setter(value)
+                return
+        return object.__setattr__(self, name, value)
+
+    def __getattribute__(self, name) -> Any:
+        """Get attribute."""
+        if name == "data":
+            return object.__getattribute__(self, "data")
+        else:
+            ret = object.__getattribute__(self, name)
+            return ret
+
+    @property
+    def uid(self):
+        """Return uid of the object."""
+        if not self._name:
+            self._name = str(uuid.uuid4())
+        if self._uid is None:
+            self._uid = (self._owner.fullname if self._owner else "") + "::" + self._name
+        return self._uid
+
+
+class TIn(Port, Generic[T]):
     """Class used for input of a Tractor instance.
 
     It's same as `In` class but tractions won't set owner to input to self.
@@ -1711,14 +1806,6 @@ class TIn(In, Generic[T]):
 
     # data: Optional[T] = None
     pass
-
-
-class NoData(In, Generic[T]):
-    """Special type of input indicating input hasn't been connected to any output."""
-
-    # data: Optional[T] = None
-    pass
-
 
 # Currently not used
 # class MemoryIOStore(IOStore):
@@ -1830,6 +1917,8 @@ class Arg(Base, Generic[T]):
 
 ANY_ARG_TYPE_NODE = TypeNode.from_type(Arg[ANY])
 
+ANY_PORT_TYPE_NODE = TypeNode.from_type(Port[ANY])
+
 
 class MultiArgMeta(BaseMeta):
     """MultiArg metaclass."""
@@ -1866,37 +1955,37 @@ class TractionMeta(BaseMeta):
         ):
             """Check attribute on class creation."""
             type_type_node = TypeNode.from_type(type_, subclass_check=False)
-            if attr.startswith("i_"):
-                if (
-                    type_type_node == ANY_OUT_TYPE_NODE
-                    or type_type_node == ANY_ARG_TYPE_NODE
-                    or type_type_node == ANY_RES_TYPE_NODE
-                ):
-                    raise TypeError(f"Attribute {attr} has to be type In[ANY], but is {type_}")
-            elif attr.startswith("o_"):
-                if (
-                    type_type_node == ANY_IN_TYPE_NODE
-                    or type_type_node == ANY_ARG_TYPE_NODE
-                    or type_type_node == ANY_RES_TYPE_NODE
-                ):
-                    raise TypeError(f"Attribute {attr} has to be type Out[ANY], but is {type_}")
-            elif attr.startswith("a_"):
-                if (
-                    type_type_node == ANY_IN_TYPE_NODE
-                    or type_type_node == ANY_OUT_TYPE_NODE
-                    or type_type_node == ANY_RES_TYPE_NODE
-                ):
-                    raise TypeError(
-                        f"Attribute {attr} has to be type Arg[ANY] or MultiArg, but is {type_}"
-                    )
-            elif attr.startswith("r_"):
-                if (
-                    type_type_node == ANY_IN_TYPE_NODE
-                    or type_type_node == ANY_OUT_TYPE_NODE
-                    or type_type_node == ANY_ARG_TYPE_NODE
-                ):
-                    raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
-            elif attr == "d_":
+            # if attr.startswith("i_"):
+            #     if (
+            #         type_type_node == ANY_OUT_TYPE_NODE
+            #         or type_type_node == ANY_ARG_TYPE_NODE
+            #         or type_type_node == ANY_RES_TYPE_NODE
+            #     ):
+            #         raise TypeError(f"Attribute {attr} has to be type In[ANY], but is {type_}")
+            # elif attr.startswith("o_"):
+            #     if (
+            #         type_type_node == ANY_IN_TYPE_NODE
+            #         or type_type_node == ANY_ARG_TYPE_NODE
+            #         or type_type_node == ANY_RES_TYPE_NODE
+            #     ):
+            #         raise TypeError(f"Attribute {attr} has to be type Out[ANY], but is {type_}")
+            # elif attr.startswith("a_"):
+            #     if (
+            #         type_type_node == ANY_IN_TYPE_NODE
+            #         or type_type_node == ANY_OUT_TYPE_NODE
+            #         or type_type_node == ANY_RES_TYPE_NODE
+            #     ):
+            #         raise TypeError(
+            #             f"Attribute {attr} has to be type Arg[ANY] or MultiArg, but is {type_}"
+            #         )
+            # elif attr.startswith("r_"):
+            #     if (
+            #         type_type_node == ANY_IN_TYPE_NODE
+            #         or type_type_node == ANY_OUT_TYPE_NODE
+            #         or type_type_node == ANY_ARG_TYPE_NODE
+            #     ):
+            #         raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
+            if attr == "d_":
                 if type_type_node != TypeNode.from_type(str):
                     raise TypeError(f"Attribute {attr} has to be type str, but is {type_}")
             elif attr.startswith("d_"):
@@ -1907,7 +1996,7 @@ class TractionMeta(BaseMeta):
                         f"Attribute {attr.replace('d_', '', 1)} is not defined for description "
                         f"{attr}: {all_attrs}"
                     )
-            else:
+            elif not (attr.startswith("i_") or attr.startswith("o_") or attr.startswith("a_") or attr.startswith("r_")):
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or d_")
 
             if (
@@ -1939,24 +2028,30 @@ class TractionMeta(BaseMeta):
         }
 
         for f, ftype in list(attrs["_fields"].items()):
+            print("F", f)
             # Do not include outputs in init
-            if f.startswith("a_"):
-                if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Arg[ANY]):
-                    attrs["_fields"][f] = Arg[ftype]
+            if f.startswith("a_") or f.startswith("r_"):
+                if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Port[ANY]):
+                    attrs["_fields"][f] = Port[ftype]
+
+            # if f.startswith("a_"):
+            #     if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Arg[ANY]):
+            #         attrs["_fields"][f] = Arg[ftype]
             if f.startswith("i_"):
-                if TypeNode.from_type(ftype) != TypeNode.from_type(STMDSingleIn[ANY]):
-                    attrs["_fields"][f] = In[ftype]
+                if TypeNode.from_type(ftype) != TypeNode.from_type(STMDSingleIn[ANY]) and TypeNode.from_type(ftype) != TypeNode.from_type(Port[ANY]):
+                    attrs["_fields"][f] = Port[ftype]
                 if f.startswith("i_") and f not in attrs:
                     attrs[f] = dataclasses.field(
                         default_factory=NoData[attrs["_fields"][f]._params]
                     )
-            if f.startswith("r_"):
-                if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Res[ANY]):
-                    attrs["_fields"][f] = Res[ftype]
+            # if f.startswith("r_"):
+            #     if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Res[ANY]):
+            #         attrs["_fields"][f] = Res[ftype]
 
             if f.startswith("o_"):
-                if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Out[ANY]):
-                    attrs["_fields"][f] = Out[ftype]
+                print("F", f)
+                if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Port[ANY]):
+                    attrs["_fields"][f] = Port[ftype]
 
                 ftype_final = ftype._params[0] if is_wrapped(ftype) else ftype
 
@@ -1972,17 +2067,13 @@ class TractionMeta(BaseMeta):
                                 f"doesn't have default value for field {ff}"
                             )
                 if f not in attrs:
+                    print("ADDING", f)
                     attrs[f] = dataclasses.field(
                         init=False,
                         default_factory=DefaultOut(
                             type_=ftype_final, params=(attrs["_fields"][f]._params)
                         ),
                     )
-            # Set all inputs to NoData after as default
-
-        # attrs["_fields"] = {
-        #    k: v for k, v in attrs.get("__annotations__", {}).items() if not k.startswith("_")
-        # }
 
         cls._before_new(name, attrs, bases)
         ret = super().__new__(cls, name, bases, attrs)
@@ -2017,10 +2108,9 @@ def is_wrapped(objcls):
     """Determine if objcls is Arg, In, Out or Res Wrapper."""
     tt1 = TypeNode.from_type(objcls, subclass_check=True)
     if (
-        tt1 == TypeNode.from_type(Arg[ANY])
+        tt1 == TypeNode.from_type(Port[ANY])
         or tt1 == TypeNode.from_type(STMDSingleIn[ANY])
-        or tt1 == TypeNode.from_type(Res[ANY])
-        or tt1 == TypeNode.from_type(Out[ANY])
+        or tt1 == TypeNode.from_type(NoData[ANY])
     ):
         return True
     return False

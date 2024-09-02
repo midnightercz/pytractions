@@ -5,7 +5,7 @@ import pytest
 from pytractions.base import (
     Traction,
     TList,
-    Out,
+    Port,
     In,
     Arg,
     Res,
@@ -34,8 +34,8 @@ class NOPResource2(Base):
 class EmptyTraction(Traction):
     """Empty traction."""
 
-    i_input: In[int]
-    o_output: Out[int]
+    i_input: Port[int]
+    o_output: Port[int]
     a_arg: Arg[int]
     r_res: Res[NOPResource]
 
@@ -50,9 +50,9 @@ class EmptyTraction(Traction):
 class Double(Traction):
     """Double the input and divide by coeficient."""
 
-    i_input: In[float]
-    i_coeficient: In[float]
-    o_output: Out[float]
+    i_input: Port[float]
+    i_coeficient: Port[float]
+    o_output: Port[float]
 
     def _run(self, on_update) -> None:  # pragma: no cover
         if not self.i_input:
@@ -67,18 +67,18 @@ class STMDDouble(STMD):
 
     _traction: Type[Traction] = Double
 
-    i_input: In[TList[float]]
+    i_input: Port[TList[float]]
     i_coeficient: STMDSingleIn[float]
 
-    o_output: Out[TList[float]]
+    o_output: Port[TList[float]]
 
 
 class Half(Traction):
     """Half the input and multiply by coeficient."""
 
-    i_input: In[float]
-    i_coeficient: In[float]
-    o_output: Out[float]
+    i_input: Port[float]
+    i_coeficient: Port[float]
+    o_output: Port[float]
 
     def _run(self, on_update) -> None:  # pragma: no cover
         if not self.i_input:
@@ -93,15 +93,15 @@ class STMDHalf(STMD):
 
     _traction: Type[Traction] = Half
 
-    i_input: In[TList[float]]
+    i_input: Port[TList[float]]
     i_coeficient: STMDSingleIn[float]
-    o_output: Out[TList[float]]
+    o_output: Port[TList[float]]
 
 
 class Calculator(Tractor):
     """Calculator."""
 
-    i_inputs: In[TList[float]] = In[TList[float]]()
+    i_inputs: Port[TList[float]] = Port[TList[float]]()
     i_coeficient: STMDSingleIn[float] = STMDSingleIn[float]()
     a_executor: Arg[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]] = Arg[
         Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]
@@ -122,7 +122,7 @@ class Calculator(Tractor):
         a_executor=a_executor,
     )
 
-    o_output: Out[TList[float]] = t_half._raw_o_output
+    o_output: Port[TList[float]] = t_half._raw_o_output
 
 
 def test_stmd_attr_validation():
@@ -131,8 +131,8 @@ def test_stmd_attr_validation():
 
         class TestSTMD1(STMD):
             _traction: Type[Traction] = EmptyTraction
-            i_input: Out[int]
-            o_output: Out[TList[Out[int]]]
+            i_input: Port[int]
+            o_output: Port[TList[Port[int]]]
             r_res: Res[NOPResource]
             a_arg: Arg[int]
 
@@ -141,7 +141,7 @@ def test_stmd_attr_validation():
 
         class TestSTMD2(STMD):
             _traction: Type[Traction] = EmptyTraction
-            i_input: In[TList[In[int]]]
+            i_input: Port[TList[Port[int]]]
             o_output: Res[TList[Arg[int]]]
             r_res: Res[NOPResource]
             a_arg: Arg[int]
@@ -151,8 +151,8 @@ def test_stmd_attr_validation():
 
         class TestSTMD3(STMD):
             _traction: Type[Traction] = EmptyTraction
-            i_input: In[TList[In[int]]]
-            o_output: Out[TList[Out[int]]]
+            i_input: Port[TList[Port[int]]]
+            o_output: Port[TList[Port[int]]]
             r_res: Arg[NOPResource]
             a_arg: Arg[int]
 
@@ -161,18 +161,18 @@ def test_stmd_attr_validation():
 
         class TestSTMD4(STMD):
             _traction: Type[Traction] = EmptyTraction
-            i_input: In[TList[In[int]]]
-            o_output: Out[TList[Out[int]]]
+            i_input: Port[TList[Port[int]]]
+            o_output: Port[TList[Port[int]]]
             r_res: Res[NOPResource]
-            a_arg: In[str]
+            a_arg: Port[str]
 
     # wrong doc arg
     with pytest.raises(TypeError):
 
         class TestSTMD5(STMD):
             _traction: Type[Traction] = EmptyTraction
-            i_input: In[TList[In[int]]]
-            o_output: Out[TList[Out[int]]]
+            i_input: Port[TList[Port[int]]]
+            o_output: Port[TList[Port[int]]]
             r_res: Res[NOPResource]
             a_arg: Arg[str]
             d_: int
@@ -182,8 +182,8 @@ def test_stmd_attr_validation():
 
         class TestSTMD6(STMD):
             _traction: Type[Traction] = EmptyTraction
-            i_input: In[TList[In[int]]]
-            o_output: Out[TList[Out[int]]]
+            i_input: Port[TList[Port[int]]]
+            o_output: Port[TList[Port[int]]]
             r_res: Res[NOPResource]
             a_arg: Arg[str]
             d_a_arg: int = 0
@@ -193,8 +193,8 @@ def test_stmd_attr_validation():
 
         class TestSTMD7(STMD):
             _traction: Type[Traction] = EmptyTraction
-            i_input: In[TList[In[int]]]
-            o_output: Out[TList[Out[int]]]
+            i_input: Port[TList[Port[int]]]
+            o_output: Port[TList[Port[int]]]
             r_res: Res[NOPResource]
             a_arg: Arg[str]
             d_a_uknown: str = ""
@@ -204,8 +204,8 @@ def test_stmd_attr_validation():
 
         class TestSTMD(STMD):
             _traction: Type[Traction] = EmptyTraction
-            i_input: In[TList[In[int]]]
-            o_output: Out[TList[Out[int]]]
+            i_input: Port[TList[Port[int]]]
+            o_output: Port[TList[Port[int]]]
             r_res: Res[NOPResource]
             a_arg: Arg[str]
             custom: str
@@ -215,8 +215,8 @@ def test_stmd_attr_validation():
 
         class TestSTMD8(STMD):
             _traction: Type[Traction] = EmptyTraction
-            i_input: In[TList[str]]
-            o_output: Out[TList[Out[int]]]
+            i_input: Port[TList[str]]
+            o_output: Port[TList[Port[int]]]
             r_res: Res[NOPResource]
             a_arg: Arg[str]
             custom: str
@@ -225,7 +225,7 @@ def test_stmd_attr_validation():
 def test_stmd_calculator():
     c = Calculator(
         uid="calculator",
-        i_inputs=In[TList[float]](data=TList[float]([float(x) for x in range(1, 10)])),
+        i_inputs=Port[TList[float]](data=TList[float]([float(x) for x in range(1, 10)])),
         i_coeficient=STMDSingleIn[float](data=0.5),
     )
     c.run()
@@ -234,8 +234,8 @@ def test_stmd_calculator():
 class G_TTest1(Traction):
     """Test traction."""
 
-    o_out1: Out[float]
-    i_in1: In[Union[float, int]]
+    o_out1: Port[float]
+    i_in1: Port[Union[float, int]]
     a_multiplier: Arg[float]
 
     def _run(self, on_update) -> None:  # pragma: no cover
@@ -246,7 +246,7 @@ class G_TTest1(Traction):
 class G_TestTractor(Tractor):
     """Test tractor."""
 
-    i_in1: In[Union[float, int]] = In[Union[float, int]](data=20.0)
+    i_in1: Port[Union[float, int]] = Port[Union[float, int]](data=20.0)
     a_multiplier: Arg[float] = Arg[float](a=1.0)
 
     t_traction_1: G_TTest1 = G_TTest1(uid="1", i_in1=i_in1, a_multiplier=a_multiplier)
@@ -254,21 +254,21 @@ class G_TestTractor(Tractor):
         uid="2", i_in1=t_traction_1._raw_o_out1, a_multiplier=a_multiplier
     )
 
-    o_out1: Out[float] = t_traction_2._raw_o_out1
+    o_out1: Port[float] = t_traction_2._raw_o_out1
 
 
 def test_stmd_tractor(fixture_isodate_now) -> None:
     class TestSTMD(STMD):
         a_multiplier: Arg[float] = Arg[float](a=0.0)
-        i_in1: In[TList[Union[float, int]]] = In[TList[Union[float, int]]](
+        i_in1: Port[TList[Union[float, int]]] = Port[TList[Union[float, int]]](
             data=TList[Union[float, int]]([])
         )
 
         _traction: Type[Traction] = G_TestTractor
 
-        o_out1: Out[TList[float]] = Out[TList[float]](data=TList[float]([]))
+        o_out1: Port[TList[float]] = Port[TList[float]](data=TList[float]([]))
 
-    stmd_in1 = In[TList[float]](data=TList[float]([1.0, 2.0, 3.0, 4.0, 5.0]))
+    stmd_in1 = Port[TList[float]](data=TList[float]([1.0, 2.0, 3.0, 4.0, 5.0]))
     thread_pool_executor = ThreadPoolExecutor(pool_size=1)
 
     stmd1 = TestSTMD(
@@ -294,10 +294,10 @@ def test_stmd_local(fixture_isodate_now) -> None:
 
         _traction: Type[Traction] = G_TTest1
 
-        o_out1: Out[TList[float]] = Out[TList[float]](data=TList[float]([]))
-        i_in1: In[TList[float]]
+        o_out1: Port[TList[float]] = Port[TList[float]](data=TList[float]([]))
+        i_in1: Port[TList[float]]
 
-    stmd_in1 = In[TList[float]](data=TList[float]([1.0, 2.0, 3.0, 4.0, 5.0]))
+    stmd_in1 = Port[TList[float]](data=TList[float]([1.0, 2.0, 3.0, 4.0, 5.0]))
     stmd1 = TestSTMD(uid="tt1", a_multiplier=Arg[float](a=10.0), i_in1=stmd_in1)
     stmd1.run()
     assert stmd1.o_out1[0] == 10.0
@@ -314,10 +314,10 @@ def test_stmd_threads(fixture_isodate_now) -> None:
 
         _traction: Type[Traction] = G_TTest1
 
-        o_out1: Out[TList[float]] = Out[TList[float]](data=TList[float]([]))
-        i_in1: In[TList[float]]
+        o_out1: Port[TList[float]] = Port[TList[float]](data=TList[float]([]))
+        i_in1: Port[TList[float]]
 
-    stmd_in1 = In[TList[float]](
+    stmd_in1 = Port[TList[float]](
         data=TList[float](
             [
                 1.0,
@@ -352,14 +352,14 @@ class GTestSTMD(STMD):
 
     _traction: Type[Traction] = G_TTest1
 
-    o_out1: Out[TList[float]] = Out[TList[float]](data=TList[float]([]))
-    i_in1: In[TList[float]]
+    o_out1: Port[TList[float]] = Port[TList[float]](data=TList[float]([]))
+    i_in1: Port[TList[float]]
 
 
 def test_stmd_processes(fixture_isodate_now) -> None:
 
     process_pool_executor = ProcessPoolExecutor(pool_size=1)
-    stmd_in1 = In[TList[float]](
+    stmd_in1 = Port[TList[float]](
         data=TList[float](
             [
                 1.0,
@@ -388,7 +388,7 @@ def test_stmd_processes(fixture_isodate_now) -> None:
 
 def test_wrap_stmd(fixture_isodate_now) -> None:
 
-    stmd_in1 = In[TList[float]](
+    stmd_in1 = Port[TList[float]](
         data=TList[float](
             [
                 1.0,

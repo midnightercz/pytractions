@@ -159,6 +159,8 @@ class TestTraction(Traction):
     def _run(self, on_update: OnUpdateCallable) -> None:
         self.o_output = self.i_input + self.r_seq.inc()
 
+for f, ftype in TestTraction.__dataclass_fields__.items():
+    print(f, ftype)
 
 class TestTractor(Tractor):
     """Test Tractor."""
