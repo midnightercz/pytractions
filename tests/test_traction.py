@@ -3,10 +3,8 @@ import pytest
 from pytractions.base import (
     Base,
     Traction,
-    Arg,
-    In,
-    Out,
     Res,
+    Port,
     OnUpdateCallable,
 )
 from pytractions.exc import TractionFailedError
@@ -24,14 +22,14 @@ def test_tractor_attr():
     with pytest.raises(TypeError):
 
         class TestTraction1(Traction):
-            i_input: In[int]
+            i_input: Port[int]
             d_: int
 
     # wrong doc attr attribute
     with pytest.raises(TypeError):
 
         class TestTraction2(Traction):
-            i_input: In[int]
+            i_input: Port[int]
             d_i_input: int
 
     # custom attribute
@@ -43,25 +41,25 @@ def test_tractor_attr():
 
 def test_to_json_from_json():
     class TestTraction(Traction):
-        i_input: In[int]
-        o_output: Out[int]
-        r_res: Res[NOOPResource]
-        a_arg: Arg[str]
+        i_input: Port[int]
+        o_output: Port[int]
+        r_res: Port[NOOPResource]
+        a_arg: Port[str]
 
         def _run(self, on_update: OnUpdateCallable) -> None:
             self.o_output.data = self.i_input.data
 
     t = TestTraction(
         uid="test-traction-1",
-        i_input=In[int](data=1),
-        a_arg=Arg[str](a="test"),
-        r_res=Res[NOOPResource](r=NOOPResource()),
+        i_input=Port[int](data=1),
+        a_arg=Port[str](data="test"),
+        r_res=Port[NOOPResource](data=NOOPResource()),
     )
     assert t.to_json() == {
         "$data": {
             "a_arg": {
                 "$data": {
-                    "a": "test",
+                    "data": "test",
                 },
                 "$type": {
                     "args": [
@@ -72,7 +70,7 @@ def test_to_json_from_json():
                         },
                     ],
                     "module": "pytractions.base",
-                    "type": "Arg",
+                    "type": "Port",
                 },
             },
             "details": {
@@ -121,7 +119,7 @@ def test_to_json_from_json():
                         },
                     ],
                     "module": "pytractions.base",
-                    "type": "In",
+                    "type": "Port",
                 },
             },
             "o_output": {
@@ -137,12 +135,12 @@ def test_to_json_from_json():
                         },
                     ],
                     "module": "pytractions.base",
-                    "type": "Out",
+                    "type": "Port",
                 },
             },
             "r_res": {
                 "$data": {
-                    "r": {
+                    "data": {
                         "$data": {},
                         "$type": {
                             "args": [],
@@ -160,7 +158,7 @@ def test_to_json_from_json():
                         },
                     ],
                     "module": "pytractions.base",
-                    "type": "Res",
+                    "type": "Port",
                 },
             },
             "skip": False,
@@ -192,10 +190,10 @@ def test_to_json_from_json():
 
 def test_to_run_failed():
     class TestTraction(Traction):
-        i_input: In[int]
-        o_output: Out[int]
-        r_res: Res[NOOPResource]
-        a_arg: Arg[str]
+        i_input: Port[int]
+        o_output: Port[int]
+        r_res: Port[NOOPResource]
+        a_arg: Port[str]
 
         def _run(self, on_update: OnUpdateCallable) -> None:
             self.o_output = self.i_input
@@ -203,9 +201,9 @@ def test_to_run_failed():
 
     t = TestTraction(
         uid="test-traction-1",
-        i_input=In[int](data=1),
-        a_arg=Arg[str](a="test"),
-        r_res=Res[NOOPResource](r=NOOPResource()),
+        i_input=Port[int](data=1),
+        a_arg=Port[str](data="test"),
+        r_res=Port[NOOPResource](data=NOOPResource()),
     )
     t.run()
     assert t.state == "failed"
@@ -213,10 +211,10 @@ def test_to_run_failed():
 
 def test_to_run_error():
     class TestTraction(Traction):
-        i_input: In[int]
-        o_output: Out[int]
-        r_res: Res[NOOPResource]
-        a_arg: Arg[str]
+        i_input: Port[int]
+        o_output: Port[int]
+        r_res: Port[NOOPResource]
+        a_arg: Port[str]
 
         def _run(self, on_update: OnUpdateCallable) -> None:
             self.o_output = self.i_input
@@ -224,9 +222,9 @@ def test_to_run_error():
 
     t = TestTraction(
         uid="test-traction-1",
-        i_input=In[int](data=1),
-        a_arg=Arg[str](a="test"),
-        r_res=Res[NOOPResource](r=NOOPResource()),
+        i_input=Port[int](data=1),
+        a_arg=Port[str](data="test"),
+        r_res=Port[NOOPResource](data=NOOPResource()),
     )
 
     with pytest.raises(ValueError):

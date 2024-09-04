@@ -6,8 +6,6 @@ from pytractions.base import (
     Traction,
     TList,
     Port,
-    In,
-    Arg,
     Res,
     Base,
     STMDSingleIn,
@@ -36,7 +34,7 @@ class EmptyTraction(Traction):
 
     i_input: Port[int]
     o_output: Port[int]
-    a_arg: Arg[int]
+    a_arg: Port[int]
     r_res: Res[NOPResource]
 
     def _run(self, on_update) -> None:  # pragma: no cover
@@ -103,9 +101,9 @@ class Calculator(Tractor):
 
     i_inputs: Port[TList[float]] = Port[TList[float]]()
     i_coeficient: STMDSingleIn[float] = STMDSingleIn[float]()
-    a_executor: Arg[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]] = Arg[
+    a_executor: Port[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]] = Port[
         Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]
-    ](a=ThreadPoolExecutor(pool_size=30))
+    ](data=ThreadPoolExecutor(pool_size=30))
 
     t_double: STMDDouble = STMDDouble(
         uid="double",
@@ -126,46 +124,6 @@ class Calculator(Tractor):
 
 
 def test_stmd_attr_validation():
-    # wrong input
-    with pytest.raises(TypeError):
-
-        class TestSTMD1(STMD):
-            _traction: Type[Traction] = EmptyTraction
-            i_input: Port[int]
-            o_output: Port[TList[Port[int]]]
-            r_res: Res[NOPResource]
-            a_arg: Arg[int]
-
-    # wrong output
-    with pytest.raises(TypeError):
-
-        class TestSTMD2(STMD):
-            _traction: Type[Traction] = EmptyTraction
-            i_input: Port[TList[Port[int]]]
-            o_output: Res[TList[Arg[int]]]
-            r_res: Res[NOPResource]
-            a_arg: Arg[int]
-
-    # wrong resource
-    with pytest.raises(TypeError):
-
-        class TestSTMD3(STMD):
-            _traction: Type[Traction] = EmptyTraction
-            i_input: Port[TList[Port[int]]]
-            o_output: Port[TList[Port[int]]]
-            r_res: Arg[NOPResource]
-            a_arg: Arg[int]
-
-    # wrong arg
-    with pytest.raises(TypeError):
-
-        class TestSTMD4(STMD):
-            _traction: Type[Traction] = EmptyTraction
-            i_input: Port[TList[Port[int]]]
-            o_output: Port[TList[Port[int]]]
-            r_res: Res[NOPResource]
-            a_arg: Port[str]
-
     # wrong doc arg
     with pytest.raises(TypeError):
 
@@ -173,8 +131,8 @@ def test_stmd_attr_validation():
             _traction: Type[Traction] = EmptyTraction
             i_input: Port[TList[Port[int]]]
             o_output: Port[TList[Port[int]]]
-            r_res: Res[NOPResource]
-            a_arg: Arg[str]
+            r_res: Port[NOPResource]
+            a_arg: Port[str]
             d_: int
 
     # wrong attr doc arg
@@ -184,8 +142,8 @@ def test_stmd_attr_validation():
             _traction: Type[Traction] = EmptyTraction
             i_input: Port[TList[Port[int]]]
             o_output: Port[TList[Port[int]]]
-            r_res: Res[NOPResource]
-            a_arg: Arg[str]
+            r_res: Port[NOPResource]
+            a_arg: Port[str]
             d_a_arg: int = 0
 
     # uknown doc attr
@@ -195,8 +153,8 @@ def test_stmd_attr_validation():
             _traction: Type[Traction] = EmptyTraction
             i_input: Port[TList[Port[int]]]
             o_output: Port[TList[Port[int]]]
-            r_res: Res[NOPResource]
-            a_arg: Arg[str]
+            r_res: Port[NOPResource]
+            a_arg: Port[str]
             d_a_uknown: str = ""
 
     # custom attr
@@ -206,8 +164,8 @@ def test_stmd_attr_validation():
             _traction: Type[Traction] = EmptyTraction
             i_input: Port[TList[Port[int]]]
             o_output: Port[TList[Port[int]]]
-            r_res: Res[NOPResource]
-            a_arg: Arg[str]
+            r_res: Port[NOPResource]
+            a_arg: Port[str]
             custom: str
 
     # wrong inner type
@@ -217,8 +175,8 @@ def test_stmd_attr_validation():
             _traction: Type[Traction] = EmptyTraction
             i_input: Port[TList[str]]
             o_output: Port[TList[Port[int]]]
-            r_res: Res[NOPResource]
-            a_arg: Arg[str]
+            r_res: Port[NOPResource]
+            a_arg: Port[str]
             custom: str
 
 
@@ -226,7 +184,7 @@ def test_stmd_calculator():
     c = Calculator(
         uid="calculator",
         i_inputs=Port[TList[float]](data=TList[float]([float(x) for x in range(1, 10)])),
-        i_coeficient=STMDSingleIn[float](data=0.5),
+        i_coeficient=Port[float](data=0.5),
     )
     c.run()
 
@@ -236,7 +194,7 @@ class G_TTest1(Traction):
 
     o_out1: Port[float]
     i_in1: Port[Union[float, int]]
-    a_multiplier: Arg[float]
+    a_multiplier: Port[float]
 
     def _run(self, on_update) -> None:  # pragma: no cover
         print("I", self.i_in1, "*", "A", self.a_multiplier)
@@ -247,11 +205,11 @@ class G_TestTractor(Tractor):
     """Test tractor."""
 
     i_in1: Port[Union[float, int]] = Port[Union[float, int]](data=20.0)
-    a_multiplier: Arg[float] = Arg[float](a=1.0)
+    a_multiplier: Port[float] = Port[float](data=1.0)
 
     t_traction_1: G_TTest1 = G_TTest1(uid="1", i_in1=i_in1, a_multiplier=a_multiplier)
     t_traction_2: G_TTest1 = G_TTest1(
-        uid="2", i_in1=t_traction_1._raw_o_out1, a_multiplier=a_multiplier
+        uid="2", i_in1=t_traction_1.o_out1, a_multiplier=a_multiplier
     )
 
     o_out1: Port[float] = t_traction_2._raw_o_out1
@@ -259,7 +217,7 @@ class G_TestTractor(Tractor):
 
 def test_stmd_tractor(fixture_isodate_now) -> None:
     class TestSTMD(STMD):
-        a_multiplier: Arg[float] = Arg[float](a=0.0)
+        a_multiplier: Port[float] = Port[float](data=0.0)
         i_in1: Port[TList[Union[float, int]]] = Port[TList[Union[float, int]]](
             data=TList[Union[float, int]]([])
         )
@@ -273,10 +231,10 @@ def test_stmd_tractor(fixture_isodate_now) -> None:
 
     stmd1 = TestSTMD(
         uid="tt1",
-        a_multiplier=Arg[float](a=10.0),
+        a_multiplier=Port[float](data=10.0),
         i_in1=stmd_in1,
-        a_executor=Arg[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]](
-            a=thread_pool_executor
+        a_executor=Port[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]](
+            data=thread_pool_executor
         ),
     )
     stmd1.run()
@@ -290,7 +248,7 @@ def test_stmd_tractor(fixture_isodate_now) -> None:
 def test_stmd_local(fixture_isodate_now) -> None:
 
     class TestSTMD(STMD):
-        a_multiplier: Arg[float] = Arg[float](a=0.0)
+        a_multiplier: Port[float] = Port[float](data=0.0)
 
         _traction: Type[Traction] = G_TTest1
 
@@ -298,7 +256,7 @@ def test_stmd_local(fixture_isodate_now) -> None:
         i_in1: Port[TList[float]]
 
     stmd_in1 = Port[TList[float]](data=TList[float]([1.0, 2.0, 3.0, 4.0, 5.0]))
-    stmd1 = TestSTMD(uid="tt1", a_multiplier=Arg[float](a=10.0), i_in1=stmd_in1)
+    stmd1 = TestSTMD(uid="tt1", a_multiplier=Port[float](data=10.0), i_in1=stmd_in1)
     stmd1.run()
     assert stmd1.o_out1[0] == 10.0
     assert stmd1.o_out1[1] == 20.0
@@ -310,7 +268,7 @@ def test_stmd_local(fixture_isodate_now) -> None:
 def test_stmd_threads(fixture_isodate_now) -> None:
 
     class TestSTMD(STMD):
-        a_multiplier: Arg[float] = Arg[float](a=0.0)
+        a_multiplier: Port[float] = Port[float](data=0.0)
 
         _traction: Type[Traction] = G_TTest1
 
@@ -331,10 +289,10 @@ def test_stmd_threads(fixture_isodate_now) -> None:
     thread_pool_executor = ThreadPoolExecutor(pool_size=1)
     stmd1 = TestSTMD(
         uid="tt1",
-        a_executor=Arg[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]](
-            a=thread_pool_executor
+        a_executor=Port[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]](
+            data=thread_pool_executor
         ),
-        a_multiplier=Arg[float](a=10.0),
+        a_multiplier=Port[float](data=10.0),
         i_in1=stmd_in1,
     )
     stmd1.run()
@@ -348,7 +306,7 @@ def test_stmd_threads(fixture_isodate_now) -> None:
 class GTestSTMD(STMD):
     """Test STMD."""
 
-    a_multiplier: Arg[float] = Arg[float](a=0.0)
+    a_multiplier: Port[float] = Port[float](data=0.0)
 
     _traction: Type[Traction] = G_TTest1
 
@@ -372,10 +330,10 @@ def test_stmd_processes(fixture_isodate_now) -> None:
     )
     stmd1 = GTestSTMD(
         uid="tt1",
-        a_executor=Arg[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]](
-            a=process_pool_executor
+        a_executor=Port[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]](
+            data=process_pool_executor
         ),
-        a_multiplier=Arg[float](a=10.0),
+        a_multiplier=Port[float](data=10.0),
         i_in1=stmd_in1,
     )
     stmd1.run()
@@ -403,10 +361,10 @@ def test_wrap_stmd(fixture_isodate_now) -> None:
 
     stmd1 = STMD.wrap(G_TTest1)(
         uid="tt1",
-        a_executor=Arg[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]](
-            a=thread_pool_executor
+        a_executor=Port[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]](
+            data=thread_pool_executor
         ),
-        a_multiplier=Arg[float](a=10.0),
+        a_multiplier=Port[float](data=10.0),
         i_in1=stmd_in1,
     )
     stmd1.run()

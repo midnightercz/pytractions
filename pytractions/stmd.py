@@ -8,9 +8,9 @@ from .base import (
     Base,
     ANY,
     Port,
-    Arg,
-    In,
-    Out,
+    #Arg,
+    #In,
+    #Out,
     NoData,
     DefaultOut,
     STMDSingleIn,
@@ -22,10 +22,10 @@ from .base import (
     TractionStats,
     on_update_empty,
     OnUpdateCallable,
-    ANY_IN_TYPE_NODE,
-    ANY_OUT_TYPE_NODE,
-    ANY_RES_TYPE_NODE,
-    ANY_ARG_TYPE_NODE,
+    #ANY_IN_TYPE_NODE,
+    #ANY_OUT_TYPE_NODE,
+    #ANY_RES_TYPE_NODE,
+    #ANY_ARG_TYPE_NODE,
     is_wrapped,
 )
 from .executor import ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor
@@ -57,37 +57,37 @@ class STMDMeta(TractionMeta):
             "tractions",
             "tractions_state",
         ):
-            if attr.startswith("i_"):
-                if (
-                    type_type_node == ANY_OUT_TYPE_NODE
-                    or type_type_node == ANY_ARG_TYPE_NODE
-                    or type_type_node == ANY_RES_TYPE_NODE
-                ):
-                    raise TypeError(f"Attribute {attr} has to be type In[ANY], but is {type_}")
-            elif attr.startswith("o_"):
-                if (
-                    type_type_node == ANY_IN_TYPE_NODE
-                    or type_type_node == ANY_ARG_TYPE_NODE
-                    or type_type_node == ANY_RES_TYPE_NODE
-                ):
-                    raise TypeError(f"Attribute {attr} has to be type Out[ANY], but is {type_}")
-            elif attr.startswith("a_"):
-                if (
-                    type_type_node == ANY_IN_TYPE_NODE
-                    or type_type_node == ANY_OUT_TYPE_NODE
-                    or type_type_node == ANY_RES_TYPE_NODE
-                ):
-                    raise TypeError(
-                        f"Attribute {attr} has to be type Arg[ANY] or MultiArg, but is {type_}"
-                    )
-            elif attr.startswith("r_"):
-                if (
-                    type_type_node == ANY_IN_TYPE_NODE
-                    or type_type_node == ANY_OUT_TYPE_NODE
-                    or type_type_node == ANY_ARG_TYPE_NODE
-                ):
-                    raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
-            elif attr == "d_":
+            # if attr.startswith("i_"):
+            #     if (
+            #         type_type_node == ANY_OUT_TYPE_NODE
+            #         or type_type_node == ANY_ARG_TYPE_NODE
+            #         or type_type_node == ANY_RES_TYPE_NODE
+            #     ):
+            #         raise TypeError(f"Attribute {attr} has to be type In[ANY], but is {type_}")
+            # elif attr.startswith("o_"):
+            #     if (
+            #         type_type_node == ANY_IN_TYPE_NODE
+            #         or type_type_node == ANY_ARG_TYPE_NODE
+            #         or type_type_node == ANY_RES_TYPE_NODE
+            #     ):
+            #         raise TypeError(f"Attribute {attr} has to be type Out[ANY], but is {type_}")
+            # elif attr.startswith("a_"):
+            #     if (
+            #         type_type_node == ANY_IN_TYPE_NODE
+            #         or type_type_node == ANY_OUT_TYPE_NODE
+            #         or type_type_node == ANY_RES_TYPE_NODE
+            #     ):
+            #         raise TypeError(
+            #             f"Attribute {attr} has to be type Arg[ANY] or MultiArg, but is {type_}"
+            #         )
+            # elif attr.startswith("r_"):
+            #     if (
+            #         type_type_node == ANY_IN_TYPE_NODE
+            #         or type_type_node == ANY_OUT_TYPE_NODE
+            #         or type_type_node == ANY_ARG_TYPE_NODE
+            #     ):
+            #         raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
+            if attr == "d_":
                 if type_type_node != TypeNode.from_type(str):
                     raise TypeError(f"Attribute {attr} has to be type str, but is {type_}")
             elif attr.startswith("d_"):
@@ -98,7 +98,7 @@ class STMDMeta(TractionMeta):
                         f"Attribute {attr.replace('d_', '', 1)} is not defined for "
                         "description {attr}: {all_attrs}"
                     )
-            else:
+            elif not (attr.startswith("i_") or attr.startswith("o_") or attr.startswith("a_") or attr.startswith("r_")):
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or d_")
 
     def __new__(cls, name, bases, attrs):
@@ -221,10 +221,10 @@ class STMD(Traction, metaclass=STMDMeta):
     stats: TractionStats = dataclasses.field(default_factory=TractionStats)
     details: TDict[str, str] = dataclasses.field(default_factory=TDict[str, str])
     _traction: Type[Traction] = Traction
-    a_delete_after_finished: Arg[bool] = Arg[bool](a=True)
-    a_executor: Arg[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]] = Arg[
+    a_delete_after_finished: Port[bool] = Port[bool](data=True)
+    a_executor: Port[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]] = Port[
         Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]
-    ](a=_loop_executor)
+    ](data=_loop_executor)
     tractions: TList[Union[Traction, None]] = dataclasses.field(
         default_factory=TList[Optional[Traction]]
     )
@@ -248,7 +248,7 @@ class STMD(Traction, metaclass=STMDMeta):
                 if k in single_inputs:
                     annotations[k] = STMDSingleIn[v._params[0]]
                 else:
-                    annotations[k] = In[TList[v._params[0]]]
+                    annotations[k] = Port[TList[v._params[0]]]
             if k.startswith("o_"):
                 annotations[k] = Port[TList[v._params[0]]]
             if k.startswith("a_") or k.startswith("r_"):
@@ -327,11 +327,11 @@ class STMD(Traction, metaclass=STMDMeta):
                     if TypeNode.from_type(
                         self._fields[f], subclass_check=False
                     ) == TypeNode.from_type(STMDSingleIn[ANY]):
-                        inputs[i][f] = In.__class_getitem__(*getattr(self, "_raw_" + f)._params)(
+                        inputs[i][f] = Port.__class_getitem__(*getattr(self, "_raw_" + f)._params)(
                             data=getattr(self, f)
                         )
                     else:
-                        inputs[i][f] = In.__class_getitem__(
+                        inputs[i][f] = Port.__class_getitem__(
                             *getattr(self, "_raw_" + f)._params[0]._params
                         )(data=getattr(self, f)[i])
         args = {}

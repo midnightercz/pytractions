@@ -3,11 +3,8 @@ from typing import Union, Type
 from pytractions.base import (
     Traction,
     TList,
-    In,
-    TIn,
-    TRes,
-    Arg,
-    Res,
+    TPort,
+    Port,
     Base,
     OnUpdateCallable,
 )
@@ -107,6 +104,7 @@ def test_tractor_run() -> None:
         a_reducer: float
 
         def _run(self, on_update) -> None:  # pragma: no cover
+            print("I", self.i_in1, "/", "A", self.a_reducer)
             self.o_out1 = (self.i_in1 + 1) / float(self.a_reducer)
 
     class TestTractor(Tractor):
@@ -126,7 +124,7 @@ def test_tractor_run() -> None:
         t_ttest3.i_in1 = t_ttest2.o_out1
         t_ttest4.i_in1 = t_ttest3.o_out1
 
-        o_out1: float = t_ttest4._o_out1
+        o_out1: float = t_ttest4.o_out1
 
     tt = TestTractor(
         uid="tt1",
@@ -159,30 +157,38 @@ class TestTraction(Traction):
     def _run(self, on_update: OnUpdateCallable) -> None:
         self.o_output = self.i_input + self.r_seq.inc()
 
-for f, ftype in TestTraction.__dataclass_fields__.items():
-    print(f, ftype)
+#for f, ftype in TestTraction.__dataclass_fields__.items():
+#    print(f, ftype)
 
-class TestTractor(Tractor):
+print("................................................................")
+
+class TestTractorX(Tractor):
     """Test Tractor."""
 
-    i_in1: int = TIn[int]()
-    r_seq: Seq = TRes[Seq]()
+    i_in1: int = TPort[int]()
+    r_seq: Seq = TPort[Seq]()
     t_t1: TestTraction = TestTraction(uid="1", i_input=i_in1, r_seq=r_seq)
+    print("XXXX1 OUT", id(t_t1.o_output), id(t_t1._raw_o_output), type(t_t1.o_output))
+    print("XXXX2 OUT", id(t_t1.o_output), id(t_t1._raw_o_output), type(t_t1.o_output))
     o_out1: int = t_t1.o_output
+    print("XXXX3 OUT", id(o_out1))
 
+print("................................................................")
 
+import sys
 class TestTractor2(Tractor):
     """Test Tractor2."""
 
-    i_in1: int = TIn()
-    r_seq: Seq = TRes[Seq]()
-    t_tractor1: TestTractor = TestTractor(uid="1", i_in1=i_in1, r_seq=r_seq)
+    i_in1: int = TPort[int]()
+    r_seq: Seq = TPort[Seq]()
+    t_tractor1: TestTractorX = TestTractorX(uid="1", i_in1=i_in1, r_seq=r_seq)
+    print("YYYYY OUT", id(t_tractor1.o_out1), id(t_tractor1._raw_o_out1), type(t_tractor1.o_out1))
     o_out1: int = t_tractor1.o_out1
 
 
 def test_tractor_nested():
     seq = Seq(val=10)
-    t = TestTractor2(uid="1", i_in1=In[int](data=1), r_seq=Res[Seq](r=seq))
+    t = TestTractor2(uid="1", i_in1=Port[int](data=1), r_seq=Port[Seq](data=seq))
     t.run()
     assert t.o_out1 == 12
     assert t.tractions["t_tractor1"].o_out1 == 12
@@ -204,15 +210,15 @@ class G_TTest1(Traction):
 def test_stmd_local(fixture_isodate_now) -> None:
 
     class TestSTMD(STMD):
-        a_multiplier: Arg[float]
+        a_multiplier: Port[float]
 
         _traction: Type[Traction] = G_TTest1
 
         o_out1: TList[float]
         i_in1: TList[float]
 
-    stmd_in1 = In[TList[float]](data=TList[float]([1.0, 2.0, 3.0, 4.0, 5.0]))
-    stmd1 = TestSTMD(uid="tt1", a_multiplier=Arg[float](a=10.0), i_in1=stmd_in1)
+    stmd_in1 = Port[TList[float]](data=TList[float]([1.0, 2.0, 3.0, 4.0, 5.0]))
+    stmd1 = TestSTMD(uid="tt1", a_multiplier=Port[float](data=10.0), i_in1=stmd_in1)
     stmd1.run()
     assert stmd1.o_out1[0] == 10.0
     assert stmd1.o_out1[1] == 20.0
