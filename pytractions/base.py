@@ -124,38 +124,48 @@ def _hash(obj):
         base=16,
     )
 
+
+
 class _defaultInt(int):
     def __init__(self, x):
         self._val = x
+
     def __getattribute__(self, name):
-        print("DEFAULT INT GETATTR", name)
-        if name == "_val":
-            return object.__getattribute__(self, "_val")
+        if name in ("_val",):
+            return object.__getattribute__(self, name)
         else:
             return object.__getattribute__(object.__getattribute__(self, "_val"), name)
 
     def __eq__(self, other):
         return self._val == other
+
 
 class _defaultStr(str):
-    def __init__(self, x):
+    def __init__(self, x, parent=None, str_id=None):
         self._val = x
+
     def __getattribute__(self, name):
-        if name == "_val":
-            return super().__getattribute__(name)
+        #print("DEFAULT INT GETATTR", name)
+        if name in ("_val",):
+            return object.__getattribute__(self, name)
         else:
             return object.__getattribute__(object.__getattribute__(self, "_val"), name)
+
     def __eq__(self, other):
         return self._val == other
+
 
 class _defaultFloat(float):
     def __init__(self, x):
         self._val = x
+
     def __getattribute__(self, name):
-        if name == "_val":
-            return super().__getattribute__(name)
+        #print("DEFAULT INT GETATTR", name)
+        if name in ("_val",):
+            return object.__getattribute__(self, name)
         else:
             return object.__getattribute__(object.__getattribute__(self, "_val"), name)
+
     def __eq__(self, other):
         return self._val == other
 
@@ -167,6 +177,7 @@ class _defaultBool:
 
 #class defautlNone(type(None)):
 #    pass
+
 
 type_to_default_type = {
     int: _defaultInt,
@@ -222,6 +233,7 @@ class BaseMeta(type):
 
     def __new__(cls, name, bases, attrs):
         """Create new class."""
+
         if "_config" in attrs:
             assert TypeNode.from_type(type(attrs["_config"])) == TypeNode(BaseConfig)
             config = attrs["_config"]
@@ -2370,6 +2382,7 @@ class Traction(Base, metaclass=TractionMeta):
         if name.startswith("i_"):
             # Need to check with hasattr first to make sure inputs can be initialized
             if hasattr(self, name):
+                print("SETTING INPUT", name, type(value), value)
                 # Allow overwrite default input values
                 if super().__getattribute__(name) == self.__dataclass_fields__[
                     name
@@ -2403,7 +2416,7 @@ class Traction(Base, metaclass=TractionMeta):
 
             # in the case input is not set, initialize it
             elif not hasattr(self, name):
-                print("SETTING NEW INPUT", name)
+                print("SETTING NEW INPUT", name, type(value))
                 if wrapped:
                     self._no_validate_setattr_(name, value)
                     self._no_validate_setattr_("_raw_" + name, value)

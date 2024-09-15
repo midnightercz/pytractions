@@ -224,7 +224,11 @@ class TractorMeta(TractionMeta):
                 raw_tfo = object.__getattribute__(_traction, tf)
                 tfo = getattr(_traction, tf)
                 if tf.startswith("i_"):
-                    print("TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
+                    if tfo:
+                        print("TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
+                    else:
+                        print("TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
+
                     #print("ID FO", id(tfo))
                     #print("ID FO data", id(tfo.data))
                     #print("OUTPUTS MAP", outputs_map)
@@ -248,10 +252,12 @@ class TractorMeta(TractionMeta):
 
 
             for tf in _traction._fields:
+                print("TF", tf)
                 tfo = getattr(_traction, tf)
                 raw_tfo = object.__getattribute__(_traction, tf)
 
                 if tf.startswith("o_"):
+                    print(f"TRACTION {t} TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
                     cls._process_output(t, tf, raw_tfo, tfo, outputs_map, outputs_all, traction_waves, output_waves)
                     #outputs_all.append(id(tfo))
                     #outputs_all.append(id(tfo.data))
@@ -262,6 +268,11 @@ class TractorMeta(TractionMeta):
                     #outputs_map[id(tfo.data)] = (t, tf)
                     #output_waves[id(tfo.data)] = traction_waves[t]
                 elif tf.startswith("i_"):
+                    if tfo:
+                        print(f"TRACTION {t} TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
+                    else:
+                        print(f"TRACTION {t} TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
+
                     if TypeNode.from_type(type(tfo), subclass_check=False) != TypeNode.from_type(
                         NoData[ANY]
                     ):

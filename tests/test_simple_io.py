@@ -108,10 +108,10 @@ def test_tractor_run() -> None:
             self.o_out1 = (self.i_in1 + 1) / float(self.a_reducer)
 
     class TestTractor(Tractor):
-        a_multiplier: float = 0.0
-        a_reducer: float = 0.0
+        a_multiplier: Port[float] = Port[float](data=0.0)
+        a_reducer: Port[float] = Port[float](data=0.0)
 
-        i_in1: float = 1.0
+        i_in1: Port[float] = Port[float](data=1.0)
 
         t_ttest1: TTest2 = TTest2(uid="1", a_reducer=a_reducer)
         t_ttest2: TTest2 = TTest2(uid="2", a_reducer=a_reducer)
