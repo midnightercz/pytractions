@@ -146,8 +146,8 @@ class TractorMeta(TractionMeta):
         output_waves = {}
         traction_waves = {}
 
-        print("############")
-        print("NAME", name)
+        #print("############")
+        #print("NAME", name)
 
         for dst_o, _attr in [
             (outputs_map, "_outputs_map"),
@@ -169,11 +169,11 @@ class TractorMeta(TractionMeta):
                         if k not in dst_o:
                             dst_o[k] = v
 
-        for f, fo in attrs.items():
-            if f.startswith("o_"):
-                print("ID FO 1", f, fo, id(fo))
-            if f.startswith("i_"):
-                print("ID FO 1", f, fo, id(fo))
+        # for f, fo in attrs.items():
+        #     if f.startswith("o_"):
+        #         #print("ID FO 1", f, fo, id(fo))
+        #     if f.startswith("i_"):
+        #         #print("ID FO 1", f, fo, id(fo))
 
         outputs_all = []
         _outputs_all = {}
@@ -224,10 +224,10 @@ class TractorMeta(TractionMeta):
                 raw_tfo = object.__getattribute__(_traction, tf)
                 tfo = getattr(_traction, tf)
                 if tf.startswith("i_"):
-                    if tfo:
-                        print("TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
-                    else:
-                        print("TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
+                    # if tfo:
+                    #     print("TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
+                    # else:
+                    #     print("TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
 
                     #print("ID FO", id(tfo))
                     #print("ID FO data", id(tfo.data))
@@ -252,12 +252,12 @@ class TractorMeta(TractionMeta):
 
 
             for tf in _traction._fields:
-                print("TF", tf)
+                #print("TF", tf)
                 tfo = getattr(_traction, tf)
                 raw_tfo = object.__getattribute__(_traction, tf)
 
                 if tf.startswith("o_"):
-                    print(f"TRACTION {t} TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
+                    #print(f"TRACTION {t} TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
                     cls._process_output(t, tf, raw_tfo, tfo, outputs_map, outputs_all, traction_waves, output_waves)
                     #outputs_all.append(id(tfo))
                     #outputs_all.append(id(tfo.data))
@@ -268,10 +268,10 @@ class TractorMeta(TractionMeta):
                     #outputs_map[id(tfo.data)] = (t, tf)
                     #output_waves[id(tfo.data)] = traction_waves[t]
                 elif tf.startswith("i_"):
-                    if tfo:
-                        print(f"TRACTION {t} TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
-                    else:
-                        print(f"TRACTION {t} TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
+                    # if tfo:
+                    #     print(f"TRACTION {t} TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
+                    # else:
+                    #     print(f"TRACTION {t} TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
 
                     if TypeNode.from_type(type(tfo), subclass_check=False) != TypeNode.from_type(
                         NoData[ANY]
@@ -312,23 +312,23 @@ class TractorMeta(TractionMeta):
                         if id(mafo) in args:
                             margs_map[(t, tf, maf)] = args[id(mafo)]
 
-        print("OUTPUTS MAP", outputs_map)
+        #print("OUTPUTS MAP", outputs_map)
         for f, fo in attrs.items():
             if f.startswith("o_"):
-                print("ID FO 3", f, fo, type(fo), id(fo))
+                #print("ID FO 3", f, fo, type(fo), id(fo))
                 if id(fo) in outputs_map:
-                    print("-------------- ID", id(fo), outputs_map[id(fo)])
+                    #print("-------------- ID", id(fo), outputs_map[id(fo)])
                     path = outputs_map[id(fo)]
-                    print("PATH", path)
+                    #print("PATH", path)
                     if len(path) == 3 and path[2] == "data":
-                        print("short path", path[0:2])
+                        #print("short path", path[0:2])
                         t_outputs_map[f] = path[0:2]
                     else:
                         t_outputs_map[f] = path
 
         #print("IOMAP", io_map, file=sys.stderr)
-        print("T OUTPUTS MAP", t_outputs_map)
-        print("---------")
+        # print("T OUTPUTS MAP", t_outputs_map)
+        # print("---------")
 
         attrs["_t_outputs_map"] = t_outputs_map
         attrs["_output_waves"] = output_waves
@@ -410,8 +410,8 @@ class Tractor(Traction, metaclass=TractorMeta):
                         n_out = Port[type(out)](data=None)
                         #print("N OUT", n_out)
                         n_out._ref = object.__getattribute__(self.tractions[source], o_path[0])
-                        print("-----> REF", n_out._ref, id(n_out._ref), "\n<-----")
-                        print("PROXY PATH", o_path)
+                        #print("-----> REF", n_out._ref, id(n_out._ref), "\n<-----")
+                        #print("PROXY PATH", o_path)
                         n_out._data_proxy = o_path[1:]
                         out = n_out
 
@@ -453,7 +453,6 @@ class Tractor(Traction, metaclass=TractorMeta):
                 if ft.startswith("_"):
                     continue
                 init_fields[ft] = getattr(traction, ft)
-        print("Traction", traction_name, init_fields)
 
         return traction.__class__(**init_fields)
 
@@ -473,7 +472,7 @@ class Tractor(Traction, metaclass=TractorMeta):
                 # regular __setattr__ don't overwrite whole output model but just
                 # data in it to keep connection, so need to use _no_validate_setattr
                 #t, tf = self._t_outputs_map[f]
-                print("OUTPUTS MAP", self._t_outputs_map)
+                #print("OUTPUTS MAP", self._t_outputs_map)
                 t, *tf_path = self._t_outputs_map[f]
                 #print("OUT", f, t, tf_path)
                 if t == "#":

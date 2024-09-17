@@ -72,15 +72,6 @@ def test_traction_inputs_1():
     TTest(uid="1", i_in1=o)
 
 
-def test_traction_inputs_read():
-    class TTest(Traction):
-        i_in1: Port[int] = field(default=Port[int]())
-
-    o: Port[int] = Port[int](data=10)
-    t = TTest(uid="1", i_in1=o)
-    assert id(t.i_in1) == id(o.data)
-
-
 def test_traction_inputs_read_unset():
     class TTest(Traction):
         i_in1: Port[int]

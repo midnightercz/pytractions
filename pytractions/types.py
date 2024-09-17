@@ -51,20 +51,21 @@ class TypeNode:
         """Return string representation of TypeNode."""
         return "<TypeNode type=%s>" % self.type_
 
-    def __init__(self, type_, subclass_check=True):
+    def __init__(self, type_, subclass_check=True, type_aliases=None):
         """Initialize TypeNode."""
         self.type_ = type_
         self.subclass_check = subclass_check
         self.children = []
+        self.type_aliases = type_aliases or []
 
     def __lt__(self, other):
         """Return if TypeNode is less than other."""
         return str(self.type_) < str(other.type_)
 
     @classmethod
-    def from_type(cls, type_, subclass_check=True):
+    def from_type(cls, type_, subclass_check=True, type_aliases=None):
         """Create TypeNode from provided type)."""
-        root = cls(type_=type_, subclass_check=subclass_check)
+        root = cls(type_=type_, subclass_check=subclass_check, type_aliases=type_aliases)
         current = root
         stack = []
         while True:
@@ -245,6 +246,11 @@ class TypeNode:
             if n1_type is None:
                 n1_type = type(None)
 
+            if [x for x in self.type_aliases if x[0] == n1_type]:
+                n1_type = [x for x in self.type_aliases if x[0] == n1_type][0][1]
+            if [x for x in self.type_aliases if x[0] == n2_type]:
+                n2_type = [x for x in self.type_aliases if x[0] == n2_type][0][1]
+
             # check types only of both types are not union
             # otherwise equality was already decided by check above
 
@@ -283,88 +289,6 @@ class TypeNode:
                         and issubclass(orig_cls1, orig_cls2)
                     )
                 )
-            cmp_node.eq = ch_eq
-
-        return node.eq
-
-    def __eq_cached_(self, other):
-        if type(other) is not TypeNode:
-            return False
-
-        op = self.__determine_op(self, other)
-        node = CMPNode(self, other, op, op)
-        post_order = self.__eq_post_order(node)
-
-        for cmp_node in post_order:
-            if cmp_node.op == "any":
-                if cmp_node.children:
-                    ch_eq = any([ch.eq for ch in cmp_node.children])
-                else:
-                    ch_eq = True
-            else:
-                ch_eq = all([ch.eq for ch in cmp_node.children])
-
-            n1_type = cmp_node.n1.type_
-            n2_type = cmp_node.n2.type_
-
-            if isinstance(n1_type, ForwardRef) or isinstance(n2_type, ForwardRef):
-                frame = sys._getframe(1)
-
-            if isinstance(n1_type, ForwardRef):
-                n1_type = evaluate_forward_ref(n1_type, frame)
-            if isinstance(n2_type, ForwardRef):
-                n2_type = evaluate_forward_ref(n2_type, frame)
-
-            if n2_type is None:
-                n2_type = type(None)
-            if n1_type is None:
-                n1_type = type(None)
-
-            # check types only of both types are not union
-            # otherwise equality was already decided by check above
-
-            orig_cls1 = getattr(n1_type, "_orig_cls", False)
-            orig_cls2 = getattr(n2_type, "_orig_cls", True)
-
-            has_params1 = hasattr(n1_type, "_params") and len(n1_type._params) != 0
-            has_params2 = hasattr(n2_type, "_params") and len(n2_type._params) != 0
-
-            is_any1 = n1_type is ANY
-            is_any2 = n2_type is ANY
-
-            if is_any1 or is_any2:
-                ch_eq &= is_any1 and is_any2
-            elif n1_type is not Union and n2_type is not Union:
-                ch_eq &= (
-                    n1_type == n2_type
-                    or (orig_cls1 == orig_cls2 and has_params1 and has_params2)
-                    or orig_cls1 == n2_type
-                    or orig_cls2 == n1_type
-                    or (
-                        self.subclass_check
-                        and (
-                            inspect.isclass(n1_type)
-                            and inspect.isclass(n2_type)
-                            and issubclass(n1_type, n2_type)
-                        )
-                    )
-                    or (
-                        self.subclass_check
-                        and (
-                            inspect.isclass(n1_type)
-                            and inspect.isclass(orig_cls2)
-                            and issubclass(n1_type, orig_cls2)
-                        )
-                    )
-                    or bool(
-                        self.subclass_check
-                        and inspect.isclass(orig_cls1)
-                        and inspect.isclass(orig_cls2)
-                        and issubclass(orig_cls1, orig_cls2)
-                    )
-                )
-            else:
-                ch_eq = False
             cmp_node.eq = ch_eq
 
         return node.eq

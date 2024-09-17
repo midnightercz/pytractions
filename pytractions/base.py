@@ -145,7 +145,6 @@ class _defaultStr(str):
         self._val = x
 
     def __getattribute__(self, name):
-        #print("DEFAULT INT GETATTR", name)
         if name in ("_val",):
             return object.__getattribute__(self, name)
         else:
@@ -160,7 +159,6 @@ class _defaultFloat(float):
         self._val = x
 
     def __getattribute__(self, name):
-        #print("DEFAULT INT GETATTR", name)
         if name in ("_val",):
             return object.__getattribute__(self, name)
         else:
@@ -297,7 +295,7 @@ class BaseMeta(type):
                 elif type(attrs[attr]) in (str, int, None, float):
                     #type_ = type_to_default_type[type(attrs[attr])](attrs[attr])
                     default = type_to_default_type[type(attrs[attr])](attrs[attr])
-                    print("DEFAULT", attr, id(attrs[attr]), default, id(default))
+                    #print("DEFAULT", attr, id(attrs[attr]), default, id(default))
                     attrs[attr] = default
 
                 elif TypeNode.from_type(attrs[attr]) == TypeNode.from_type(Optional[ABase]):
@@ -1813,8 +1811,10 @@ class STMDSingleIn(Base, Generic[T]):
                 vtype = (
                     value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
                 )
-                tt1 = TypeNode.from_type(vtype)
-                tt2 = TypeNode.from_type(self._fields[name])
+                tt1 = TypeNode.from_type(vtype,
+                                         type_aliases=[(type(True), _defaultBool)])
+                tt2 = TypeNode.from_type(self._fields[name],
+                                         type_aliases=[(type(True), _defaultBool)])
                 if tt1 != tt2:
                     raise TypeError(
                         f"Cannot set attribute {self.__class__}.{name} to type {value}({vtype}),"
@@ -2324,13 +2324,13 @@ class Traction(Base, metaclass=TractionMeta):
         if name.startswith("o_"):
             default_convertor = type_to_default_type.get(type(super().__getattribute__(name).data))
             if default_convertor:
-                print("DATA", super().__getattribute__(name).data)
+                #print("DATA", super().__getattribute__(name).data)
                 if name not in self._elementary_outs:
                     ret = default_convertor(super().__getattribute__(name).data)
                     self._elementary_outs[name] = ret
                 else:
                     self._elementary_outs[name]._val = super().__getattribute__(name).data
-                print("GETATTR", name, type(super().__getattribute__(name).data), self._elementary_outs[name]._val, self._elementary_outs[name], id(self._elementary_outs[name]))
+                #print("GETATTR", name, type(super().__getattribute__(name).data), self._elementary_outs[name]._val, self._elementary_outs[name], id(self._elementary_outs[name]))
                 return self._elementary_outs[name]
             else:
                 return super().__getattribute__(name).data
@@ -2365,12 +2365,15 @@ class Traction(Base, metaclass=TractionMeta):
             or name.startswith("r_")
         ):
             vtype = value.__class__
-            tt1 = TypeNode.from_type(vtype, subclass_check=True)
+            tt1 = TypeNode.from_type(vtype, subclass_check=True,
+                                     type_aliases=[(type(True), _defaultBool)])
             #print("F", name, is_wrapped(vtype))
             if is_wrapped(vtype):
-                tt2 = TypeNode.from_type(self._fields[name])
+                tt2 = TypeNode.from_type(self._fields[name],
+                                         type_aliases=[(type(True), _defaultBool)])
             else:
-                tt2 = TypeNode.from_type(self._fields[name]._params[0])
+                tt2 = TypeNode.from_type(self._fields[name]._params[0],
+                                         type_aliases=[(type(True), _defaultBool)])
                 # Value is not wrapped in Arg, In, Out or Res
                 wrapped = False
             if tt1 != tt2:
@@ -2382,7 +2385,7 @@ class Traction(Base, metaclass=TractionMeta):
         if name.startswith("i_"):
             # Need to check with hasattr first to make sure inputs can be initialized
             if hasattr(self, name):
-                print("SETTING INPUT", name, type(value), value)
+                #print("SETTING INPUT", name, type(value), value)
                 # Allow overwrite default input values
                 if super().__getattribute__(name) == self.__dataclass_fields__[
                     name
@@ -2405,7 +2408,7 @@ class Traction(Base, metaclass=TractionMeta):
                     and TypeNode.from_type(
                         type(getattr(self, "_raw_" + name)), subclass_check=False
                     )
-                    != ANY_IN_TYPE_NODE
+                    != Port[ANY]
                     and TypeNode.from_type(
                         type(getattr(self, "_raw_" + name)), subclass_check=False
                     )
@@ -2416,7 +2419,7 @@ class Traction(Base, metaclass=TractionMeta):
 
             # in the case input is not set, initialize it
             elif not hasattr(self, name):
-                print("SETTING NEW INPUT", name, type(value))
+                #print("SETTING NEW INPUT", name, type(value))
                 if wrapped:
                     self._no_validate_setattr_(name, value)
                     self._no_validate_setattr_("_raw_" + name, value)
@@ -2501,6 +2504,7 @@ class Traction(Base, metaclass=TractionMeta):
         ret = {"$data": {}}
         for f in self._fields:
             if f.startswith("i_"):
+                print("OWNER", getattr(self, "_raw_" + f)._owner)
                 if (
                     hasattr(getattr(self, "_raw_" + f), "_owner")
                     and getattr(self, "_raw_" + f)._owner
