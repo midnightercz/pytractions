@@ -265,7 +265,7 @@ class STMD(Traction, metaclass=STMDMeta):
     def _prep_tractions(self, first_in, outputs):
         """Prepare tractions for the run."""
         if self.state == TractionState.READY:
-            self.tractions_state.clear()
+            self.tractions_state = TList[TractionState]([])
             self.tractions_state.extend(TList[TractionState]([TractionState.READY] * len(first_in)))
 
             for o in outputs:
