@@ -125,7 +125,6 @@ def _hash(obj):
     )
 
 
-
 class _defaultInt(int):
     def __init__(self, x):
         self._val = x
@@ -167,9 +166,11 @@ class _defaultFloat(float):
     def __eq__(self, other):
         return self._val == other
 
+
 class _defaultBool:
     def __init__(self, val):
         self.val = val
+
     def __bool__(self):
         return self.val
 
@@ -293,9 +294,7 @@ class BaseMeta(type):
                     if attrs[attr].default_factory is not dataclasses.MISSING:
                         default = attrs[attr].default_factory
                 elif type(attrs[attr]) in (str, int, None, float):
-                    #type_ = type_to_default_type[type(attrs[attr])](attrs[attr])
                     default = type_to_default_type[type(attrs[attr])](attrs[attr])
-                    #print("DEFAULT", attr, id(attrs[attr]), default, id(default))
                     attrs[attr] = default
 
                 elif TypeNode.from_type(attrs[attr]) == TypeNode.from_type(Optional[ABase]):
@@ -500,10 +499,6 @@ class Base(ABase, metaclass=BaseMeta):
         if f"{id(cls)}[{_param_ids}]" in cls._generic_cache:
             ret = cls._generic_cache[f"{id(cls)}[{_param_ids}]"]
             return ret
-
-        # if qname in sys.modules[cls.__module__].__dict__:
-        #    ret = sys.modules[cls.__module__].__dict__[qname]
-        #    return ret
 
         bases = [x for x in resolve_bases([cls] + list(cls.__bases__)) if x is not Generic]
         attrs = {k: v for k, v in cls._attrs.items() if k not in ("_attrs", "_fields")}
