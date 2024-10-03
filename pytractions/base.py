@@ -33,6 +33,7 @@ from .exc import TractionFailedError
 from .utils import ANY, doc, isodate_now  # noqa: F401
 from .types import TypeNode, JSON_COMPATIBLE
 from .abase import ABase, ATList, ATDict
+from .traversal import Tree, ItemHandler
 
 
 LOGGER = logging.getLogger(__name__)
@@ -138,6 +139,9 @@ class _defaultInt(int):
     def __eq__(self, other):
         return self._val == other
 
+    def __str__(self):
+        return str(self._val)
+
 
 class _defaultStr(str):
     def __init__(self, x, parent=None, str_id=None):
@@ -151,6 +155,9 @@ class _defaultStr(str):
 
     def __eq__(self, other):
         return self._val == other
+
+    def __str__(self):
+        return str(self._val)
 
 
 class _defaultFloat(float):
@@ -166,13 +173,19 @@ class _defaultFloat(float):
     def __eq__(self, other):
         return self._val == other
 
+    def __str__(self):
+        return str(self._val)
+
 
 class _defaultBool:
     def __init__(self, val):
-        self.val = val
+        self._val = val
 
     def __bool__(self):
-        return self.val
+        return self._val
+
+    def __str__(self):
+        return str(self._val)
 
 #class defautlNone(type(None)):
 #    pass
@@ -378,6 +391,129 @@ class SerializationError(Exception):
     pass
 
 
+class ListItemHandler(ItemHandler):
+    def match(self, item):
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATList):
+            return True
+
+    def process(self, tree, item):
+        item.result[item.parent_index] = {
+            "$type": TypeNode.from_type(item.data.__class__).to_json(),
+            "$data": [],
+        }
+        #print("TREE", json.dumps(tree.root_result, indent=4))
+        for n, litem in enumerate(item.data._list):
+            #print("LITEM", litem)
+            if isinstance(litem, (int, float, str, bool, type(None))):
+                item.result[item.parent_index]["$data"].append(litem)
+            else:
+                item.result[item.parent_index]["$data"].append(None)
+                tree.add_to_process(data=litem,
+                                    data_type=item.data._params[0],
+                                    parent_index=n,
+                                    result=item.result[item.parent_index]["$data"])
+
+
+class DictItemHandler(ItemHandler):
+    def match(self, item):
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATDict):
+            return True
+
+    def process(self, tree, item):
+        item.result[item.parent_index] = {
+            "$type": TypeNode.from_type(item.data.__class__).to_json(),
+            "$data": {},
+        }
+        stack: List[Tuple[Base, Dict[str, Any], str]] = []
+        for k, v in item.data._dict.items():
+            jsonk = k
+            if not isinstance(k, (str, int, float, bool, type(None))):
+                jsonk = json.dumps(k.to_json(), sort_keys=True)
+            item.result[item.parent_index]["$data"][jsonk] = None
+            tree.add_to_process(data=v,
+                                data_type=item.data._params[1],
+                                parent_index=jsonk,
+                                result=item.result[item.parent_index]["$data"])
+
+
+class BasicItemHandler(ItemHandler):
+    def match(self, item):
+        data_type = item.data_type
+        if item.data_type.__class__ == _UnionGenericAlias and item.data_type._name == "Optional":
+            data_type = item.data_type.__args__[0]
+
+        ret = TypeNode.from_type(Union[int, str, bool, float, type(None)]) == TypeNode.from_type(data_type)
+        return ret
+
+    def process(self, tree, item):
+        item.result[item.parent_index] = item.data
+
+
+class EnumItemHandler(ItemHandler):
+    def match(self, item):
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(enum.Enum):
+            return True
+
+    def process(self, tree, item):
+        item.result[item.parent_index] = item.data.value
+
+
+class PortItemHandler(ItemHandler):
+    def match(self, item):
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(Port[ANY]):
+            return True
+
+    def process(self, tree, item):
+        item.result[item.parent_index] = {
+            "$type": TypeNode.from_type(item.data_type).to_json(),
+            "$data": {},
+        }
+        for f in item.data_type._fields:
+            if isinstance(item.data,
+                          (_defaultInt, _defaultStr,
+                           _defaultFloat, _defaultBool)):
+                item.result[item.parent_index]["$data"][f] = item.data._val
+            elif isinstance(item.data, (int, float, str, bool, type(None))):
+                item.result[item.parent_index]["$data"][f] = item.data
+            else:
+                #item.result[item.parent_index]["$data"] = {}
+                tree.add_to_process(
+                    data=getattr(item.data, f),
+                    data_type=item.data._fields[f],
+                    parent_index=f,
+                    result=item.result[item.parent_index]["$data"])
+
+
+class BaseItemHandler(ItemHandler):
+    def match(self, item):
+        if TypeNode.from_type(Union[int, str, bool, float, type(None)]) != TypeNode.from_type(item.data_type):
+            return True
+
+    def process(self, tree, item):
+        item.result[item.parent_index] = {
+            "$type": TypeNode.from_type(item.data.__class__).to_json(),
+            "$data": {},
+        }
+        for f in item.data._fields:
+            _f = item.data._SERIALIZE_REPLACE_FIELDS.get(f, f)
+            data = getattr(item.data, f)
+            tree.add_to_process(
+                data=data,
+                data_type=item.data._fields[f],
+                parent_index=_f,
+                result=item.result[item.parent_index]["$data"])
+
+
+class ToJsonTree(Tree):
+    handlers = [
+        ListItemHandler(),
+        DictItemHandler(),
+        EnumItemHandler(),
+        BasicItemHandler(),
+        PortItemHandler(),
+        BaseItemHandler()]
+
+
 class Base(ABase, metaclass=BaseMeta):
     """Base class supporting type validation."""
 
@@ -575,6 +711,16 @@ class Base(ABase, metaclass=BaseMeta):
         use this representation to load the very same object.
         However compare to python serializer, performance of much slower.
         """
+
+        result = {}
+        tree = ToJsonTree(result)
+        tree.add_to_process(data=self,
+                            data_type=self.__class__,
+                            parent_index="root",
+                            result=result)
+        tree.process()
+        return result['root']
+
         pre_order: Dict[str, Any] = {}
         stack: List[Tuple[Base, Dict[str, Any], str]] = [(self, pre_order, "root")]
         while stack:
@@ -1180,6 +1326,16 @@ class TList(Base, ATList, Generic[T]):
 
     def to_json(self) -> Dict[str, Any]:
         """Serialize TList to json representation."""
+
+        result = {}
+        tree = ToJsonTree(result)
+        tree.add_to_process(data=self,
+                            data_type=self.__class__,
+                            parent_index="root",
+                            result=result)
+        tree.process()
+        return result['root']
+
         pre_order: Dict[str, Any] = {}
         pre_order["root"] = {
             "$type": TypeNode.from_type(self.__class__).to_json(),
@@ -1488,6 +1644,16 @@ class TDict(Base, ATDict, Generic[TK, TV]):
 
     def to_json(self) -> Dict[str, Any]:
         """Serialize TDict to json representation."""
+
+        result = {}
+        tree = ToJsonTree(result)
+        tree.add_to_process(data=self,
+                            data_type=self.__class__,
+                            parent_index="root",
+                            result=result)
+        tree.process()
+        return result['root']
+
         pre_order: Dict[str, Any] = {}
         pre_order["root"] = {
             "$type": TypeNode.from_type(self.__class__).to_json(),
@@ -2319,19 +2485,16 @@ class Traction(Base, metaclass=TractionMeta):
         if name.startswith("o_"):
             default_convertor = type_to_default_type.get(type(super().__getattribute__(name).data))
             if default_convertor:
-                #print("DATA", super().__getattribute__(name).data)
                 if name not in self._elementary_outs:
                     ret = default_convertor(super().__getattribute__(name).data)
                     self._elementary_outs[name] = ret
                 else:
                     self._elementary_outs[name]._val = super().__getattribute__(name).data
-                #print("GETATTR", name, type(super().__getattribute__(name).data), self._elementary_outs[name]._val, self._elementary_outs[name], id(self._elementary_outs[name]))
                 return self._elementary_outs[name]
             else:
                 return super().__getattribute__(name).data
 
         if name.startswith("i_"):
-            #print("GETATTR", object.__getattribute__(self, "__class__"), name)
             default_convertor = type_to_default_type.get(type(super().__getattribute__(name).data))
             if name not in self._fields:
                 _class = super().__getattribute__("__class__")
@@ -2498,6 +2661,7 @@ class Traction(Base, metaclass=TractionMeta):
         """Serialize class instance to json representation."""
         ret = {"$data": {}}
         for f in self._fields:
+            print("----- F", f)
             if f.startswith("i_"):
                 print("OWNER", getattr(self, "_raw_" + f)._owner)
                 if (
@@ -2514,7 +2678,7 @@ class Traction(Base, metaclass=TractionMeta):
                     i_json = getattr(self, "_raw_" + f).to_json()
                     ret["$data"][f] = i_json
             elif f.startswith("o_"):
-                ret["$data"][f] = getattr(self, "_raw_" + f).to_json()
+                ret["$data"][f] = object.__getattribute__(self, f).to_json()
             elif f.startswith("a_"):
                 ret["$data"][f] = object.__getattribute__(self, f).to_json()
             elif f.startswith("r_"):

@@ -618,6 +618,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
     tt = TestTractor(uid="tt1", a_multiplier=Port[float](data=10.0), a_reducer=Port[float](data=2.0))
 
     tt.run()
+
     assert tt.to_json() == {
         "$data": {
             "a_multiplier": {

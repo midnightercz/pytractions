@@ -724,6 +724,7 @@ class MultiTractor(Tractor, metaclass=TractorMeta):
                 t, tf = self._outputs_map[f]
                 #print("Setting output", f, "to", t, tf)
                 self._no_validate_setattr_(f, getattr(self._tractions[t], tf))
+                self._no_validate_setattr_("_raw_"+f, getattr(self._tractions[t], tf))
         return self
 
 class LoopTractorEnd(Exception):
