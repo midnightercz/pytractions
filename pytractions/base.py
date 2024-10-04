@@ -401,9 +401,7 @@ class ListItemHandler(ItemHandler):
             "$type": TypeNode.from_type(item.data.__class__).to_json(),
             "$data": [],
         }
-        #print("TREE", json.dumps(tree.root_result, indent=4))
         for n, litem in enumerate(item.data._list):
-            #print("LITEM", litem)
             if isinstance(litem, (int, float, str, bool, type(None))):
                 item.result[item.parent_index]["$data"].append(litem)
             else:
@@ -412,6 +410,24 @@ class ListItemHandler(ItemHandler):
                                     data_type=item.data._params[0],
                                     parent_index=n,
                                     result=item.result[item.parent_index]["$data"])
+
+
+class ListItemHandlerContent(ItemHandler):
+    def match(self, item):
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATList):
+            return True
+
+    def process(self, tree, item):
+        item.result[item.parent_index] = []
+        for n, litem in enumerate(item.data._list):
+            if isinstance(litem, (int, float, str, bool, type(None))):
+                item.result[item.parent_index].append(litem)
+            else:
+                item.result[item.parent_index].append(None)
+                tree.add_to_process(data=litem,
+                                    data_type=item.data._params[0],
+                                    parent_index=n,
+                                    result=item.result[item.parent_index])
 
 
 class DictItemHandler(ItemHandler):
@@ -424,7 +440,6 @@ class DictItemHandler(ItemHandler):
             "$type": TypeNode.from_type(item.data.__class__).to_json(),
             "$data": {},
         }
-        stack: List[Tuple[Base, Dict[str, Any], str]] = []
         for k, v in item.data._dict.items():
             jsonk = k
             if not isinstance(k, (str, int, float, bool, type(None))):
@@ -436,14 +451,34 @@ class DictItemHandler(ItemHandler):
                                 result=item.result[item.parent_index]["$data"])
 
 
+class DictItemHandlerContent(ItemHandler):
+    def match(self, item):
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATDict):
+            return True
+
+    def process(self, tree, item):
+        item.result[item.parent_index] = {}
+        for k, v in item.data._dict.items():
+            jsonk = k
+            if not isinstance(k, (str, int, float, bool, type(None))):
+                jsonk = json.dumps(k.to_json(), sort_keys=True)
+            item.result[item.parent_index][jsonk] = None
+            tree.add_to_process(data=v,
+                                data_type=item.data._params[1],
+                                parent_index=jsonk,
+                                result=item.result[item.parent_index])
+
+
 class BasicItemHandler(ItemHandler):
     def match(self, item):
         data_type = item.data_type
         if item.data_type.__class__ == _UnionGenericAlias and item.data_type._name == "Optional":
             data_type = item.data_type.__args__[0]
 
-        ret = TypeNode.from_type(Union[int, str, bool, float, type(None)]) == TypeNode.from_type(data_type)
-        return ret
+        ret1 = TypeNode.from_type(Union[int, str, bool, float, type(None)]) == TypeNode.from_type(data_type)
+        ret2 = TypeNode.from_type(Union[int, str, bool, float, type(None)]) == \
+            TypeNode.from_type(type(item.data))
+        return ret1 or ret2
 
     def process(self, tree, item):
         item.result[item.parent_index] = item.data
@@ -476,12 +511,33 @@ class PortItemHandler(ItemHandler):
             elif isinstance(item.data, (int, float, str, bool, type(None))):
                 item.result[item.parent_index]["$data"][f] = item.data
             else:
-                #item.result[item.parent_index]["$data"] = {}
                 tree.add_to_process(
                     data=getattr(item.data, f),
                     data_type=item.data._fields[f],
                     parent_index=f,
                     result=item.result[item.parent_index]["$data"])
+
+
+class PortItemHandlerContent(ItemHandler):
+    def match(self, item):
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(Port[ANY]):
+            return True
+
+    def process(self, tree, item):
+        item.result[item.parent_index] = {}
+        for f in item.data_type._fields:
+            if isinstance(item.data,
+                          (_defaultInt, _defaultStr,
+                           _defaultFloat, _defaultBool)):
+                item.result[item.parent_index][f] = item.data._val
+            elif isinstance(item.data, (int, float, str, bool, type(None))):
+                item.result[item.parent_index][f] = item.data
+            else:
+                tree.add_to_process(
+                    data=getattr(item.data, f),
+                    data_type=item.data._fields[f],
+                    parent_index=f,
+                    result=item.result[item.parent_index])
 
 
 class BaseItemHandler(ItemHandler):
@@ -504,6 +560,23 @@ class BaseItemHandler(ItemHandler):
                 result=item.result[item.parent_index]["$data"])
 
 
+class BaseItemHandlerContent(ItemHandler):
+    def match(self, item):
+        if TypeNode.from_type(Union[int, str, bool, float, type(None)]) != TypeNode.from_type(item.data_type):
+            return True
+
+    def process(self, tree, item):
+        item.result[item.parent_index] = {}
+        for f in item.data._fields:
+            _f = item.data._SERIALIZE_REPLACE_FIELDS.get(f, f)
+            data = getattr(item.data, f)
+            tree.add_to_process(
+                data=data,
+                data_type=item.data._fields[f],
+                parent_index=_f,
+                result=item.result[item.parent_index])
+
+
 class ToJsonTree(Tree):
     handlers = [
         ListItemHandler(),
@@ -512,6 +585,16 @@ class ToJsonTree(Tree):
         BasicItemHandler(),
         PortItemHandler(),
         BaseItemHandler()]
+
+
+class ContentToJsonTree(Tree):
+    handlers = [
+        ListItemHandlerContent(),
+        DictItemHandlerContent(),
+        EnumItemHandler(),
+        BasicItemHandler(),
+        PortItemHandlerContent(),
+        BaseItemHandlerContent()]
 
 
 class Base(ABase, metaclass=BaseMeta):
@@ -721,25 +804,6 @@ class Base(ABase, metaclass=BaseMeta):
         tree.process()
         return result['root']
 
-        pre_order: Dict[str, Any] = {}
-        stack: List[Tuple[Base, Dict[str, Any], str]] = [(self, pre_order, "root")]
-        while stack:
-            current, current_parent, parent_key = stack.pop(0)
-            if not isinstance(current, (int, str, bool, float, type(None), ATList, ATDict)):
-                current_parent[parent_key] = {
-                    "$type": TypeNode.from_type(current.__class__).to_json(),
-                    "$data": {},
-                }
-                for f in current._fields:
-                    _f = self._SERIALIZE_REPLACE_FIELDS.get(f, f)
-                    stack.append((getattr(current, f), current_parent[parent_key]["$data"], _f))
-            elif isinstance(current, (ATList, ATDict)):
-                current_parent[parent_key] = current.to_json()
-            elif isinstance(current, (enum.Enum)):
-                current_parent[parent_key] = current.value
-            else:
-                current_parent[parent_key] = current
-        return pre_order["root"]
 
     def content_to_json(self) -> Dict[str, Any]:
         """Similar to `Base.to_json` method, but doesn't include information of type of the object.
@@ -747,20 +811,14 @@ class Base(ABase, metaclass=BaseMeta):
         Only it's content. This is exit only method. Output if this method cannot be used as
         input for any 'load' method.
         """
-        pre_order: Dict[str, Any] = {"root": {}}
-        stack: List[Tuple[Base, Dict[str, Any], str]] = []
-        for f in self._fields:
-            _f = self._SERIALIZE_REPLACE_FIELDS.get(f, f)
-            stack.append((getattr(self, f), pre_order["root"], _f))
-        while stack:
-            current, current_parent, parent_key = stack.pop(0)
-            if isinstance(current, (ATList, ATDict, Base)):
-                current_parent[parent_key] = current.content_to_json()
-            elif isinstance(current, (enum.Enum)):
-                current_parent[parent_key] = current.value
-            else:
-                current_parent[parent_key] = current
-        return pre_order["root"]
+        result = {}
+        tree = ContentToJsonTree(result)
+        tree.add_to_process(data=self,
+                            data_type=self.__class__,
+                            parent_index="root",
+                            result=result)
+        tree.process()
+        return result['root']
 
     @classmethod
     def content_from_json(cls, json_dict: Dict[str, Any]):
@@ -1336,55 +1394,17 @@ class TList(Base, ATList, Generic[T]):
         tree.process()
         return result['root']
 
-        pre_order: Dict[str, Any] = {}
-        pre_order["root"] = {
-            "$type": TypeNode.from_type(self.__class__).to_json(),
-            "$data": [],
-        }
-        stack: List[Tuple[Base, Dict[str, Any], str]] = []
-        for n, item in enumerate(self._list):
-            pre_order["root"]["$data"].append(None)
-            stack.append((item, pre_order["root"]["$data"], n))
-        while stack:
-            current, current_parent, parent_key = stack.pop(0)
-            if not isinstance(current, (int, str, bool, float, type(None), ATList, ATDict)):
-                current_parent[parent_key] = {
-                    "$type": TypeNode.from_type(current.__class__).to_json(),
-                    "$data": {},
-                }
-                for f in current._fields:
-                    stack.append(
-                        (
-                            object.__getattribute__(current, f),
-                            current_parent[parent_key]["$data"],
-                            f,
-                        )
-                    )
-            elif isinstance(current, (TList, ATDict)):
-                current_parent[parent_key] = current.to_json()
-            elif isinstance(current, (enum.Enum)):
-                current_parent[parent_key] = current.value
-            else:
-                current_parent[parent_key] = current
-        return pre_order["root"]
 
     def content_to_json(self) -> Dict[str, Any]:
         """Serialize TList content to json representation."""
-        pre_order: Dict[str, Any] = {}
-        pre_order["root"] = []
-        stack: List[Tuple[Base, Dict[str, Any], str]] = []
-        for n, item in enumerate(self._list):
-            pre_order["root"].append(None)
-            stack.append((item, pre_order["root"], n))
-        while stack:
-            current, current_parent, parent_key = stack.pop(0)
-            if isinstance(current, (TList, ATDict, Base)):
-                current_parent[parent_key] = current.content_to_json()
-            elif isinstance(current, (enum.Enum)):
-                current_parent[parent_key] = current.value
-            else:
-                current_parent[parent_key] = current
-        return pre_order["root"]
+        result = []
+        tree = ContentToJsonTree(result)
+        tree.add_to_process(data=self,
+                            data_type=self.__class__,
+                            parent_index="root",
+                            result=result)
+        tree.process()
+        return result['root']
 
     @classmethod
     def from_json(cls, json_data, _locals={}) -> _Base:
@@ -1644,7 +1664,6 @@ class TDict(Base, ATDict, Generic[TK, TV]):
 
     def to_json(self) -> Dict[str, Any]:
         """Serialize TDict to json representation."""
-
         result = {}
         tree = ToJsonTree(result)
         tree.add_to_process(data=self,
@@ -1654,59 +1673,15 @@ class TDict(Base, ATDict, Generic[TK, TV]):
         tree.process()
         return result['root']
 
-        pre_order: Dict[str, Any] = {}
-        pre_order["root"] = {
-            "$type": TypeNode.from_type(self.__class__).to_json(),
-            "$data": {},
-        }
-        stack: List[Tuple[Base, Dict[str, Any], str]] = []
-        for k, v in self._dict.items():
-            jsonk = k
-            if not isinstance(k, (str, int, float, bool, type(None))):
-                jsonk = json.dumps(k.to_json(), sort_keys=True)
-            pre_order["root"]["$data"][jsonk] = None
-            stack.append((v, pre_order["root"]["$data"], jsonk))
-        while stack:
-            current, current_parent, parent_key = stack.pop(0)
-            if not isinstance(current, (int, str, bool, float, type(None), TDict, TList)):
-                current_parent[parent_key] = {
-                    "$type": TypeNode.from_type(current.__class__).to_json(),
-                    "$data": {},
-                }
-                for f in current._fields:
-                    stack.append(
-                        (
-                            object.__getattribute__(current, f),
-                            current_parent[parent_key]["$data"],
-                            f,
-                        )
-                    )
-            elif isinstance(current, (TList, TDict)):
-                current_parent[parent_key] = current.to_json()
-            elif isinstance(current, (enum.Enum)):
-                current_parent[parent_key] = current.value
-            else:
-                current_parent[parent_key] = current
-        return pre_order["root"]
-
     def content_to_json(self) -> Dict[str, Any]:
-        """Serialize TDict content to json representation."""
-        pre_order: Dict[str, Any] = {}
-        pre_order["root"] = {}
-        stack: List[Tuple[Base, Dict[str, Any], str]] = []
-        for k, v in self._dict.items():
-            jsonk = k
-            if not isinstance(k, (str, int, float, bool, type(None))):
-                jsonk = json.dumps(k.content_to_json(), sort_keys=True)
-            pre_order["root"][jsonk] = None
-            stack.append((v, pre_order["root"], jsonk))
-        while stack:
-            current, current_parent, parent_key = stack.pop(0)
-            if isinstance(current, (TList, TDict, Base)):
-                current_parent[parent_key] = current.content_to_json()
-            else:
-                current_parent[parent_key] = current
-        return pre_order["root"]
+        result = {}
+        tree = ContentToJsonTree(result)
+        tree.add_to_process(data=self,
+                            data_type=self.__class__,
+                            parent_index="root",
+                            result=result)
+        tree.process()
+        return result['root']
 
     @classmethod
     def from_json(cls, json_data, _locals={}) -> "TDict":
@@ -1817,117 +1792,6 @@ class TDict(Base, ATDict, Generic[TK, TV]):
 #
 #     def set_data(self, key: str, val: Any):
 #         pass
-
-
-# class STMDSingleIn(Base, Generic[T]):
-#     """Special input class which works like regular `In` class.
-#
-#     However when used in `STMD` class definition. It's not processes as list of inputs but as
-#     single input used as constant input over STMD Tractions.
-#
-#     Whole class contains all logic for `Input` class. There's no different in behaviour
-#     for `STMDSingleIn`. Only difference how `STMD` handles this type as mentioned above.
-#     Reason why `STMDSingleIn` is base class and `In` inherits from it is to enable assignment
-#     of STMDSinglein input defined in tractor to input of a traction in the tractor as to input
-#     you can only assign subclass of it. Therefore to Out you can assign `Out`, `In`, `STMDSingleIn`
-#     and to `In` you can only assign `STMDSingleIn` and `In`
-#     """
-#
-#     _TYPE: ClassVar[str] = "IN"
-#
-#     _KW_ONLY: ClassVar[bool] = False
-#
-#     _ref: Optional[T] = dataclasses.field(repr=False, init=False, default=None, compare=False)
-#     # data here are actually not used after input is assigned to some output
-#     # it's just to deceive mypy
-#     data: Optional[T] = None
-#     _name: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
-#     _owner: Optional[_Traction] = dataclasses.field(
-#         repr=False, init=False, default=None, compare=False
-#     )
-#     # _io_store: IOStore = dataclasses.field(repr=False, init=False, compare=False)
-#     _uid: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
-#
-#     def __post_init__(self):
-#         """Post init of STMDIn class."""
-#         # Currently not used
-#         # self._io_store = DefaultIOStore.io_store
-#         pass
-#
-#     def _validate_setattr_(self, name: str, value: Any) -> None:
-#         """Set attribute to class instance with type validation."""
-#         if name in ("_name", "_owner"):
-#             # old_uid = self._uid
-#             self._uid = None
-#             object.__setattr__(self, name, value)
-#             return
-#         if not name.startswith("_"):  # do not check for private attrs
-#             if name not in self._fields and not self._config.allow_extra and name not in self._properties:
-#                 raise AttributeError(f"{self.__class__} doesn't have attribute {name}")
-#             if name == "data":
-#                 # if not hasattr(self, "_io_store"):
-#                 #    self._io_store = DefaultIOStore.io_store
-#                 vtype = (
-#                     value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
-#                 )
-#                 tt1 = TypeNode.from_type(vtype)
-#                 tt2 = TypeNode.from_type(self._fields[name])
-#                 if tt1 != tt2:
-#                     raise TypeError(
-#                         f"Cannot set attribute {self.__class__}.{name} to type {value}({vtype}),"
-#                         f"expected {self._fields[name]}"
-#                     )
-#                 object.__setattr__(self, name, value)
-#                 # getattr(self.__class__, name).setter(value)
-#                 return
-#                 # return self._io_store.set_data(self.uid, value)
-#             elif name not in self._properties:
-#                 vtype = (
-#                     value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
-#                 )
-#                 tt1 = TypeNode.from_type(vtype)
-#                 tt2 = TypeNode.from_type(self._fields[name])
-#                 if tt1 != tt2:
-#                     raise TypeError(
-#                         f"Cannot set attribute {self.__class__}.{name} to type {value}({vtype}),"
-#                         f"expected {self._fields[name]}"
-#                     )
-#             else:
-#                 getattr(self.__class__, name).setter(value)
-#                 return
-#         return object.__setattr__(self, name, value)
-#
-#     def __getattribute__(self, name) -> Any:
-#         """Get attribute."""
-#         if name == "data":
-#             return object.__getattribute__(self, "data")
-#         else:
-#             ret = object.__getattribute__(self, name)
-#             return ret
-#
-#     @property
-#     def uid(self):
-#         """Return uid of the object."""
-#         if not self._name:
-#             self._name = str(uuid.uuid4())
-#         if self._uid is None:
-#             self._uid = (self._owner.fullname if self._owner else "") + "::" + self._name
-#         return self._uid
-#
-
-# class In(STMDSingleIn, Generic[T]):
-#     """Class used for input of a Traction instance.
-#
-#     Once connected it redirect all calls to internal _ref variable which is connected output,
-#     therefore it's not possible to access the original class.
-#     Class needs to be used with specific type as generic Typevar
-#
-#     Example: In[str](data='foo')
-#     """
-#
-#     pass
-#
-#
 
 
 class STMDSingleIn(Base, Generic[T]):
@@ -2087,47 +1951,6 @@ class TPort(Port, Generic[T]):
 
 
 #ANY_IN_TYPE_NODE = TypeNode.from_type(In[ANY])
-
-
-# class Out(In, Generic[T]):
-#     """Class used to define Traction output.
-#
-#     Output can be connected only to a Traction input `In` or `STMDSingleIn`
-#     """
-#
-#     _TYPE: ClassVar[str] = "OUT"
-#     _KW_ONLY: ClassVar[bool] = True
-#
-#     # _io_store: IOStore = dataclasses.field(repr=False, init=False, compare=False)
-#     # data: Optional[T] = None
-#     # _uid: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
-#
-#     # def __post_init__(self):
-#     #     self._io_store = DefaultIOStore.io_store
-#
-#     @property
-#     def uid(self):
-#         """Return uid of the object."""
-#         if not self._name:
-#             self._name = str(uuid.uuid4())
-#         if self._uid is None:
-#             self._uid = (self._owner.fullname if self._owner else "") + "::" + self._name
-#         return self._uid
-
-
-# ANY_OUT_TYPE_NODE = TypeNode.from_type(Out[ANY])
-
-
-# class NoOut(Out, Generic[T]):
-#     """Special type of output indicating output hasn't been set yet."""
-#
-#     pass
-
-
-# class NoData(In, Generic[T]):
-#     """Special type of input indicating input hasn't been connected to any output."""
-#
-#     data: Optional[T] = None
 
 
 class Res(Base, Generic[T]):
@@ -2661,9 +2484,7 @@ class Traction(Base, metaclass=TractionMeta):
         """Serialize class instance to json representation."""
         ret = {"$data": {}}
         for f in self._fields:
-            print("----- F", f)
             if f.startswith("i_"):
-                print("OWNER", getattr(self, "_raw_" + f)._owner)
                 if (
                     hasattr(getattr(self, "_raw_" + f), "_owner")
                     and getattr(self, "_raw_" + f)._owner
