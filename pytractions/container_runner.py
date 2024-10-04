@@ -9,7 +9,7 @@ import re
 import yaml
 from typing import _UnionGenericAlias
 
-from .base import TypeNode, ANY, TList, TDict, In, Out, Res, Arg, Traction
+from .base import TypeNode, ANY, TList, TDict, Port, Traction
 from .tractor import Tractor
 from .runner_utils import (
     parse_traction_str,
@@ -112,13 +112,7 @@ def generate_traction_name_str(traction, include_module=False):
 
 def is_standard_type(ftype):
     """Check if type is one of pytractions standard type."""
-    if TypeNode.from_type(ftype) == TypeNode.from_type(Res[ANY]):
-        return True
-    if TypeNode.from_type(ftype) == TypeNode.from_type(In[ANY]):
-        return True
-    if TypeNode.from_type(ftype) == TypeNode.from_type(Out[ANY]):
-        return True
-    if TypeNode.from_type(ftype) == TypeNode.from_type(Arg[ANY]):
+    if TypeNode.from_type(ftype) == TypeNode.from_type(Port[ANY]):
         return True
     if ftype.__class__ != _UnionGenericAlias and issubclass(ftype, Traction):
         return True

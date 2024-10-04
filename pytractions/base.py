@@ -158,6 +158,9 @@ class _defaultStr(str):
 
     def __str__(self):
         return str(self._val)
+    
+    def __hash__(self):
+        return hash(self._val)
 
 
 class _defaultFloat(float):
@@ -2450,13 +2453,13 @@ class Traction(Base, metaclass=TractionMeta):
                 if wrapped:
                     self._no_validate_setattr_(name, value)
                 else:
-                    self._no_validate_setattr_(name, self._fields[name](r=value))
+                    self._no_validate_setattr_(name, self._fields[name](data=value))
             else:
                 if super().__getattribute__(name) == self.__dataclass_fields__[name].default:
                     if wrapped:
                         self._no_validate_setattr_(name, value)
                     else:
-                        self._no_validate_setattr_(name, self._fields[name](r=value))
+                        self._no_validate_setattr_(name, self._fields[name](data=value))
                 else:
                     if wrapped:
                         if TypeNode.from_type(vtype, subclass_check=True) == TypeNode.from_type(
