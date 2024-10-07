@@ -112,7 +112,6 @@ class TractorMeta(TractionMeta):
                         all_outputs, traction_waves, output_waves):
         to_process = []
         all_outputs.append(id(output))
-        print("PROCESS OUTPUT", traction, output_name, raw_output, output, id(raw_output), id(output))
         outputs_map[id(raw_output)] = (traction, output_name)
         output_waves[id(raw_output)] = traction_waves[traction]
         #print("OUTPUTS MAP", outputs_map)

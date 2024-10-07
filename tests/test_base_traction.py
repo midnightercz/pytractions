@@ -619,6 +619,11 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
 
     tt.run()
 
+    #print("OUT 1", id(object.__getattribute__(tt.t_ttest1, "o_out1")), object.__getattribute__(tt.t_ttest1, "o_out1"), "OWNER", object.__getattribute__(tt.t_ttest1, "o_out1")._owner)
+    #print("IN 1", id(object.__getattribute__(tt.t_ttest2, "i_in1")), object.__getattribute__(tt.t_ttest2, "i_in1"),
+    #      "OWNER", object.__getattribute__(tt.t_ttest2, "i_in1")._owner,
+    #      "REF", object.__getattribute__(tt.t_ttest2, "i_in1")._ref)
+
     assert tt.to_json() == {
         "$data": {
             "a_multiplier": {
@@ -760,7 +765,20 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                             "module": "pytractions.base",
                         },
                     },
-                    "i_in1": "TTest1[1]#o_out1",
+                    "i_in1": {
+                        "$data": {"data": 0.0},
+                        "$type": {
+                            "args": [
+                                {
+                                    "args": [],
+                                    "module": "builtins",
+                                    "type": "float",
+                                }
+                            ],
+                            "module": "pytractions.base",
+                            "type": "Port"
+                        }
+                    },
                     "o_out1": {
                         "$data": {"data": 0.0},
                         "$type": {
@@ -817,7 +835,20 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                             "module": "pytractions.base",
                         },
                     },
-                    "i_in1": "TTest2[2]#o_out1",
+                    "i_in1": {
+                        "$data": {"data": 0.0},
+                        "$type": {
+                            "args": [
+                                {
+                                    "args": [],
+                                    "module": "builtins",
+                                    "type": "float",
+                                }
+                            ],
+                            "module": "pytractions.base",
+                            "type": "Port"
+                        }
+                    },
                     "o_out1": {
                         "$data": {"data": 0.0},
                         "$type": {
@@ -874,7 +905,20 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                             "module": "pytractions.base",
                         },
                     },
-                    "i_in1": "TTest2[3]#o_out1",
+                    "i_in1": {
+                        "$data": {"data": 0.0},
+                        "$type": {
+                            "args": [
+                                {
+                                    "args": [],
+                                    "module": "builtins",
+                                    "type": "float",
+                                }
+                            ],
+                            "module": "pytractions.base",
+                            "type": "Port"
+                        }
+                    },
                     "o_out1": {
                         "$data": {"data": 0.0},
                         "$type": {

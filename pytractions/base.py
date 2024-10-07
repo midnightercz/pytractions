@@ -158,7 +158,7 @@ class _defaultStr(str):
 
     def __str__(self):
         return str(self._val)
-    
+
     def __hash__(self):
         return hash(self._val)
 
@@ -190,8 +190,16 @@ class _defaultBool:
     def __str__(self):
         return str(self._val)
 
-#class defautlNone(type(None)):
-#    pass
+
+class defautlNone:
+    def __init__(self, val):
+        pass
+
+    def __str__(self):
+        return "None"
+
+    def __bool__(self):
+        return False
 
 
 type_to_default_type = {
@@ -199,7 +207,7 @@ type_to_default_type = {
     str: _defaultStr,
     float: _defaultFloat,
     bool: _defaultBool,
-    #type(None): defautlNone,
+    type(None): defautlNone,
 }
 
 
@@ -2285,13 +2293,18 @@ class Traction(Base, metaclass=TractionMeta):
         for f in self._fields:
             if not f.startswith("o_") and not f.startswith("i_"):
                 continue
+
+            #print("F class", f, super().__getattribute__(f).__class__)
             # do not set owner to tractor inputs
             self._no_validate_setattr_("_raw_" + f, super().__getattribute__(f))
-            if TypeNode.from_type(super().__getattribute__(f).__class__) == TypeNode.from_type(
+            if TypeNode.from_type(super().__getattribute__(f).__class__, subclass_check=True) == TypeNode.from_type(
                 TPort[ANY]
             ):
                 continue
+            #print("F class", f, super().__getattribute__(f).__class__)
+            #print("F owner", f, super().__getattribute__(f)._owner)
             if not super().__getattribute__(f)._owner:
+                #print("SETTING OWNER TO", f)
                 super().__getattribute__(f)._name = f
                 super().__getattribute__(f)._owner = self
 
@@ -2369,7 +2382,7 @@ class Traction(Base, metaclass=TractionMeta):
         if name.startswith("i_"):
             # Need to check with hasattr first to make sure inputs can be initialized
             if hasattr(self, name):
-                #print("SETTING INPUT", name, type(value), value)
+                print("SETTING INPUT", name, type(value), value)
                 # Allow overwrite default input values
                 if super().__getattribute__(name) == self.__dataclass_fields__[
                     name
@@ -2488,6 +2501,11 @@ class Traction(Base, metaclass=TractionMeta):
         ret = {"$data": {}}
         for f in self._fields:
             if f.startswith("i_"):
+                inpt = object.__getattribute__(self, f)
+                print("I", inpt, inpt._owner)
+                inpt_raw = object.__getattribute__(self, "_raw_" + f)
+                print("I RAW", inpt_raw, inpt_raw._owner)
+
                 if (
                     hasattr(getattr(self, "_raw_" + f), "_owner")
                     and getattr(self, "_raw_" + f)._owner
