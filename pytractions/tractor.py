@@ -183,6 +183,11 @@ class TractorMeta(TractionMeta):
 
         for f, fo in attrs.items():
             if f.startswith("i_"):
+                if TypeNode.from_type(type(fo), subclass_check=True) != TypeNode.from_type(
+                    Port[ANY]
+                ):
+                    raise ValueError(f"Tractor input {f} has to be type Port[ANY]")
+
                 outputs_map[id(fo)] = ("#", f)
                 output_waves[id(fo)] = 0
                 outputs_all.append(id(fo))
@@ -223,14 +228,10 @@ class TractorMeta(TractionMeta):
                 raw_tfo = object.__getattribute__(_traction, tf)
                 tfo = getattr(_traction, tf)
                 if tf.startswith("i_"):
-                    # if tfo:
-                    #     print("TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
-                    # else:
-                    #     print("TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
-
-                    #print("ID FO", id(tfo))
-                    #print("ID FO data", id(tfo.data))
-                    #print("OUTPUTS MAP", outputs_map)
+                    if TypeNode.from_type(type(raw_tfo), subclass_check=True) != TypeNode.from_type(
+                        Port[ANY]
+                    ):
+                        raise ValueError("Tractor input has to be type Port[ANY]")
                     if TypeNode.from_type(type(raw_tfo), subclass_check=False) != TypeNode.from_type(
                         NoData[ANY]
                     ):

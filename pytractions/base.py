@@ -398,8 +398,20 @@ class BaseMeta(type):
 
 class SerializationError(Exception):
     """Raise when it's not possible to deserialize class from given string."""
-
     pass
+
+
+def is_wrapped(objcls):
+    """Determine if objcls is Arg, In, Out or Res Wrapper."""
+    tt1 = TypeNode.from_type(objcls, subclass_check=True)
+    if (
+        tt1 == TypeNode.from_type(Port[ANY])
+        or tt1 == TypeNode.from_type(STMDSingleIn[ANY])
+        or tt1 == TypeNode.from_type(NoData[ANY])
+        or tt1 == TypeNode.from_type(TPort[ANY])
+    ):
+        return True
+    return False
 
 
 class ListItemHandler(ItemHandler):
@@ -492,7 +504,12 @@ class BasicItemHandler(ItemHandler):
         return ret1 or ret2
 
     def process(self, tree, item):
-        item.result[item.parent_index] = item.data
+        if isinstance(item.data,
+                      (_defaultInt, _defaultStr,
+                       _defaultFloat, _defaultBool)):
+            item.result[item.parent_index] = item.data._val
+        else:
+            item.result[item.parent_index] = item.data
 
 
 class EnumItemHandler(ItemHandler):
@@ -514,6 +531,7 @@ class PortItemHandler(ItemHandler):
             "$type": TypeNode.from_type(item.data_type).to_json(),
             "$data": {},
         }
+        #print("ITEM", item)
         for f in item.data_type._fields:
             if isinstance(item.data,
                           (_defaultInt, _defaultStr,
@@ -522,11 +540,18 @@ class PortItemHandler(ItemHandler):
             elif isinstance(item.data, (int, float, str, bool, type(None))):
                 item.result[item.parent_index]["$data"][f] = item.data
             else:
-                tree.add_to_process(
-                    data=getattr(item.data, f),
-                    data_type=item.data._fields[f],
-                    parent_index=f,
-                    result=item.result[item.parent_index]["$data"])
+                if not is_wrapped(type(item.data)):
+                    tree.add_to_process(
+                        data=item.data,
+                        data_type=type(item.data),
+                        parent_index=f,
+                        result=item.result[item.parent_index]["$data"])
+                else:
+                    tree.add_to_process(
+                        data=getattr(item.data, f),
+                        data_type=item.data._fields[f],
+                        parent_index=f,
+                        result=item.result[item.parent_index])
 
 
 class PortItemHandlerContent(ItemHandler):
@@ -2097,6 +2122,7 @@ class TractionMeta(BaseMeta):
 
     def __new__(cls, name, bases, attrs):
         """Create new traction class."""
+        #print("TRACTION NEW", name)
         annotations = attrs.get("__annotations__", {})
         # check if all attrs are in supported types
         for attr, type_ in annotations.items():
@@ -2124,6 +2150,7 @@ class TractionMeta(BaseMeta):
             #     if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Arg[ANY]):
             #         attrs["_fields"][f] = Arg[ftype]
             if f.startswith("i_"):
+                print("I", f, ftype)
                 if TypeNode.from_type(ftype) != TypeNode.from_type(STMDSingleIn[ANY]) and TypeNode.from_type(ftype) != TypeNode.from_type(Port[ANY]):
                     attrs["_fields"][f] = Port[ftype]
                 if f.startswith("i_") and f not in attrs:
@@ -2190,17 +2217,6 @@ OnUpdateCallable = Callable[[_Traction], None]
 OnErrorCallable = Callable[[_Traction], None]
 
 
-def is_wrapped(objcls):
-    """Determine if objcls is Arg, In, Out or Res Wrapper."""
-    tt1 = TypeNode.from_type(objcls, subclass_check=True)
-    if (
-        tt1 == TypeNode.from_type(Port[ANY])
-        or tt1 == TypeNode.from_type(STMDSingleIn[ANY])
-        or tt1 == TypeNode.from_type(NoData[ANY])
-        or tt1 == TypeNode.from_type(TPort[ANY])
-    ):
-        return True
-    return False
 
 
 class Traction(Base, metaclass=TractionMeta):
@@ -2382,7 +2398,7 @@ class Traction(Base, metaclass=TractionMeta):
         if name.startswith("i_"):
             # Need to check with hasattr first to make sure inputs can be initialized
             if hasattr(self, name):
-                print("SETTING INPUT", name, type(value), value)
+                #print("SETTING INPUT", name, type(value), value)
                 # Allow overwrite default input values
                 if super().__getattribute__(name) == self.__dataclass_fields__[
                     name
@@ -2502,9 +2518,9 @@ class Traction(Base, metaclass=TractionMeta):
         for f in self._fields:
             if f.startswith("i_"):
                 inpt = object.__getattribute__(self, f)
-                print("I", inpt, inpt._owner)
+                #print("I", inpt, inpt._owner)
                 inpt_raw = object.__getattribute__(self, "_raw_" + f)
-                print("I RAW", inpt_raw, inpt_raw._owner)
+                #print("I RAW", inpt_raw, inpt_raw._owner)
 
                 if (
                     hasattr(getattr(self, "_raw_" + f), "_owner")
