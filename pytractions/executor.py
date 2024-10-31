@@ -31,7 +31,7 @@ def _copy_traction(traction, inputs, resources, args, uid="0"):
         elif ft.startswith("a_"):
             init_fields[ft] = args[ft]
 
-        elif ft.startswith("i_"):
+        elif ft.startswith("i_") and ft in inputs:
             init_fields[ft] = inputs[ft]
 
     init_fields["uid"] = uid

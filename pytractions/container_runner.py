@@ -683,10 +683,11 @@ def run_main(args):
                     current_nest.setdefault(v, {})
                 current_nest = current_nest[v]
         for name, json_val in json_values.items():
+            LOGGER.info(f"{name}: values {json_val}")
             traction_init_fields[name] = traction_cls._fields[name].content_from_json(json_val)
 
     traction = traction_cls(uid="0", **traction_init_fields)
-    LOGGER.info(f"Running traction {args.traction}")
+    LOGGER.info(f"Running traction {args.traction} with fields {traction_init_fields}")
     traction.run()
     outputs_map = {}
     for store_output in args.store_output:

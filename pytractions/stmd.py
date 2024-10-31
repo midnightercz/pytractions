@@ -22,6 +22,7 @@ from .base import (
     TractionStats,
     on_update_empty,
     OnUpdateCallable,
+    defaultNone,
     #ANY_IN_TYPE_NODE,
     #ANY_OUT_TYPE_NODE,
     #ANY_RES_TYPE_NODE,
@@ -39,7 +40,7 @@ LOGGER = logging.getLogger(__name__)
 class STMDMeta(TractionMeta):
     """STMD metaclass."""
 
-    _SELF_ARGS = ["a_executor", "a_delete_after_finished"]
+    _SELF_ARGS = ["a_executor", "a_delete_after_finished", "a_allow_unset_inputs"]
 
     @classmethod
     def _attribute_check(cls, attr, type_, all_attrs):
@@ -222,6 +223,7 @@ class STMD(Traction, metaclass=STMDMeta):
     details: TDict[str, str] = dataclasses.field(default_factory=TDict[str, str])
     _traction: Type[Traction] = Traction
     a_delete_after_finished: Port[bool] = Port[bool](data=True)
+    a_allow_unset_inputs: Port[bool] = Port[bool](data=False)
     a_executor: Port[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]] = Port[
         Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]
     ](data=_loop_executor)
@@ -294,7 +296,7 @@ class STMD(Traction, metaclass=STMDMeta):
             if f.startswith("i_"):
                 if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(
                     STMDSingleIn[ANY]
-                ):
+                ) and not isinstance(getattr(self, f), defaultNone):
                     first_in_field = f
                     break
 
@@ -311,8 +313,10 @@ class STMD(Traction, metaclass=STMDMeta):
             inputs.append({})
             for f, ftype in self._fields.items():
                 if f.startswith("i_"):
-                    if getattr(self, f) is None:
+                    if not self.a_allow_unset_inputs and (getattr(self, f) is None or isinstance(getattr(self, f), defaultNone)):
                         raise ValueError(f"{self.fullname}: No input data for '{f}'")
+                    elif (getattr(self, f) is None or isinstance(getattr(self, f), defaultNone)):
+                        continue
                     if TypeNode.from_type(
                         self._fields[f], subclass_check=False
                     ) != TypeNode.from_type(STMDSingleIn[ANY]) and len(getattr(self, f)) != len(
@@ -338,7 +342,7 @@ class STMD(Traction, metaclass=STMDMeta):
         for f, ftype in self._fields.items():
             if f.startswith("a_"):
                 # do not copy stmd special args if those are not in traction
-                if f in ("a_executor", "a_delete_after_finished"):
+                if f in ("a_executor", "a_delete_after_finished", "a_allow_unset_inputs"):
                     if f not in self._traction._fields:
                         continue
                 args[f] = getattr(self, f)

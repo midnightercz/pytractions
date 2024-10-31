@@ -103,6 +103,7 @@ def load_yaml_input(traction_cls):
 
 def load_json_input(traction_cls):
     json_values = {}
+    traction_init_fields = {}
     for param in args.params:
         name, value = param.split("=")
         if value.startswith("@"):
@@ -140,6 +141,7 @@ def run_main(args):
     else:
         traction_init_fields = load_json_input(traction_cls)
 
+    LOGGER.info("Running with init fields %s", traction_init_fields)
     traction = traction_cls(uid="0", **traction_init_fields)
     LOGGER.info("Running simple runner on directory {args.monitor}")
     runner = SimpleRunner(traction, args.monitor)

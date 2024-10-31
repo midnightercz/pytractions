@@ -191,7 +191,7 @@ class _defaultBool:
         return str(self._val)
 
 
-class defautlNone:
+class defaultNone:
     def __init__(self, val):
         pass
 
@@ -207,7 +207,7 @@ type_to_default_type = {
     str: _defaultStr,
     float: _defaultFloat,
     bool: _defaultBool,
-    type(None): defautlNone,
+    type(None): defaultNone,
 }
 
 
@@ -416,7 +416,7 @@ def is_wrapped(objcls):
 
 class ListItemHandler(ItemHandler):
     def match(self, item):
-        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATList):
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATList) or isinstance(item.data, TList):
             return True
 
     def process(self, tree, item):
@@ -437,7 +437,7 @@ class ListItemHandler(ItemHandler):
 
 class ListItemHandlerContent(ItemHandler):
     def match(self, item):
-        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATList):
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATList) or isinstance(item.data, TList):
             return True
 
     def process(self, tree, item):
@@ -455,7 +455,7 @@ class ListItemHandlerContent(ItemHandler):
 
 class DictItemHandler(ItemHandler):
     def match(self, item):
-        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATDict):
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATDict) or isinstance(item.data, TDict):
             return True
 
     def process(self, tree, item):
@@ -476,7 +476,7 @@ class DictItemHandler(ItemHandler):
 
 class DictItemHandlerContent(ItemHandler):
     def match(self, item):
-        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATDict):
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATDict) or isinstance(item.data, TDict):
             return True
 
     def process(self, tree, item):
@@ -1433,7 +1433,7 @@ class TList(Base, ATList, Generic[T]):
 
     def content_to_json(self) -> Dict[str, Any]:
         """Serialize TList content to json representation."""
-        result = []
+        result = {}
         tree = ContentToJsonTree(result)
         tree.add_to_process(data=self,
                             data_type=self.__class__,
@@ -2150,7 +2150,6 @@ class TractionMeta(BaseMeta):
             #     if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Arg[ANY]):
             #         attrs["_fields"][f] = Arg[ftype]
             if f.startswith("i_"):
-                print("I", f, ftype)
                 if TypeNode.from_type(ftype) != TypeNode.from_type(STMDSingleIn[ANY]) and TypeNode.from_type(ftype) != TypeNode.from_type(Port[ANY]):
                     attrs["_fields"][f] = Port[ftype]
                 if f.startswith("i_") and f not in attrs:
