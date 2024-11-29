@@ -84,12 +84,8 @@ class SimpleRunner:
             monitor.close(self.tractor)
 
 
-def run_main(args):
-    """Run action."""
-    traction_cls = parse_traction_str(args.traction)
+def load_yaml_input(traction_cls):
     traction_init_fields = {}
-    LOGGER.setLevel(getattr(logging, args.level))
-
     docs = yaml.safe_load_all(sys.stdin.read())
     for doc in docs:
         name, data, data_file = doc["name"], doc.get("data"), doc.get("data_file")
@@ -102,6 +98,50 @@ def run_main(args):
         traction_init_fields[name] = traction_cls._fields[name].content_from_json(
             yaml.safe_load(data)
         )
+    return traction_init_fields
+
+
+def load_json_input(traction_cls):
+    json_values = {}
+    traction_init_fields = {}
+    for param in args.params:
+        name, value = param.split("=")
+        if value.startswith("@"):
+            try:
+                _value = json.load(open(value[1:]))
+            except json.JSONDecodeError:
+                _value = open(value[1:]).read()
+        elif value:
+            try:
+                _value = json.loads(value)
+            except json.JSONDecodeError:
+                _value = value
+        else:
+            continue
+        nested_name = name.split(".")
+        current_nest = json_values
+        for v in nested_name:
+            if v == nested_name[-1]:
+                current_nest[v] = _value
+            else:
+                current_nest.setdefault(v, {})
+            current_nest = current_nest[v]
+    for name, json_val in json_values.items():
+        traction_init_fields[name] = traction_cls._fields[name].content_from_json(json_val)
+    return traction_init_fields
+
+
+def run_main(args):
+    """Run action."""
+    traction_cls = parse_traction_str(args.traction)
+    traction_init_fields = {}
+    LOGGER.setLevel(getattr(logging, args.level))
+    if args.io_type == "YAML":
+        traction_init_fields = load_yaml_input(traction_cls)
+    else:
+        traction_init_fields = load_json_input(traction_cls)
+
+    LOGGER.info("Running with init fields %s", traction_init_fields)
     traction = traction_cls(uid="0", **traction_init_fields)
     LOGGER.info("Running simple runner on directory {args.monitor}")
     runner = SimpleRunner(traction, args.monitor)
@@ -139,6 +179,15 @@ def make_parsers(subparsers):
         type=str,
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         default="INFO",
+    )
+    p_runner.add_argument(
+        "--io-type",
+        "-t",
+        help="Choce way how to pass inputs to the traction. For JSON use PARAM to pass inputs"
+        "to the traction. For YAML pass YAML formated documents to STDIN",
+        type=str,
+        choices=["YAML", "JSON"],
+        default="JSON",
     )
     p_runner.set_defaults(command=run_main)
 

@@ -1,8 +1,8 @@
 import pytest
 
-from pytractions.base import In
+from pytractions.base import Port
 
 
 def test_input_type_check():
     with pytest.raises(TypeError):
-        In[str](data=1)
+        Port[str](data=1)

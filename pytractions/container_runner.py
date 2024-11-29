@@ -9,7 +9,7 @@ import re
 import yaml
 from typing import _UnionGenericAlias
 
-from .base import TypeNode, ANY, TList, TDict, In, Out, Res, Arg, Traction
+from .base import TypeNode, ANY, TList, TDict, Port, Traction
 from .tractor import Tractor
 from .runner_utils import (
     parse_traction_str,
@@ -112,13 +112,7 @@ def generate_traction_name_str(traction, include_module=False):
 
 def is_standard_type(ftype):
     """Check if type is one of pytractions standard type."""
-    if TypeNode.from_type(ftype) == TypeNode.from_type(Res[ANY]):
-        return True
-    if TypeNode.from_type(ftype) == TypeNode.from_type(In[ANY]):
-        return True
-    if TypeNode.from_type(ftype) == TypeNode.from_type(Out[ANY]):
-        return True
-    if TypeNode.from_type(ftype) == TypeNode.from_type(Arg[ANY]):
+    if TypeNode.from_type(ftype) == TypeNode.from_type(Port[ANY]):
         return True
     if ftype.__class__ != _UnionGenericAlias and issubclass(ftype, Traction):
         return True
@@ -664,6 +658,7 @@ def run_main(args):
             traction_init_fields[name] = traction_cls._fields[name].content_from_json(
                 yaml.safe_load(data)
             )
+            LOGGER.info(f"Loaded input {traction_init_fields[name]}")
     else:
         json_values = {}
         for param in args.params:
@@ -689,10 +684,11 @@ def run_main(args):
                     current_nest.setdefault(v, {})
                 current_nest = current_nest[v]
         for name, json_val in json_values.items():
+            LOGGER.info(f"{name}: values {json_val}")
             traction_init_fields[name] = traction_cls._fields[name].content_from_json(json_val)
 
     traction = traction_cls(uid="0", **traction_init_fields)
-    LOGGER.info(f"Running traction {args.traction}")
+    LOGGER.info(f"Running traction {args.traction} with fields {traction_init_fields}")
     traction.run()
     outputs_map = {}
     for store_output in args.store_output:

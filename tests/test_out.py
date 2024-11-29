@@ -1,6 +1,6 @@
 import pytest
 
-from pytractions.base import Out, Base, Traction, OnUpdateCallable, TList
+from pytractions.base import Port, Base, Traction, OnUpdateCallable, TList
 
 
 class OutContainerNoDef(Base):
@@ -21,7 +21,7 @@ def test_traction_out_no_def():
         class TestTractionOutNoDef(Traction):
             """Test Traction."""
 
-            o_out: Out[OutContainerNoDef]
+            o_out: Port[OutContainerNoDef]
 
             def _run(self, on_update: OnUpdateCallable) -> None:
                 pass
@@ -30,7 +30,7 @@ def test_traction_out_no_def():
 class TestTraction(Traction):
     """Test Traction."""
 
-    o_out: Out[OutContainer]
+    o_out: Port[OutContainer]
 
     def _run(self, on_update: OnUpdateCallable) -> None:
         pass
@@ -39,14 +39,14 @@ class TestTraction(Traction):
 class TestTractionOutList(Traction):
     """Test Traction with list output."""
 
-    o_out: Out[TList[str]]
+    o_out: Port[TList[str]]
 
     def _run(self, on_update: OnUpdateCallable) -> None:
         pass
 
 
 def test_out_container_default():
-    out = Out[OutContainer]()
+    out = Port[OutContainer]()
     assert out.data is None
 
     t = TestTraction(uid="test")
