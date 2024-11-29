@@ -3,7 +3,7 @@ from typing import Union, Type
 from pytractions.base import (
     Traction,
     TList,
-    TPort,
+    NullPort,
     Port,
     Base,
     OnUpdateCallable,
@@ -165,8 +165,8 @@ print("................................................................")
 class TestTractorX(Tractor):
     """Test Tractor."""
 
-    i_in1: int = TPort[int]()
-    r_seq: Seq = TPort[Seq]()
+    i_in1: int = NullPort[int]()
+    r_seq: Seq = NullPort[Seq]()
     t_t1: TestTraction = TestTraction(uid="1", i_input=i_in1, r_seq=r_seq)
     print("XXXX1 OUT", id(t_t1.o_output), id(t_t1._raw_o_output), type(t_t1.o_output))
     print("XXXX2 OUT", id(t_t1.o_output), id(t_t1._raw_o_output), type(t_t1.o_output))
@@ -179,8 +179,8 @@ import sys
 class TestTractor2(Tractor):
     """Test Tractor2."""
 
-    i_in1: int = TPort[int]()
-    r_seq: Seq = TPort[Seq]()
+    i_in1: int = NullPort[int]()
+    r_seq: Seq = NullPort[Seq]()
     t_tractor1: TestTractorX = TestTractorX(uid="1", i_in1=i_in1, r_seq=r_seq)
     print("YYYYY OUT", id(t_tractor1.o_out1), id(t_tractor1._raw_o_out1), type(t_tractor1.o_out1))
     o_out1: int = t_tractor1.o_out1

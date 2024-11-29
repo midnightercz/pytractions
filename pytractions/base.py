@@ -550,7 +550,7 @@ class PortItemHandler(ItemHandler):
                         data=getattr(item.data, f),
                         data_type=item.data._fields[f],
                         parent_index=f,
-                        result=item.result[item.parent_index])
+                        result=item.result[item.parent_index]["$data"])
 
 
 class PortItemHandlerContent(ItemHandler):
@@ -2508,11 +2508,6 @@ class Traction(Base, metaclass=TractionMeta):
         ret = {"$data": {}}
         for f in self._fields:
             if f.startswith("i_"):
-                inpt = object.__getattribute__(self, f)
-                #print("I", inpt, inpt._owner)
-                inpt_raw = object.__getattribute__(self, "_raw_" + f)
-                #print("I RAW", inpt_raw, inpt_raw._owner)
-
                 if (
                     hasattr(getattr(self, "_raw_" + f), "_owner")
                     and getattr(self, "_raw_" + f)._owner

@@ -7,9 +7,8 @@ from pytractions.base import (
     Traction,
     TList,
     Port,
-    TPort,
     Base,
-    NoData,
+    NullPort,
     TypeNode,
 )
 
@@ -77,7 +76,7 @@ def test_traction_inputs_read_unset():
         i_in1: Port[int]
 
     t = TTest(uid="1")
-    assert TypeNode.from_type(type(t._raw_i_in1)) == TypeNode.from_type(NoData[int])
+    assert TypeNode.from_type(type(t._raw_i_in1)) == TypeNode.from_type(NullPort[int])
 
 
 def test_traction_inputs_read_set():

@@ -1,6 +1,6 @@
 import pytest
 
-from pytractions.base import Traction, OnUpdateCallable, Base, Port, TPort
+from pytractions.base import Traction, OnUpdateCallable, Base, Port, NullPort
 from pytractions.tractor import Tractor
 
 
@@ -43,8 +43,8 @@ class TestTraction(Traction):
 class TestTractor(Tractor):
     """Test Tractor."""
 
-    i_in1: Port[float] = TPort[float]()
-    r_seq: Port[Seq] = TPort[Seq]()
+    i_in1: Port[float] = NullPort[float]()
+    r_seq: Port[Seq] = NullPort[Seq]()
     t_t1: TestTraction = TestTraction(uid="1", i_input=i_in1, r_seq=r_seq)
     o_out1: Port[int] = t_t1._raw_o_output
 
@@ -52,8 +52,8 @@ class TestTractor(Tractor):
 class TestTractor2(Tractor):
     """Test Tractor2."""
 
-    i_in1: Port[float] = TPort()
-    r_seq: Port[Seq] = TPort[Seq]()
+    i_in1: Port[float] = NullPort()
+    r_seq: Port[Seq] = NullPort[Seq]()
     t_tractor1: TestTractor = TestTractor(uid="1", i_in1=i_in1, r_seq=r_seq)
     o_out1: Port[int] = t_tractor1.o_out1
 
@@ -86,9 +86,9 @@ class TestTractionComplex(Traction):
 class TestTractorNestedAttrs(Tractor):
     """Test Tractor."""
 
-    i_in1: Port[float] = TPort[float]()
-    i_in2: Port[float] = TPort[float]()
-    r_seq: Port[Seq] = TPort[Seq]()
+    i_in1: Port[float] = NullPort[float]()
+    i_in2: Port[float] = NullPort[float]()
+    r_seq: Port[Seq] = NullPort[Seq]()
     t_t1: TestTractionComplex = TestTractionComplex(uid="1", i_real=i_in1, i_imaginary=i_in2)
     t_t2: TestTraction = TestTraction(uid="2", i_input=t_t1.o_output.real, r_seq=r_seq)
 

@@ -23,10 +23,7 @@ from .base import (
     isodate_now,
     Port,
     NullPort,
-    # ANY_IN_TYPE_NODE,
-    # ANY_OUT_TYPE_NODE,
-    # ANY_ARG_TYPE_NODE,
-    # ANY_RES_TYPE_NODE,
+    STMDSingleIn
 )
 from .exc import UninitiatedResource
 
@@ -175,9 +172,8 @@ class TractorMeta(TractionMeta):
 
         for f, fo in attrs.items():
             if f.startswith("i_"):
-                if TypeNode.from_type(type(fo), subclass_check=True) != TypeNode.from_type(
-                    Port[ANY]
-                ):
+                if TypeNode.from_type(type(fo)) != TypeNode.from_type(STMDSingleIn[ANY]) and \
+                    TypeNode.from_type(type(fo)) != TypeNode.from_type(type(Port[ANY])):
                     raise ValueError(f"Tractor input {f} has to be type Port[ANY]")
 
                 outputs_map[id(fo)] = ("#", f)
@@ -222,8 +218,10 @@ class TractorMeta(TractionMeta):
                 if tf.startswith("i_"):
                     if TypeNode.from_type(type(raw_tfo), subclass_check=True) != TypeNode.from_type(
                         Port[ANY]
+                    ) and TypeNode.from_type(type(raw_tfo), subclass_check=True) != TypeNode.from_type(
+                        STMDSingleIn[ANY]
                     ):
-                        raise ValueError("Tractor input has to be type Port[ANY]")
+                        raise ValueError(f"Tractor input has to be type Port[ANY], is {raw_tfo}")
                     if TypeNode.from_type(type(raw_tfo), subclass_check=False) != TypeNode.from_type(
                         NullPort[ANY]
                     ):
