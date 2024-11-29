@@ -658,6 +658,7 @@ def run_main(args):
             traction_init_fields[name] = traction_cls._fields[name].content_from_json(
                 yaml.safe_load(data)
             )
+            LOGGER.info(f"Loaded input {traction_init_fields[name]}")
     else:
         json_values = {}
         for param in args.params:

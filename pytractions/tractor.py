@@ -20,10 +20,9 @@ from .base import (
     OnErrorCallable,
     on_update_empty,
     TractionFailedError,
-    NoData,
-    TRes,
     isodate_now,
     Port,
+    NullPort,
     # ANY_IN_TYPE_NODE,
     # ANY_OUT_TYPE_NODE,
     # ANY_ARG_TYPE_NODE,
@@ -145,8 +144,7 @@ class TractorMeta(TractionMeta):
         output_waves = {}
         traction_waves = {}
 
-        #print("############")
-        #print("NAME", name)
+        print("BEFORE NEW", name)
 
         for dst_o, _attr in [
             (outputs_map, "_outputs_map"),
@@ -167,12 +165,6 @@ class TractorMeta(TractionMeta):
                     for k, v in getattr(base, _attr).items():
                         if k not in dst_o:
                             dst_o[k] = v
-
-        # for f, fo in attrs.items():
-        #     if f.startswith("o_"):
-        #         #print("ID FO 1", f, fo, id(fo))
-        #     if f.startswith("i_"):
-        #         #print("ID FO 1", f, fo, id(fo))
 
         outputs_all = []
         _outputs_all = {}
@@ -233,7 +225,7 @@ class TractorMeta(TractionMeta):
                     ):
                         raise ValueError("Tractor input has to be type Port[ANY]")
                     if TypeNode.from_type(type(raw_tfo), subclass_check=False) != TypeNode.from_type(
-                        NoData[ANY]
+                        NullPort[ANY]
                     ):
                         if id(raw_tfo) not in outputs_all and id(tfo) not in outputs_all:
                             raise ValueError(
@@ -268,13 +260,8 @@ class TractorMeta(TractionMeta):
                     #outputs_map[id(tfo.data)] = (t, tf)
                     #output_waves[id(tfo.data)] = traction_waves[t]
                 elif tf.startswith("i_"):
-                    # if tfo:
-                    #     print(f"TRACTION {t} TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
-                    # else:
-                    #     print(f"TRACTION {t} TFO", tf, raw_tfo, tfo, type(tfo), id(raw_tfo), id(tfo))
-
-                    if TypeNode.from_type(type(tfo), subclass_check=False) != TypeNode.from_type(
-                        NoData[ANY]
+                    if TypeNode.from_type(type(raw_tfo), subclass_check=False) != TypeNode.from_type(
+                        NullPort[ANY]
                     ):
                         if id(tfo) not in outputs_all and id(raw_tfo) not in outputs_all:
                             raise ValueError(
@@ -521,7 +508,7 @@ class Tractor(Traction, metaclass=TractorMeta):
         for f in self._fields:
             if f.startswith("r_"):
                 fo = getattr(self, f)
-                if isinstance(fo, TRes):
+                if isinstance(fo, NullPort):
                     raise UninitiatedResource(f"{f}")
 
         for tname, traction in self.tractions.items():
@@ -736,7 +723,7 @@ class LoopTractor(Tractor):
         for f in self._fields:
             if f.startswith("r_"):
                 fo = getattr(self, f)
-                if isinstance(fo, TRes):
+                if isinstance(fo, NullPort):
                     raise UninitiatedResource(f"{f}")
 
         while True:

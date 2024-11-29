@@ -407,8 +407,7 @@ def is_wrapped(objcls):
     if (
         tt1 == TypeNode.from_type(Port[ANY])
         or tt1 == TypeNode.from_type(STMDSingleIn[ANY])
-        or tt1 == TypeNode.from_type(NoData[ANY])
-        or tt1 == TypeNode.from_type(TPort[ANY])
+        or tt1 == TypeNode.from_type(NullPort[ANY])
     ):
         return True
     return False
@@ -1940,20 +1939,13 @@ class Port(STMDSingleIn, Generic[T]):
     pass
 
 
-class NoData(Port, Generic[T]):
-    """Special type of input indicating input hasn't been connected to any output."""
-
-    # data: Optional[T] = None
-    pass
-
-
-class TPort(Port, Generic[T]):
+class NullPort(Port, Generic[T]):
     """Class used for input of a Tractor instance.
 
     It's same as `In` class but tractions won't set owner to input to self.
     Class needs to be used with specific type as generic Typevar
 
-    Example: TPort[str](data='foo')
+    Example: NullPort[str]()
     """
 
     # data: Optional[T] = None
@@ -2154,7 +2146,7 @@ class TractionMeta(BaseMeta):
                     attrs["_fields"][f] = Port[ftype]
                 if f.startswith("i_") and f not in attrs:
                     attrs[f] = dataclasses.field(
-                        default_factory=NoData[attrs["_fields"][f]._params]
+                        default_factory=NullPort[attrs["_fields"][f]._params]
                     )
             # if f.startswith("r_"):
             #     if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Res[ANY]):
@@ -2313,7 +2305,7 @@ class Traction(Base, metaclass=TractionMeta):
             # do not set owner to tractor inputs
             self._no_validate_setattr_("_raw_" + f, super().__getattribute__(f))
             if TypeNode.from_type(super().__getattribute__(f).__class__, subclass_check=True) == TypeNode.from_type(
-                TPort[ANY]
+                NullPort[ANY]
             ):
                 continue
             #print("F class", f, super().__getattribute__(f).__class__)
@@ -2404,7 +2396,7 @@ class Traction(Base, metaclass=TractionMeta):
                 ].default or TypeNode.from_type(
                     super().__getattribute__(name)
                 ) == TypeNode.from_type(
-                    NoData[ANY]
+                    NullPort[ANY]
                 ):
                     if wrapped:
                         self._no_validate_setattr_(name, value)
@@ -2416,7 +2408,7 @@ class Traction(Base, metaclass=TractionMeta):
                     return
                 connected = (
                     TypeNode.from_type(type(getattr(self, "_raw_" + name)), subclass_check=False)
-                    != TypeNode.from_type(NoData[ANY])
+                    != TypeNode.from_type(NullPort[ANY])
                     and TypeNode.from_type(
                         type(getattr(self, "_raw_" + name)), subclass_check=False
                     )
@@ -2424,7 +2416,7 @@ class Traction(Base, metaclass=TractionMeta):
                     and TypeNode.from_type(
                         type(getattr(self, "_raw_" + name)), subclass_check=False
                     )
-                    != TypeNode.from_type(TPort[ANY])
+                    != TypeNode.from_type(NullPort[ANY])
                 )
                 if connected:
                     raise AttributeError(f"Input {name} is already connected")

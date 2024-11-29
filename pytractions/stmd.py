@@ -8,10 +8,7 @@ from .base import (
     Base,
     ANY,
     Port,
-    #Arg,
-    #In,
-    #Out,
-    NoData,
+    NullPort,
     DefaultOut,
     STMDSingleIn,
     TractionState,
@@ -174,9 +171,9 @@ class STMDMeta(TractionMeta):
                         default_factory=DefaultOut(type_=ftype, params=(ftype,)),
                     )
 
-            # Set all inputs to NoData after as default
+            # Set all inputs to NullPort after as default
             if f.startswith("i_") and f not in attrs:
-                attrs[f] = dataclasses.field(default_factory=NoData[ftype._params])
+                attrs[f] = dataclasses.field(default_factory=NullPort[ftype._params])
 
         attrs["_fields"] = {
             k: v for k, v in attrs.get("__annotations__", {}).items() if not k.startswith("_")
