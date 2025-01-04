@@ -1,7 +1,8 @@
+import enum
 import inspect
 import importlib
 import json
-from typing import get_origin, TypeVar, Union, ForwardRef, Dict, Any, Tuple, List
+from typing import get_origin, TypeVar, Union, ForwardRef, Dict, Any, Tuple, List, Self
 import sys
 
 
@@ -18,6 +19,81 @@ def evaluate_forward_ref(ref, frame):
     caller_globals, caller_locals = frame.f_globals, frame.f_locals
     recursive_guard = set()
     return ref._evaluate(caller_globals, caller_locals, recursive_guard)
+
+class _defaultInt(int):
+    def __init__(self, x):
+        self._val = x
+
+    def __getattribute__(self, name):
+        if name in ("_val",):
+            return object.__getattribute__(self, name)
+        else:
+            return object.__getattribute__(object.__getattribute__(self, "_val"), name)
+
+    def __eq__(self, other):
+        return self._val == other
+
+    def __str__(self):
+        return str(self._val)
+
+
+class _defaultStr(str):
+    def __init__(self, x, parent=None, str_id=None):
+        self._val = x
+
+    def __getattribute__(self, name):
+        if name in ("_val",):
+            return object.__getattribute__(self, name)
+        else:
+            return object.__getattribute__(object.__getattribute__(self, "_val"), name)
+
+    def __eq__(self, other):
+        return self._val == other
+
+    def __str__(self):
+        return str(self._val)
+
+    def __hash__(self):
+        return hash(self._val)
+
+
+class _defaultFloat(float):
+    def __init__(self, x):
+        self._val = x
+
+    def __getattribute__(self, name):
+        if name in ("_val",):
+            return object.__getattribute__(self, name)
+        else:
+            return object.__getattribute__(object.__getattribute__(self, "_val"), name)
+
+    def __eq__(self, other):
+        return self._val == other
+
+    def __str__(self):
+        return str(self._val)
+
+
+class _defaultBool:
+    def __init__(self, val):
+        self._val = val
+
+    def __bool__(self):
+        return self._val
+
+    def __str__(self):
+        return str(self._val)
+
+
+class defaultNone:
+    def __init__(self, val):
+        pass
+
+    def __str__(self):
+        return "None"
+
+    def __bool__(self):
+        return False
 
 
 class CMPNode:
@@ -88,16 +164,6 @@ class TypeNode:
             current = stack.pop()
         return root
 
-    # def post_order(self):
-    #     stack = [(self, 0, None)]
-    #     post_order = []
-    #     while stack:
-    #         current, parent_index, current_parent = stack.pop(0)
-    #         for n, ch in enumerate(current.children):
-    #             stack.insert(0, (ch, n, current))
-    #         post_order.insert(0, (current, parent_index, current_parent))
-    #     return post_order
-
     def replace_params(self, params_map):
         """Replace Typevars in TypeNode structure with values from provided mapping."""
         stack = [(self, 0, None)]
@@ -105,7 +171,7 @@ class TypeNode:
             current, parent_index, current_parent = stack.pop(0)
             for n, ch in enumerate(current.children):
                 stack.insert(0, (ch, n, current))
-            if type(current.type_) is TypeVar:
+            if type(current.type_) is TypeVar or current.type_ is Self:
                 if current.type_ in params_map:
                     if hasattr(params_map[current.type_], "__args__"):
                         replaced_tn = TypeNode.from_type(params_map[current.type_])
@@ -308,71 +374,94 @@ class TypeNode:
             current_node = stack.pop()
             if current_node.n1.children:
                 for ch1 in current_node.n1.children:
-                    if ch1.children:
-                        op = "all"
-                    else:
-                        op = "any"
-                    node = CMPNode(ch1, TypeNode(JSON_COMPATIBLE), op, op)
+                    # if ch1.children:
+                    #     op = "all"
+                    # else:
+                    #     op = "any"
+                    node = CMPNode(ch1, TypeNode(JSON_COMPATIBLE), 'all', 'all')
                     stack.insert(0, node)
                     post_order.insert(0, node)
                     current_node.children.append(node)
-            else:
-                for u in (int, float, str, bool, ABase, type(None), TypeVar("X")):
-                    node = CMPNode(current_node.n1, TypeNode(u), "any", "any")
-                    post_order.insert(0, node)
-                    current_node.children.append(node)
+            # else:
+            #     for u in (int, float, str, bool, ABase, type(None), TypeVar("X"), Self):
+            #         node = CMPNode(current_node.n1, TypeNode(u), "any", "any")
+            #         post_order.insert(0, node)
+            #         current_node.children.append(node)
 
         for cmp_node in post_order:
             n1_type = get_origin(cmp_node.n1.type_) or cmp_node.n1.type_
-            n2_type = get_origin(cmp_node.n2.type_) or cmp_node.n2.type_
             if isinstance(n1_type, ForwardRef):
                 frame = sys._getframe(1)
                 n1_type = evaluate_forward_ref(n1_type, frame)
-
-            if isinstance(n1_type, ForwardRef):
-                frame = sys._getframe(1)
-                n2_type = evaluate_forward_ref(n2_type, frame)
-
-            if cmp_node.children:
-                if cmp_node.ch_op == "any":
-                    ch_eq = any([ch.eq for ch in cmp_node.children])
-                else:
-                    ch_eq = all([ch.eq for ch in cmp_node.children] or [True])
+            elif n1_type is type(None):
+                continue
+            elif n1_type is Union:
+                continue
+            elif n1_type in (int, float, str, bool):
+                continue
+            elif isinstance(n1_type, TypeVar):
+                continue
+            elif n1_type == Self:
+                continue
+            elif issubclass(n1_type, ABase):
+                continue
+            elif issubclass(n1_type, enum.Enum):
+                continue
+            elif issubclass(n1_type,
+                            (_defaultInt, _defaultStr, _defaultFloat, _defaultBool, defaultNone)):
+                continue
             else:
-                ch_eq = True
-            # check types only of both types are not union
-            # otherwise equality was already decided by check above
+                return False
 
-            if type(n1_type) is TypeVar and type(n2_type) is TypeVar:
-                ch_eq &= n1_type == n1_type
-            elif type(n1_type) is TypeVar:
-                if n2_type == Union:
-                    ch_eq = True
-                else:
-                    ch_eq = False
-            elif type(n2_type) is TypeVar:
-                if n1_type == Union:
-                    ch_eq = True
-                else:
-                    ch_eq = False
-                ch_eq = False
+            # n2_type = get_origin(cmp_node.n2.type_) or cmp_node.n2.type_
+            # if isinstance(n1_type, ForwardRef):
+            #     frame = sys._getframe(1)
+            #     n1_type = evaluate_forward_ref(n1_type, frame)
+            #
+            # if isinstance(n1_type, ForwardRef):
+            #     frame = sys._getframe(1)
+            #     n2_type = evaluate_forward_ref(n2_type, frame)
 
-            elif n1_type != Union and n2_type != Union:
-                if not inspect.isclass(n1_type):
-                    raise TypeError(f"{n1_type} is not class")
-                if not inspect.isclass(n2_type):
-                    raise TypeError(f"{n2_type} is not class")
-                ch_eq &= issubclass(n1_type, n2_type)
+            # if cmp_node.children:
+            #     if cmp_node.ch_op == "any":
+            #         ch_eq = any([ch.eq for ch in cmp_node.children])
+            #     else:
+            #         ch_eq = all([ch.eq for ch in cmp_node.children] or [True])
+            # else:
+            #     ch_eq = True
+            # # check types only of both types are not union
+            # # otherwise equality was already decided by check above
+            #
+            # if type(n1_type) is TypeVar and type(n2_type) is TypeVar:
+            #     ch_eq &= n1_type == n1_type
+            # elif type(n1_type) is TypeVar:
+            #     if n2_type == Union:
+            #         ch_eq = True
+            #     else:
+            #         ch_eq = False
+            # elif type(n2_type) is TypeVar:
+            #     if n1_type == Union:
+            #         ch_eq = True
+            #     else:
+            #         ch_eq = False
+            #     ch_eq = False
+            #
+            # elif n1_type != Union and n2_type != Union:
+            #     if not inspect.isclass(n1_type):
+            #         raise TypeError(f"{n1_type} is not class")
+            #     if not inspect.isclass(n2_type):
+            #         raise TypeError(f"{n2_type} is not class")
+            #     ch_eq &= issubclass(n1_type, n2_type)
+            #
+            # elif n1_type != Union and n2_type == Union:
+            #     if not inspect.isclass(n1_type):
+            #         raise TypeError(f"{n1_type} is not class")
+            #     ch_eq &= any(
+            #         [issubclass(n1_type, t) for t in [int, float, str, bool, type(None), ABase]]
+            #     )
+            # cmp_node.eq = ch_eq
 
-            elif n1_type != Union and n2_type == Union:
-                if not inspect.isclass(n1_type):
-                    raise TypeError(f"{n1_type} is not class")
-                ch_eq &= any(
-                    [issubclass(n1_type, t) for t in [int, float, str, bool, type(None), ABase]]
-                )
-            cmp_node.eq = ch_eq
-
-        return root_node.eq
+        return True
 
     def to_json(self) -> Dict[str, Any]:
         """Dump TypeNode to json."""

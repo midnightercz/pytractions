@@ -3,7 +3,6 @@ import pytest
 from pytractions.base import (
     Base,
     Traction,
-    Res,
     Port,
     OnUpdateCallable,
 )

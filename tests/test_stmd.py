@@ -6,7 +6,6 @@ from pytractions.base import (
     Traction,
     TList,
     Port,
-    Res,
     Base,
     STMDSingleIn,
 )
@@ -35,7 +34,7 @@ class EmptyTraction(Traction):
     i_input: Port[int]
     o_output: Port[int]
     a_arg: Port[int]
-    r_res: Res[NOPResource]
+    r_res: Port[NOPResource]
 
     def _run(self, on_update) -> None:  # pragma: no cover
         if not self.i_input.data:

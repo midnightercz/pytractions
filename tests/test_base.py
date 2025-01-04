@@ -1,4 +1,4 @@
-from typing import List, Dict, Union, Optional, TypeVar, Generic
+from typing import List, Dict, Union, Optional, TypeVar, Generic, Self
 
 import pytest
 
@@ -451,6 +451,14 @@ def test_type_union_optional():
     t1 = TypeNode.from_type(Optional[int])
     t2 = TypeNode.from_type(Union[int, str, bool, float, type(None)])
     assert t2 == t1
+
+
+def test_self():
+    class TestC(Base):
+        prev: Optional[Self]
+
+    tc1 = TestC(prev=None)
+    tc2 = TestC(prev=tc1)
 
 
 # Test Generics

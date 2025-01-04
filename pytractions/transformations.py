@@ -1,5 +1,5 @@
 from typing import TypeVar, Generic
-from .base import Traction, OnUpdateCallable, TList, Arg
+from .base import Traction, OnUpdateCallable, TList
 
 T = TypeVar("T")
 X = TypeVar("X")
