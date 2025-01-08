@@ -166,6 +166,7 @@ class TypeNode:
 
     def replace_params(self, params_map):
         """Replace Typevars in TypeNode structure with values from provided mapping."""
+        replaced = False
         stack = [(self, 0, None)]
         while stack:
             current, parent_index, current_parent = stack.pop(0)
@@ -173,13 +174,14 @@ class TypeNode:
                 stack.insert(0, (ch, n, current))
             if type(current.type_) is TypeVar or current.type_ is Self:
                 if current.type_ in params_map:
+                    replaced = True
                     if hasattr(params_map[current.type_], "__args__"):
                         replaced_tn = TypeNode.from_type(params_map[current.type_])
                         current.type_ = replaced_tn.type_
                         current.children = replaced_tn.children
-
                     else:
                         current.type_ = params_map[current.type_]
+        return replaced
 
     def to_type(self, types_cache={}, params_map={}):
         """Return new type for TypeNode or already existing type from cache."""
@@ -241,23 +243,28 @@ class TypeNode:
             current_node = stack.pop()
 
             if current_node.n1.type_ is Union and current_node.n2.type_ is not Union:
-                for ch1 in current_node.n1.children:
+                for ch1 in sorted(current_node.n1.children, key=lambda x: str(x)):
                     node = CMPNode(ch1, current_node.n2, "all", "all")
                     stack.insert(0, node)
                     post_order.insert(0, node)
                     current_node.children.append(node)
 
             elif current_node.n1.type_ is not Union and current_node.n2.type_ is Union:
-                for ch2 in current_node.n2.children:
+                for ch2 in sorted(current_node.n2.children, key=lambda x: str(x)):
                     node = CMPNode(current_node.n1, ch2, "all", "all")
                     stack.insert(0, node)
                     post_order.insert(0, node)
                     current_node.children.append(node)
 
+            elif current_node.n1.type_ is Union and current_node.n2.type_ is  Union:
+                for ch1  in current_node.n1.children:
+                    node_uni = CMPNode(ch1, current_node.n2, 'any', 'any')
+                    stack.insert(0, node_uni)
+                    post_order.insert(0, node_uni)
+                    current_node.children.append(node_uni)
+
             elif current_node.op == "all":
-                for ch1, ch2 in zip(
-                    sorted(current_node.n1.children), sorted(current_node.n2.children)
-                ):
+                for ch1, ch2  in zip(current_node.n1.children, current_node.n2.children):
                     op = self.__determine_op(ch1, ch2)
                     node = CMPNode(ch1, ch2, op, op)
                     stack.insert(0, node)
@@ -287,6 +294,7 @@ class TypeNode:
 
         op = self.__determine_op(self, other)
         node = CMPNode(self, other, op, op)
+
         post_order = self.__eq_post_order(node)
 
         for cmp_node in post_order:
