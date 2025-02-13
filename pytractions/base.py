@@ -244,7 +244,7 @@ class BaseMeta(type):
                         default = attrs[attr].default
                     if attrs[attr].default_factory is not dataclasses.MISSING:
                         default = attrs[attr].default_factory
-                elif type(attrs[attr]) in (str, int, None, float):
+                elif type(attrs[attr]) in (str, int, type(None), float):
                     default = type_to_default_type[type(attrs[attr])](attrs[attr])
                     attrs[attr] = default
 
@@ -366,6 +366,8 @@ class ListItemHandler(ItemHandler):
             "$type": TypeNode.from_type(item.data.__class__).to_json(),
             "$data": [],
         }
+        if not item.data:
+            return
         for n, litem in enumerate(item.data._list):
             if isinstance(litem, (int, float, str, bool, type(None))):
                 item.result[item.parent_index]["$data"].append(litem)
@@ -390,6 +392,8 @@ class ListItemHandlerContent(ItemHandler):
     def process(self, tree, item):
         """Process list items."""
         item.result[item.parent_index] = []
+        if not item.data:
+            return
         for n, litem in enumerate(item.data._list):
             if isinstance(litem, (int, float, str, bool, type(None))):
                 item.result[item.parent_index].append(litem)
@@ -458,7 +462,7 @@ class BasicItemHandler(ItemHandler):
         data_type = item.data_type
         if item.data_type.__class__ == _UnionGenericAlias and item.data_type._name == "Optional":
             data_type = item.data_type.__args__[0]
-        uni = Union[int, str, bool, float, type(None)]
+        uni = Union[int, str, bool, float, type(None), defaultNone, _defaultInt, _defaultStr, _defaultFloat]
 
         ret1 = TypeNode.from_type(uni) == TypeNode.from_type(data_type)
         ret2 = TypeNode.from_type(uni) == TypeNode.from_type(type(item.data))
@@ -468,7 +472,7 @@ class BasicItemHandler(ItemHandler):
         """Process primitive types items."""
         if isinstance(item.data,
                       (_defaultInt, _defaultStr,
-                       _defaultFloat, _defaultBool)):
+                       _defaultFloat, _defaultBool, defaultNone)):
             item.result[item.parent_index] = item.data._val
         else:
             item.result[item.parent_index] = item.data

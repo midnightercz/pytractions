@@ -87,7 +87,7 @@ class _defaultBool:
 
 class defaultNone:
     def __init__(self, val):
-        pass
+        self._val = None
 
     def __str__(self):
         return "None"

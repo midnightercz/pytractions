@@ -144,8 +144,6 @@ class TractorMeta(TractionMeta):
         output_waves = {}
         traction_waves = {}
 
-        print("BEFORE NEW", name)
-
         for dst_o, _attr in [
             (outputs_map, "_outputs_map"),
             (io_map, "_io_map"),
