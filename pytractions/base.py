@@ -244,7 +244,7 @@ class BaseMeta(type):
                         default = attrs[attr].default
                     if attrs[attr].default_factory is not dataclasses.MISSING:
                         default = attrs[attr].default_factory
-                elif type(attrs[attr]) in (str, int, type(None), float):
+                elif type(attrs[attr]) in (str, int, None, float):
                     default = type_to_default_type[type(attrs[attr])](attrs[attr])
                     attrs[attr] = default
 
