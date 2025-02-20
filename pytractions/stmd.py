@@ -291,14 +291,14 @@ class STMD(Traction, metaclass=STMDMeta):
         first_in_field = None
         for f, ftype in self._fields.items():
             if f.startswith("i_"):
-                if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(
-                    STMDSingleIn[ANY]
+                if TypeNode.from_type(ftype, subclass_check=False) == TypeNode.from_type(
+                    Port[ANY],
                 ) and not isinstance(getattr(self, f), defaultNone):
                     first_in_field = f
                     break
 
         if not first_in_field:
-            raise RuntimeError("Cannot have STMD with only STMDSingleIn inputs")
+            raise RuntimeError(f"[{self.uid}] Cannot have STMD with only STMDSingleIn inputs")
 
         outputs = {}
         for f in self._fields:
