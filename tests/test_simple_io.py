@@ -157,10 +157,6 @@ class TestTraction(Traction):
     def _run(self, on_update: OnUpdateCallable) -> None:
         self.o_output = self.i_input + self.r_seq.inc()
 
-#for f, ftype in TestTraction.__dataclass_fields__.items():
-#    print(f, ftype)
-
-print("................................................................")
 
 class TestTractorX(Tractor):
     """Test Tractor."""
@@ -168,21 +164,15 @@ class TestTractorX(Tractor):
     i_in1: int = NullPort[int]()
     r_seq: Seq = NullPort[Seq]()
     t_t1: TestTraction = TestTraction(uid="1", i_input=i_in1, r_seq=r_seq)
-    print("XXXX1 OUT", id(t_t1.o_output), id(t_t1._raw_o_output), type(t_t1.o_output))
-    print("XXXX2 OUT", id(t_t1.o_output), id(t_t1._raw_o_output), type(t_t1.o_output))
     o_out1: int = t_t1.o_output
-    print("XXXX3 OUT", id(o_out1))
 
-print("................................................................")
 
-import sys
 class TestTractor2(Tractor):
     """Test Tractor2."""
 
     i_in1: int = NullPort[int]()
     r_seq: Seq = NullPort[Seq]()
     t_tractor1: TestTractorX = TestTractorX(uid="1", i_in1=i_in1, r_seq=r_seq)
-    print("YYYYY OUT", id(t_tractor1.o_out1), id(t_tractor1._raw_o_out1), type(t_tractor1.o_out1))
     o_out1: int = t_tractor1.o_out1
 
 

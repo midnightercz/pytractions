@@ -19,11 +19,7 @@ from .base import (
     TractionStats,
     on_update_empty,
     OnUpdateCallable,
-    defaultNone,
-    #ANY_IN_TYPE_NODE,
-    #ANY_OUT_TYPE_NODE,
-    #ANY_RES_TYPE_NODE,
-    #ANY_ARG_TYPE_NODE,
+    _defaultNone,
     is_wrapped,
 )
 from .executor import ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor
@@ -55,36 +51,6 @@ class STMDMeta(TractionMeta):
             "tractions",
             "tractions_state",
         ):
-            # if attr.startswith("i_"):
-            #     if (
-            #         type_type_node == ANY_OUT_TYPE_NODE
-            #         or type_type_node == ANY_ARG_TYPE_NODE
-            #         or type_type_node == ANY_RES_TYPE_NODE
-            #     ):
-            #         raise TypeError(f"Attribute {attr} has to be type In[ANY], but is {type_}")
-            # elif attr.startswith("o_"):
-            #     if (
-            #         type_type_node == ANY_IN_TYPE_NODE
-            #         or type_type_node == ANY_ARG_TYPE_NODE
-            #         or type_type_node == ANY_RES_TYPE_NODE
-            #     ):
-            #         raise TypeError(f"Attribute {attr} has to be type Out[ANY], but is {type_}")
-            # elif attr.startswith("a_"):
-            #     if (
-            #         type_type_node == ANY_IN_TYPE_NODE
-            #         or type_type_node == ANY_OUT_TYPE_NODE
-            #         or type_type_node == ANY_RES_TYPE_NODE
-            #     ):
-            #         raise TypeError(
-            #             f"Attribute {attr} has to be type Arg[ANY] or MultiArg, but is {type_}"
-            #         )
-            # elif attr.startswith("r_"):
-            #     if (
-            #         type_type_node == ANY_IN_TYPE_NODE
-            #         or type_type_node == ANY_OUT_TYPE_NODE
-            #         or type_type_node == ANY_ARG_TYPE_NODE
-            #     ):
-            #         raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
             if attr == "d_":
                 if type_type_node != TypeNode.from_type(str):
                     raise TypeError(f"Attribute {attr} has to be type str, but is {type_}")
@@ -96,7 +62,8 @@ class STMDMeta(TractionMeta):
                         f"Attribute {attr.replace('d_', '', 1)} is not defined for "
                         "description {attr}: {all_attrs}"
                     )
-            elif not (attr.startswith("i_") or attr.startswith("o_") or attr.startswith("a_") or attr.startswith("r_")):
+            elif not (attr.startswith("i_") or attr.startswith("o_")
+                      or attr.startswith("a_") or attr.startswith("r_")):
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or d_")
 
     def __new__(cls, name, bases, attrs):
@@ -293,7 +260,7 @@ class STMD(Traction, metaclass=STMDMeta):
             if f.startswith("i_"):
                 if TypeNode.from_type(ftype, subclass_check=False) == TypeNode.from_type(
                     Port[ANY],
-                ) and not isinstance(getattr(self, f), defaultNone):
+                ) and not isinstance(getattr(self, f), _defaultNone):
                     first_in_field = f
                     break
 
@@ -310,9 +277,12 @@ class STMD(Traction, metaclass=STMDMeta):
             inputs.append({})
             for f, ftype in self._fields.items():
                 if f.startswith("i_"):
-                    if not self.a_allow_unset_inputs and (getattr(self, f) is None or isinstance(getattr(self, f), defaultNone)):
+                    # Raise error if allow_unset_inputs is False and input is missing
+                    if (not self.a_allow_unset_inputs
+                            and (getattr(self, f) is None
+                                 or isinstance(getattr(self, f), _defaultNone))):
                         raise ValueError(f"{self.fullname}: No input data for '{f}'")
-                    elif (getattr(self, f) is None or isinstance(getattr(self, f), defaultNone)):
+                    elif (getattr(self, f) is None or isinstance(getattr(self, f), _defaultNone)):
                         continue
                     if TypeNode.from_type(
                         self._fields[f], subclass_check=False
@@ -369,8 +339,6 @@ class STMD(Traction, metaclass=STMDMeta):
             index = uids.index(uid)
             for o in out:
                 getattr(self, o)[index] = out[o]
-
-        # self.a_executor.a.shutdown()
 
         self.state = TractionState.FINISHED
         _on_update(self)

@@ -7,7 +7,7 @@ from pytractions.base import (
     JSON_COMPATIBLE,
     TypeNode,
 )
-from pytractions.types import ANY
+from pytractions.utils import ANY
 
 # Jsonable test cases
 
@@ -137,4 +137,4 @@ def test_self():
         prev: Optional[Self]
 
     tc1 = TestC(prev=None)
-    tc2 = TestC(prev=tc1)
+    TestC(prev=tc1)

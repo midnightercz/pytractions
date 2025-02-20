@@ -51,39 +51,6 @@ class TractorMeta(TractionMeta):
             "tractions",
         ):
             type_type_node = TypeNode.from_type(type_, subclass_check=False)
-            # if attr.startswith("i_"):
-            #     if (
-            #         type_type_node == ANY_OUT_TYPE_NODE
-            #         or type_type_node == ANY_ARG_TYPE_NODE
-            #         or type_type_node == ANY_RES_TYPE_NODE
-            #     ):
-            #         raise TypeError(
-            #             f"Attribute {attr} has to be type STMDSingleIn[ANY], In[ANY], or TIn[ANY] "
-            #             f"but is {type_}"
-            #         )
-            # elif attr.startswith("o_"):
-            #     if (
-            #         type_type_node == ANY_IN_TYPE_NODE
-            #         or type_type_node == ANY_ARG_TYPE_NODE
-            #         or type_type_node == ANY_RES_TYPE_NODE
-            #     ):
-            #         raise TypeError(f"Attribute {attr} has to be type Out[ANY], but is {type_}")
-            # elif attr.startswith("a_"):
-            #     if (
-            #         type_type_node == ANY_IN_TYPE_NODE
-            #         or type_type_node == ANY_OUT_TYPE_NODE
-            #         or type_type_node == ANY_RES_TYPE_NODE
-            #     ):
-            #         raise TypeError(
-            #             f"Attribute {attr} has to be type Arg[ANY] or MultiArg, but is {type_}"
-            #         )
-            # elif attr.startswith("r_"):
-            #     if (
-            #         type_type_node == ANY_IN_TYPE_NODE
-            #         or type_type_node == ANY_OUT_TYPE_NODE
-            #         or type_type_node == ANY_ARG_TYPE_NODE
-            #     ):
-            #         raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
             if attr.startswith("t_"):
                 if TypeNode.from_type(type_, subclass_check=True) != TypeNode.from_type(Traction):
                     raise TypeError(f"Attribute {attr} has to be type Traction, but is {type_}")
@@ -127,6 +94,12 @@ class TractorMeta(TractionMeta):
                     to_process.append(
                         (getattr(current, f), current_mapping + [f])
                     )
+
+    def _populate_attributes_from_bases(cls, attrs, bases):
+        for base in bases:
+            for f, fo in base.__dict__.items():
+                if f.startswith("d_"):
+                    attrs[f] = fo
 
     @classmethod
     def _before_new(cls, name, attrs, bases):
@@ -177,7 +150,8 @@ class TractorMeta(TractionMeta):
                         TypeNode.from_type(STMDSingleIn[ANY]) and \
                         TypeNode.from_type(type(fo)) !=\
                         TypeNode.from_type(type(Port[ANY])):
-                    raise ValueError(f"Tractor input {f} has to be type Port[ANY] but is {type(fo)}")
+                    raise ValueError(
+                        f"Tractor input {f} has to be type Port[ANY] but is {type(fo)}")
 
                 outputs_map[id(fo)] = ("#", f)
                 output_waves[id(fo)] = 0
@@ -308,6 +282,7 @@ class Tractor(Traction, metaclass=TractorMeta):
 
     _TYPE: ClassVar[str] = "TRACTOR"
     _CUSTOM_TYPE_TO_JSON: ClassVar[bool] = True
+    _CUSTOM_TO_JSON: ClassVar[bool] = True
     uid: str
     state: str = "ready"
     skip: bool = False
@@ -360,18 +335,11 @@ class Tractor(Traction, metaclass=TractorMeta):
                         for o_name in o_path:
                             out = object.__getattribute__(out, o_name)
 
-                        #print("OUT", out)
-
                         n_out = Port[type(out)](data=None)
-                        #print("N OUT", n_out)
                         n_out._ref = object.__getattribute__(self.tractions[source], o_path[0])
-                        #print("-----> REF", n_out._ref, id(n_out._ref), "\n<-----")
-                        #print("PROXY PATH", o_path)
                         n_out._data_proxy = o_path[1:]
                         out = n_out
 
-                    #print("OUT", out)
-                    #print("--------")
                     init_fields[ft] = out
 
             elif ft.startswith("r_"):
@@ -416,20 +384,18 @@ class Tractor(Traction, metaclass=TractorMeta):
         self._elementary_outs = {}
         self.tractions = TDict[str, Traction]({})
         for f in self._fields:
-            # Copy all tractions
+            # Init all tractions to self.tractions
             if f.startswith("t_"):
                 traction = getattr(self, f)
                 new_traction = self._init_traction(f, traction)
                 self.tractions[f] = new_traction
+
         for f in self._fields:
             # set tractor output to outputs of copied tractions
             if f.startswith("o_"):
                 # regular __setattr__ don't overwrite whole output model but just
                 # data in it to keep connection, so need to use _no_validate_setattr
-                #t, tf = self._t_outputs_map[f]
-                #print("OUTPUTS MAP", self._t_outputs_map)
                 t, *tf_path = self._t_outputs_map[f]
-                #print("OUT", f, t, tf_path)
                 if t == "#":
                     out = self
                 else:
@@ -438,13 +404,7 @@ class Tractor(Traction, metaclass=TractorMeta):
                     tf_path = [tf_path]
                 for o_name in tf_path:
                     out = object.__getattribute__(out, o_name)
-                
-                #print("T OUTPUTS MAP", self._t_outputs_map)
-                #print("Settings out", f, out, id(out))
 
-
-                #setattr(self, f, out)
-                #setattr(self, f + "__raw_", out)
                 self._no_validate_setattr_(f, out)
                 self._no_validate_setattr_(
                     "_raw_" + f, out
@@ -678,14 +638,24 @@ class MultiTractor(Tractor, metaclass=TractorMeta):
                 # data in it to keep connection, so need to use _no_validate_setattr
                 t, tf = self._outputs_map[f]
                 self._no_validate_setattr_(f, getattr(self._tractions[t], tf))
-                self._no_validate_setattr_("_raw_"+f, getattr(self._tractions[t], tf))
+                self._no_validate_setattr_("_raw_" + f, getattr(self._tractions[t], tf))
         return self
 
+
 class LoopTractorEnd(Exception):
+    """Exception raised when loop tractor should end."""
+
     pass
 
+
 class LoopTractor(Tractor):
-    def _run(self, on_update: Optional[OnUpdateCallable] = None) -> "LoopTractor":  # pragma: no cover
+    """Loop tractor class.
+
+    Tractor runs all traction in loop until LoopTractorEnd exception is raised.
+    """
+
+    def _run(self,
+             on_update: Optional[OnUpdateCallable] = None) -> "LoopTractor":  # pragma: no cover
         # Check for uninitialized resources
         for f in self._fields:
             if f.startswith("r_"):

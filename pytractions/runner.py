@@ -85,6 +85,7 @@ class SimpleRunner:
 
 
 def load_yaml_input(traction_cls):
+    """Load yaml input."""
     traction_init_fields = {}
     docs = yaml.safe_load_all(sys.stdin.read())
     for doc in docs:
@@ -102,6 +103,7 @@ def load_yaml_input(traction_cls):
 
 
 def load_json_input(traction_cls):
+    """Load json input."""
     json_values = {}
     traction_init_fields = {}
     for param in args.params:

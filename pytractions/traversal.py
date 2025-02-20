@@ -1,12 +1,15 @@
-import enum
-
 class Type:
+    """Tree Type."""
+
     FIFO = 1
     LIFO = 2
 
 
 class TreeItem:
+    """TreeItem."""
+
     def __init__(self, data, data_type, parent, parent_index, result, path):
+        """__init__."""
         self.data = data
         self.data_type = data_type
         self.parent = parent
@@ -14,15 +17,21 @@ class TreeItem:
         self.result = result
         self.path = path
 
+
 class UnknownItemError(Exception):
+    """UknownItemError."""
+
     pass
 
 
 class Tree:
+    """Tree."""
+
     TYPE = Type.FIFO
     handlers = []
 
     def __init__(self, result):
+        """__init__."""
         self.stack = []
         self.root_result = result
         self.result = None
@@ -30,9 +39,11 @@ class Tree:
         self.parent = None
 
     def __iter__(self):
+        """Iterate over stack."""
         return self
 
     def __next__(self):
+        """Get next item from stack."""
         try:
             stack_item = self.stack.pop(0)
         except IndexError:
@@ -43,11 +54,13 @@ class Tree:
         return stack_item
 
     def process(self):
+        """Process provided stack."""
         for _ in self:
             pass
         return self.result
 
     def add_to_process(self, data=None, data_type=None, parent_index=None, result=None):
+        """Add new item to stack to process."""
         if self.TYPE == Type.FIFO:
             titem = TreeItem(data=data,
                              data_type=data_type,
@@ -55,7 +68,7 @@ class Tree:
                              parent_index=parent_index,
                              result=result,
                              path=self.current.path + "." + str(parent_index)
-                                  if self.current else str(parent_index)
+                             if self.current else str(parent_index)
                              )
             self.stack.insert(0, titem)
         else:
@@ -65,14 +78,15 @@ class Tree:
                              parent_index=parent_index,
                              result=result,
                              path=self.current.path + "." + str(parent_index)
-                                  if self.current else str(parent_index)
+                             if self.current else str(parent_index)
                              )
             self.stack.append(titem)
 
-    def add_to_result(self):
-        self.result.append(self.current)
+    # def add_to_result(self):
+    #     self.result.append(self.current)
 
     def process_item(self, stack_item):
+        """Process stack item."""
         for handler in self.handlers:
             if handler.match(stack_item):
                 handler.process(self, stack_item)
@@ -82,10 +96,12 @@ class Tree:
 
 
 class ItemHandler:
+    """ItemHandler."""
+
     def match(self, item: TreeItem):
+        """Match."""
         return True
 
     def process(self, tree: Tree, item: TreeItem):
+        """Process."""
         pass
-
-

@@ -7,7 +7,6 @@ import sys
 
 
 from .abase import ABase
-from .utils import ANY
 
 X = TypeVar("X")
 
@@ -19,6 +18,7 @@ def evaluate_forward_ref(ref, frame):
     caller_globals, caller_locals = frame.f_globals, frame.f_locals
     recursive_guard = set()
     return ref._evaluate(caller_globals, caller_locals, recursive_guard)
+
 
 class _defaultInt(int):
     def __init__(self, x):
@@ -55,6 +55,7 @@ class _defaultStr(str):
 
     def __hash__(self):
         return hash(self._val)
+
     def __len__(self):
         return len(self._val)
 
@@ -87,7 +88,7 @@ class _defaultBool:
         return str(self._val)
 
 
-class defaultNone:
+class _defaultNone:
     def __init__(self, val):
         self._val = None
 
@@ -258,15 +259,15 @@ class TypeNode:
                     post_order.insert(0, node)
                     current_node.children.append(node)
 
-            elif current_node.n1.type_ is Union and current_node.n2.type_ is  Union:
-                for ch1  in current_node.n1.children:
+            elif current_node.n1.type_ is Union and current_node.n2.type_ is Union:
+                for ch1 in current_node.n1.children:
                     node_uni = CMPNode(ch1, current_node.n2, 'any', 'any')
                     stack.insert(0, node_uni)
                     post_order.insert(0, node_uni)
                     current_node.children.append(node_uni)
 
             elif current_node.op == "all":
-                for ch1, ch2  in zip(current_node.n1.children, current_node.n2.children):
+                for ch1, ch2 in zip(current_node. n1.children, current_node.n2.children):
                     op = self.__determine_op(ch1, ch2)
                     node = CMPNode(ch1, ch2, op, op)
                     stack.insert(0, node)
@@ -418,7 +419,7 @@ class TypeNode:
             elif issubclass(n1_type, enum.Enum):
                 continue
             elif issubclass(n1_type,
-                            (_defaultInt, _defaultStr, _defaultFloat, _defaultBool, defaultNone)):
+                            (_defaultInt, _defaultStr, _defaultFloat, _defaultBool, _defaultNone)):
                 continue
             else:
                 return False

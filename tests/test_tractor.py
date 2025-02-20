@@ -68,11 +68,15 @@ def test_tractor_nested():
 
 
 class Complex(Base):
+    """Complex number."""
+
     real: float = 0.0
     imaginary: float = 0.0
 
 
 class TestTractionComplex(Traction):
+    """Test Traction."""
+
     i_real: Port[float]
     i_imaginary: Port[float]
     o_output: Port[Complex]
@@ -106,3 +110,25 @@ def test_tractor_nested_attrs():
     print(t.o_out1)
     assert t.o_out1 == 44
 
+
+class TestTractionArg(Traction):
+    a_arg: float
+    o_output: float
+
+    def _run(self, on_update: OnUpdateCallable) -> None:
+        print("ARG", self.i_arg)
+        self.o_output = self.i_arg
+
+
+class TestTractorInputToArg(Tractor):
+    i_in1: Port[float] = NullPort[float]()
+
+    t_t1: TestTractionArg = TestTractionArg(uid="1", a_arg=i_in1)
+
+    o_out1: Port[float] = t_t1.o_output
+
+
+def test_tractor_input_to_arg():
+    tt = TestTractorInputToArg(uid="1", i_in1=Port[float](data=10.0))
+    tt.run()
+    assert tt.o_out1 == 10.0

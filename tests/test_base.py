@@ -1,4 +1,4 @@
-from typing import List, Dict, Union, Optional, TypeVar, Generic, Self
+from typing import List, Dict, Union, Optional, TypeVar, Generic
 
 import pytest
 
@@ -7,8 +7,6 @@ from pytractions.base import (
     JSONIncompatibleError,
     TList,
     TDict,
-    JSON_COMPATIBLE,
-    TypeNode,
     NoAnnotationError,
 )
 
@@ -348,10 +346,6 @@ def test_base_generic_nested():
         a: T
 
     TestC[TestA](a=TestA())
-
-
-
-
 
 
 # Test Generics

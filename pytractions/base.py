@@ -34,7 +34,7 @@ from .exc import TractionFailedError
 from .utils import ANY, doc, isodate_now  # noqa: F401
 from .types import (
     TypeNode, JSON_COMPATIBLE, _defaultInt, _defaultStr,
-    _defaultFloat, _defaultBool, defaultNone
+    _defaultFloat, _defaultBool, _defaultNone
 )
 from .abase import ABase, ATList, ATDict
 from .traversal import Tree, ItemHandler
@@ -135,7 +135,7 @@ type_to_default_type = {
     str: _defaultStr,
     float: _defaultFloat,
     bool: _defaultBool,
-    type(None): defaultNone,
+    type(None): _defaultNone,
 }
 
 
@@ -462,7 +462,8 @@ class BasicItemHandler(ItemHandler):
         data_type = item.data_type
         if item.data_type.__class__ == _UnionGenericAlias and item.data_type._name == "Optional":
             data_type = item.data_type.__args__[0]
-        uni = Union[int, str, bool, float, type(None), defaultNone, _defaultInt, _defaultStr, _defaultFloat]
+        uni = Union[int, str, bool, float, type(None),
+                    _defaultNone, _defaultInt, _defaultStr, _defaultFloat]
 
         ret1 = TypeNode.from_type(uni) == TypeNode.from_type(data_type)
         ret2 = TypeNode.from_type(uni) == TypeNode.from_type(type(item.data))
@@ -472,7 +473,7 @@ class BasicItemHandler(ItemHandler):
         """Process primitive types items."""
         if isinstance(item.data,
                       (_defaultInt, _defaultStr,
-                       _defaultFloat, _defaultBool, defaultNone)):
+                       _defaultFloat, _defaultBool, _defaultNone)):
             item.result[item.parent_index] = item.data._val
         else:
             item.result[item.parent_index] = item.data
@@ -564,6 +565,10 @@ class BaseItemHandler(ItemHandler):
 
     def process(self, tree, item):
         """Process Base subclasses."""
+        if item.data._CUSTOM_TO_JSON:
+            item.result[item.parent_index] = item.data.to_json()
+            return
+
         item.result[item.parent_index] = {
             "$type": TypeNode.from_type(item.data.__class__).to_json(),
             "$data": {},
@@ -628,6 +633,7 @@ class Base(ABase, metaclass=BaseMeta):
     """Base class supporting type validation."""
 
     _CUSTOM_TYPE_TO_JSON: ClassVar[bool] = dataclasses.field(default=False, init=False)
+    _CUSTOM_TO_JSON: ClassVar[bool] = dataclasses.field(default=False, init=False)
     _SERIALIZE_REPLACE_FIELDS: ClassVar[dict] = {}
 
     # dataclasses configuration class
@@ -2246,6 +2252,7 @@ class Traction(Base, metaclass=TractionMeta):
 
     _TYPE: ClassVar[str] = "TRACTION"
     _CUSTOM_TYPE_TO_JSON: ClassVar[bool] = False
+    _CUSTOM_TO_JSON: ClassVar[bool] = True
 
     uid: str
     "Unique identifier of the current traction."
@@ -2268,17 +2275,15 @@ class Traction(Base, metaclass=TractionMeta):
         """Adjust class instance after initialization."""
         self._elementary_outs = {}
         for f in self._fields:
-            if not f.startswith("o_") and not f.startswith("i_"):
-                continue
-
-            # do not set owner to tractor inputs
-            self._no_validate_setattr_("_raw_" + f, super().__getattribute__(f))
-            if TypeNode.from_type(super().__getattribute__(f).__class__, subclass_check=True) ==\
-                    TypeNode.from_type(NullPort[ANY]):
-                continue
-            if not super().__getattribute__(f)._owner:
-                super().__getattribute__(f)._name = f
-                super().__getattribute__(f)._owner = self
+            if f.startswith("o_") or f.startswith("i_"):
+                self._no_validate_setattr_("_raw_" + f, super().__getattribute__(f))
+                if TypeNode.from_type(super().__getattribute__(f).__class__,
+                                      subclass_check=True) ==\
+                        TypeNode.from_type(NullPort[ANY]):
+                    continue
+                if not super().__getattribute__(f)._owner:
+                    super().__getattribute__(f)._name = f
+                    super().__getattribute__(f)._owner = self
 
     def __getattribute_orig__(self, name: str) -> Any:
         """Get attribute of the class instance - unmodified version."""
@@ -2333,6 +2338,7 @@ class Traction(Base, metaclass=TractionMeta):
             or name.startswith("a_")
             or name.startswith("r_")
         ):
+            default_attr = self.__dataclass_fields__[name].default
             vtype = value.__class__
             tt1 = TypeNode.from_type(vtype, subclass_check=True,
                                      type_aliases=[(type(True), _defaultBool)])
@@ -2354,9 +2360,7 @@ class Traction(Base, metaclass=TractionMeta):
             # Need to check with hasattr first to make sure inputs can be initialized
             if hasattr(self, name):
                 # Allow overwrite default input values
-                if super().__getattribute__(name) == self.__dataclass_fields__[
-                    name
-                ].default or TypeNode.from_type(
+                if super().__getattribute__(name) == default_attr or TypeNode.from_type(
                     super().__getattribute__(name)
                 ) == TypeNode.from_type(
                     NullPort[ANY]
@@ -2412,23 +2416,28 @@ class Traction(Base, metaclass=TractionMeta):
                 self.__getattribute_orig__(name).data = value
             return
         elif name.startswith("a_"):
-            # arg is set for the first time
-            if not hasattr(self, name):
-                if wrapped:
-                    self._no_validate_setattr_(name, value)
-                else:
-                    self._no_validate_setattr_(name, self._fields[name](data=value))
-            else:
-                if super().__getattribute__(name) == self.__dataclass_fields__[name].default:
+            if hasattr(self, name):
+                # Allow overwrite default input values
+                if super().__getattribute__(name) == default_attr or TypeNode.from_type(
+                    super().__getattribute__(name)
+                ) == TypeNode.from_type(
+                    NullPort[ANY]
+                ):
                     if wrapped:
                         self._no_validate_setattr_(name, value)
+                        self._no_validate_setattr_("_raw_" + name, value)
                     else:
-                        self._no_validate_setattr_(name, self._fields[name](data=value))
+                        wrapped_val = self._fields[name](data=value)
+                        self._no_validate_setattr_(name, wrapped_val)
+                        self._no_validate_setattr_("_raw_" + name, wrapped_val)
+                    return
+            # in the case input is not set, initialize it
+            elif not hasattr(self, name):
+                if wrapped:
+                    self._no_validate_setattr_(name, value)
+                    self._no_validate_setattr_("_raw_" + name, value)
                 else:
-                    if wrapped:
-                        self.__getattribute_orig__(name).data = value.data
-                    else:
-                        self.__getattribute_orig__(name).data = value
+                    self._no_validate_setattr_(name, self._fields[name](data=value))
             return
         elif name.startswith("r_"):
             if not hasattr(self, name):
@@ -2437,7 +2446,7 @@ class Traction(Base, metaclass=TractionMeta):
                 else:
                     self._no_validate_setattr_(name, self._fields[name](data=value))
             else:
-                if super().__getattribute__(name) == self.__dataclass_fields__[name].default:
+                if super().__getattribute__(name) == default_attr:
                     if wrapped:
                         self._no_validate_setattr_(name, value)
                     else:
@@ -2486,7 +2495,8 @@ class Traction(Base, metaclass=TractionMeta):
             elif f.startswith("o_"):
                 ret["$data"][f] = object.__getattribute__(self, f).to_json()
             elif f.startswith("a_"):
-                ret["$data"][f] = object.__getattribute__(self, f).to_json()
+                i_json = getattr(self, "_raw_" + f).to_json()
+                ret["$data"][f] = i_json
             elif f.startswith("r_"):
                 ret["$data"][f] = object.__getattribute__(self, f).to_json()
             elif isinstance(getattr(self, f), (enum.Enum)):
