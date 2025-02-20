@@ -177,7 +177,7 @@ class TractorMeta(TractionMeta):
                         TypeNode.from_type(STMDSingleIn[ANY]) and \
                         TypeNode.from_type(type(fo)) !=\
                         TypeNode.from_type(type(Port[ANY])):
-                    raise ValueError(f"Tractor input {f} has to be type Port[ANY]")
+                    raise ValueError(f"Tractor input {f} has to be type Port[ANY] but is {type(fo)}")
 
                 outputs_map[id(fo)] = ("#", f)
                 output_waves[id(fo)] = 0
@@ -484,11 +484,11 @@ class Tractor(Traction, metaclass=TractorMeta):
             if on_update:
                 on_update(self)
             if traction.state == TractionState.ERROR:
-                LOGGER.error(f"traction {traction.full_name} ERROR")
+                LOGGER.error(f"traction {traction.fullname} ERROR")
                 self.state = TractionState.ERROR
                 return self
             elif traction.state == TractionState.FAILED:
-                LOGGER.error(f"traction {traction.full_name} FAILED")
+                LOGGER.error(f"traction {traction.fullname} FAILED")
                 self.state = TractionState.FAILED
                 return self
             else:
