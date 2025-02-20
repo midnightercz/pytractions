@@ -55,6 +55,8 @@ class _defaultStr(str):
 
     def __hash__(self):
         return hash(self._val)
+    def __len__(self):
+        return len(self._val)
 
 
 class _defaultFloat(float):
