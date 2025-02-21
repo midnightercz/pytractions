@@ -13,6 +13,8 @@ from pytractions.base import (
 
 
 from pytractions.tractor import Tractor
+from pytractions.exc import WrongInputMappingError
+
 
 T = TypeVar("T")
 
@@ -460,7 +462,7 @@ def test_tractor_members_invalid_order() -> None:
         def _run(self, on_update) -> None:  # pragma: no cover
             self.o_out1.data = (self.i_in1.data + 10) / float(self.a_reducer.data)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(WrongInputMappingError):
 
         class TestTractor(Tractor):
             a_multiplier: Port[float] = Port[float](data=0.0)

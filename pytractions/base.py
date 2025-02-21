@@ -2275,7 +2275,11 @@ class Traction(Base, metaclass=TractionMeta):
         """Adjust class instance after initialization."""
         self._elementary_outs = {}
         for f in self._fields:
-            if f.startswith("o_") or f.startswith("i_"):
+            if f.startswith("a_") or f.startswith("r_"):
+                print(self.uid, "Setting raw", f)
+                self._no_validate_setattr_("_raw_" + f, super().__getattribute__(f))
+
+            elif f.startswith("o_") or f.startswith("i_"):
                 self._no_validate_setattr_("_raw_" + f, super().__getattribute__(f))
                 if TypeNode.from_type(super().__getattribute__(f).__class__,
                                       subclass_check=True) ==\

@@ -23,7 +23,7 @@ from .base import (
     NullPort,
     STMDSingleIn
 )
-from .exc import UninitiatedResource
+from .exc import UninitiatedResource, WrongInputMappingError, WrongArgMappingError
 
 
 LOGGER = logging.getLogger(__name__)
@@ -95,11 +95,27 @@ class TractorMeta(TractionMeta):
                         (getattr(current, f), current_mapping + [f])
                     )
 
-    def _populate_attributes_from_bases(cls, attrs, bases):
-        for base in bases:
-            for f, fo in base.__dict__.items():
-                if f.startswith("d_"):
-                    attrs[f] = fo
+    @classmethod
+    def _overwrite_attributes_from_base_class(cls, base, _attr, destination):
+        if hasattr(base, _attr):
+            for k, v in getattr(base, _attr).items():
+                if k not in destination:
+                    destination[k] = v
+
+    @classmethod
+    def _gather_outputs_from_base_class(cls, base, outputs_all):
+        if hasattr(base, "_known_output_ids"):
+            for v in base._known_output_ids:
+                outputs_all.append(v)
+
+    @classmethod
+    def _validate_input_type(cls, f, fo):
+        if TypeNode.from_type(type(fo)) !=\
+                TypeNode.from_type(STMDSingleIn[ANY]) and \
+                TypeNode.from_type(type(fo)) !=\
+                TypeNode.from_type(type(Port[ANY])):
+            raise ValueError(
+                f"Tractor input {f} has to be type Port[ANY] but is {type(fo)}")
 
     @classmethod
     def _before_new(cls, name, attrs, bases):
@@ -132,34 +148,21 @@ class TractorMeta(TractionMeta):
             (traction_waves, "_traction_waves"),
         ]:
             for base in bases:
-                if hasattr(base, _attr):
-                    for k, v in getattr(base, _attr).items():
-                        if k not in dst_o:
-                            dst_o[k] = v
+                cls._overwrite_attributes_from_base_class(base, _attr, dst_o)
 
-        outputs_all = []
-        _outputs_all = {}
+        known_output_ids = []
         for base in bases:
-            if hasattr(base, "_outputs_all"):
-                for v in base._outputs_all:
-                    outputs_all.append(v)
+            cls._gather_outputs_from_base_class(base, known_output_ids)
 
         for f, fo in attrs.items():
             if f.startswith("i_"):
-                if TypeNode.from_type(type(fo)) !=\
-                        TypeNode.from_type(STMDSingleIn[ANY]) and \
-                        TypeNode.from_type(type(fo)) !=\
-                        TypeNode.from_type(type(Port[ANY])):
-                    raise ValueError(
-                        f"Tractor input {f} has to be type Port[ANY] but is {type(fo)}")
+                cls._validate_input_type(f, fo)
 
                 outputs_map[id(fo)] = ("#", f)
                 output_waves[id(fo)] = 0
-                outputs_all.append(id(fo))
-                _outputs_all[f] = fo
+                known_output_ids.append(id(fo))
             if f.startswith("o_"):
-                outputs_all.append(id(fo))
-                _outputs_all[f] = fo
+                known_output_ids.append(id(fo))
             if f.startswith("r_"):
                 resources[id(fo)] = f
             if f.startswith("a_"):
@@ -184,19 +187,16 @@ class TractorMeta(TractionMeta):
             else:
                 traction_fields = traction._fields
                 _traction = traction
+            # build io map from traction inputs
             for tf in traction_fields:
                 raw_tfo = object.__getattribute__(_traction, tf)
                 tfo = getattr(_traction, tf)
                 if tf.startswith("i_"):
-                    if TypeNode.from_type(type(raw_tfo), subclass_check=True) !=\
-                            TypeNode.from_type(Port[ANY]) and \
-                            TypeNode.from_type(type(raw_tfo), subclass_check=True) !=\
-                            TypeNode.from_type(STMDSingleIn[ANY]):
-                        raise ValueError(f"Tractor input has to be type Port[ANY], is {raw_tfo}")
+                    cls._validate_input_type(tf, raw_tfo)
                     if TypeNode.from_type(type(raw_tfo), subclass_check=False)\
                             != TypeNode.from_type(NullPort[ANY]):
-                        if id(raw_tfo) not in outputs_all and id(tfo) not in outputs_all:
-                            raise ValueError(
+                        if id(raw_tfo) not in known_output_ids and id(tfo) not in known_output_ids:
+                            raise WrongInputMappingError(
                                 f"Input {_traction.__class__}[{_traction.uid}]->{tf} is mapped to "
                                 "output which is not known yet"
                             )
@@ -206,6 +206,15 @@ class TractorMeta(TractionMeta):
                     elif id(tfo) in outputs_map:
                         io_map[(t, tf)] = outputs_map[id(tfo)]
                         wave = max(output_waves[id(tfo)], wave)
+                    else:
+                        raise WrongInputMappingError(
+                            f"Input {_traction.__class__}[{_traction.uid}]->{tf} is mapped to "
+                            "Port which is not tractor input or output of any traction."
+                        )
+
+            # END: build io map from traction inputs
+
+            # Set traction wave to be one more than the highest wave of its inputs
             traction_waves[t] = wave + 1
 
             for tf in _traction._fields:
@@ -214,11 +223,11 @@ class TractorMeta(TractionMeta):
 
                 if tf.startswith("o_"):
                     cls._process_output(t, tf, raw_tfo, tfo, outputs_map,
-                                        outputs_all, traction_waves, output_waves)
+                                        known_output_ids, traction_waves, output_waves)
                 elif tf.startswith("i_"):
                     if TypeNode.from_type(type(raw_tfo), subclass_check=False) !=\
                             TypeNode.from_type(NullPort[ANY]):
-                        if id(tfo) not in outputs_all and id(raw_tfo) not in outputs_all:
+                        if id(tfo) not in known_output_ids and id(raw_tfo) not in known_output_ids:
                             raise ValueError(
                                 f"Input {_traction.__class__}[{_traction.uid}]->{tf} is mapped to "
                                 "output which is not known yet"
@@ -233,26 +242,32 @@ class TractorMeta(TractionMeta):
                     if id(raw_tfo) in resources:
                         resources_map[(t, tf)] = resources[id(raw_tfo)]
                     else:
-                        raise ValueError(f"Resources {t}.{tf} is not map to any parent resource")
+                        raise ValueError(f"Resources {t}.{tf} is not mapped to any parent resource")
 
-                elif tf.startswith("a_") and id(raw_tfo) in args:
-                    args_map[(t, tf)] = args[id(raw_tfo)]
+                elif tf.startswith("a_"):
+                    if id(raw_tfo) in args:
+                        args_map[(t, tf)] = args[id(raw_tfo)]
 
-                elif tf.startswith("a_") and id(tfo) in args:
-                    args_map[(t, tf)] = args[id(tfo)]
+                    elif id(tfo) in args:
+                        args_map[(t, tf)] = args[id(tfo)]
 
-                elif tf.startswith("a_") and id(raw_tfo) in margs:
-                    args_map[(t, tf)] = margs[id(raw_tfo)]
+                    elif id(raw_tfo) in margs:
+                        args_map[(t, tf)] = margs[id(raw_tfo)]
 
-                elif tf.startswith("a_") and id(tfo) in margs:
-                    args_map[(t, tf)] = margs[id(tfo)]
+                    elif id(tfo) in margs:
+                        args_map[(t, tf)] = margs[id(tfo)]
 
-                elif tf.startswith("a_") and TypeNode.from_type(
-                    type(tfo), subclass_check=True
-                ) == TypeNode.from_type(MultiArg):
-                    for maf, mafo in raw_tfo._fields.items():
-                        if id(mafo) in args:
-                            margs_map[(t, tf, maf)] = args[id(mafo)]
+                    elif TypeNode.from_type(
+                        type(tfo), subclass_check=True
+                    ) == TypeNode.from_type(MultiArg):
+                        for maf, mafo in raw_tfo._fields.items():
+                            if id(mafo) in args:
+                                margs_map[(t, tf, maf)] = args[id(mafo)]
+
+                    elif id(raw_tfo) in resources_map or id(raw_tfo) in outputs_map:
+                        raise WrongArgMappingError(
+                            f"{t}.{tf} is argument and cannot be mapped to "
+                            "inputs, outputs or resources")
 
         for f, fo in attrs.items():
             if f.startswith("o_"):
@@ -273,7 +288,7 @@ class TractorMeta(TractionMeta):
         attrs["_io_map"] = io_map
         attrs["_args"] = args
         attrs["_margs"] = margs
-        attrs["_outputs_all"] = outputs_all
+        attrs["_known_output_ids"] = known_output_ids
         attrs["_traction_waves"] = traction_waves
 
 
@@ -381,6 +396,8 @@ class Tractor(Traction, metaclass=TractorMeta):
 
     def __post_init__(self):
         """Tractor post init."""
+        super().__post_init__()
+
         self._elementary_outs = {}
         self.tractions = TDict[str, Traction]({})
         for f in self._fields:
