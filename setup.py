@@ -46,9 +46,6 @@ setup(
         "lark",
         "jsonschema",
         "typing_extensions",
-        "streamlit",
-        "streamlit-extras",
-        "streamlit_option_menu"
     ],
     include_package_data=True,
     entry_points={

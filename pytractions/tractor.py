@@ -154,9 +154,27 @@ class TractorMeta(TractionMeta):
         for base in bases:
             cls._gather_outputs_from_base_class(base, known_output_ids)
 
+        tractions = []
+        for t in attrs["_fields"]:
+            if not t.startswith("t_"):
+                continue
+            traction = attrs[t]
+            if isinstance(traction, dataclasses.Field):
+                traction_fields = traction.default._fields
+                _traction = traction.default
+            else:
+                traction_fields = traction._fields
+                _traction = traction
+            tractions.append(_traction)
+
         for f, fo in attrs.items():
             if f.startswith("i_"):
                 cls._validate_input_type(f, fo)
+
+                # If owner is one of the child tractions, set it to None
+                # as the input owner should be tractor
+                if fo._owner in tractions:
+                    fo._owner = None
 
                 outputs_map[id(fo)] = ("#", f)
                 output_waves[id(fo)] = 0
@@ -178,8 +196,8 @@ class TractorMeta(TractionMeta):
         for t in attrs["_fields"]:
             if not t.startswith("t_"):
                 continue
-            traction = attrs[t]
             wave = 0
+            traction = attrs[t]
             # in the case of using inputs from parent
             if isinstance(traction, dataclasses.Field):
                 traction_fields = traction.default._fields
@@ -195,20 +213,26 @@ class TractorMeta(TractionMeta):
                     cls._validate_input_type(tf, raw_tfo)
                     if TypeNode.from_type(type(raw_tfo), subclass_check=False)\
                             != TypeNode.from_type(NullPort[ANY]):
-                        if id(raw_tfo) not in known_output_ids and id(tfo) not in known_output_ids:
-                            raise WrongInputMappingError(
-                                f"Input {_traction.__class__}[{_traction.uid}]->{tf} is mapped to "
-                                "output which is not known yet"
-                            )
+                        if id(raw_tfo._owner) != id(traction):
+                            # if input is not default input of the tractor,
+                            # check wether is mapped to known output
+                            if id(raw_tfo) not in known_output_ids and \
+                                    id(tfo) not in known_output_ids:
+                                raise WrongInputMappingError(
+                                    f"Input {name}.{_traction.__class__}[{_traction.uid}]->{tf} "
+                                    "is mapped to output which is not known yet"
+                                )
                     if id(raw_tfo) in outputs_map:
                         io_map[(t, tf)] = outputs_map[id(raw_tfo)]
                         wave = max(output_waves[id(raw_tfo)], wave)
                     elif id(tfo) in outputs_map:
                         io_map[(t, tf)] = outputs_map[id(tfo)]
                         wave = max(output_waves[id(tfo)], wave)
+                    elif id(raw_tfo._owner) == id(_traction):
+                        pass # don't do anything if input is default traction input
                     else:
                         raise WrongInputMappingError(
-                            f"Input {_traction.__class__}[{_traction.uid}]->{tf} is mapped to "
+                            f"Input {name}.{_traction.__class__}[{_traction.uid}]->{tf} is mapped to "
                             "Port which is not tractor input or output of any traction."
                         )
 
@@ -224,18 +248,19 @@ class TractorMeta(TractionMeta):
                 if tf.startswith("o_"):
                     cls._process_output(t, tf, raw_tfo, tfo, outputs_map,
                                         known_output_ids, traction_waves, output_waves)
-                elif tf.startswith("i_"):
-                    if TypeNode.from_type(type(raw_tfo), subclass_check=False) !=\
-                            TypeNode.from_type(NullPort[ANY]):
-                        if id(tfo) not in known_output_ids and id(raw_tfo) not in known_output_ids:
-                            raise ValueError(
-                                f"Input {_traction.__class__}[{_traction.uid}]->{tf} is mapped to "
-                                "output which is not known yet"
-                            )
-                    if id(raw_tfo) in outputs_map:
-                        io_map[(t, tf)] = outputs_map[id(raw_tfo)]
-                    elif id(tfo) in outputs_map:
-                        io_map[(t, tf)] = outputs_map[id(tfo)]
+                # elif tf.startswith("i_"):
+                #     if TypeNode.from_type(type(raw_tfo), subclass_check=False) !=\
+                #             TypeNode.from_type(NullPort[ANY]):
+                #         if id(tfo) not in known_output_ids and id(raw_tfo) not in known_output_ids:
+                #             if raw_tfo._owner != traction:
+                #                 raise ValueError(
+                #                     f"Input {_traction.__class__}[{_traction.uid}]->{tf} is mapped to "
+                #                     "output which is not known yet"
+                #                 )
+                #     if id(raw_tfo) in outputs_map:
+                #         io_map[(t, tf)] = outputs_map[id(raw_tfo)]
+                #     elif id(tfo) in outputs_map:
+                #         io_map[(t, tf)] = outputs_map[id(tfo)]
                 elif tf.startswith("r_"):
                     if id(tfo) in resources:
                         resources_map[(t, tf)] = resources[id(tfo)]
