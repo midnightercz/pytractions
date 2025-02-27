@@ -1,4 +1,9 @@
-from typing import Union, Optional, TypeVar, Self, Generic
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
+
+from typing import Union, Optional, TypeVar, Generic
 
 
 from pytractions.base import (

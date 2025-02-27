@@ -9,6 +9,11 @@ import enum
 import sys
 import uuid
 
+try:
+    from typing_extensions import Self
+except ImportError:
+    from typing import Self
+
 from typing import (
     Dict,
     List,
@@ -25,7 +30,6 @@ from typing import (
     Callable,
     _UnionGenericAlias,
     get_args,
-    Self
 )
 
 import dataclasses
