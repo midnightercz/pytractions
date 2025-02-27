@@ -21,7 +21,7 @@ classifiers = [
 
 setup(
     name="pytractions",
-    version="0.0.6",
+    version="0.0.7",
     description="""Pytractions is python framework for modular programming.""",
     long_description="""Pytractions is python framework for modular programming.
     It is based on the concept of tractions, which are small, self-contained modules.
