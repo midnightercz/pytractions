@@ -39,9 +39,6 @@ setup(
     packages=find_packages(exclude="tests"),
     data_files=[],
     install_requires=[
-        "dill",
-        "mypy",
-        "dataclasses_json",
         "pyyaml",
         "lark",
         "jsonschema",
