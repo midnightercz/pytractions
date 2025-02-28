@@ -229,3 +229,15 @@ def test_to_run_error():
     with pytest.raises(ValueError):
         t.run()
     assert t.state == "error"
+
+
+def test_traction_log():
+    class TestTraction(Traction):
+        i_input: Port[int]
+        o_output: Port[int]
+        r_res: Port[NOOPResource]
+        a_arg: Port[str]
+
+        def _run(self, on_update: OnUpdateCallable) -> None:
+            self.o_output = self.i_input
+            self.log("test log")

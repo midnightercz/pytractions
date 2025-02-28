@@ -265,12 +265,11 @@ def test_tdict_complex_from_json():
     )
 
 
-class TestModel(Base):
-    foo: int
-    bar: str
-
-
 def test_tdict_complex_from_json2():
+    class TestModel(Base):
+        foo: int
+        bar: str
+
     assert TDict[str, TDict[str, TList[TestModel]]].content_from_json(
         {
             "identity": {

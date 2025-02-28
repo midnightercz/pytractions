@@ -342,6 +342,7 @@ class SerializationError(Exception):
 
     pass
 
+
 class ItemSerializationError(Exception):
     """Raise when it's not possible to deserialize class from given string."""
 
@@ -1039,7 +1040,6 @@ class Base(ABase, metaclass=BaseMeta):
                         0, (o_cls, parent_init_fields, parent_key, init_fields, parent_path)
                     )
             elif other_uargs:
-                #print("OTHER", other_uargs)
                 for o_cls in other_uargs:
                     init_fields = {}
                     if o_cls in (
@@ -1066,21 +1066,26 @@ class Base(ABase, metaclass=BaseMeta):
 
         errors = {}
         for cls_candidate, parent_init_fields, parent_key, init_fields, parent_path in order:
-            if parent_key in parent_init_fields and parent_init_fields[parent_key] is not SerializationError:
+            if (parent_key in parent_init_fields
+                    and not isinstance(parent_init_fields[parent_key], Exception)):
                 continue
             if TypeNode.from_type(cls_candidate) == ANY_LIST_TYPE_NODE or\
                     TypeNode.from_type(cls_candidate) == ANY_DICT_TYPE_NODE:
                 try:
                     if TypeNode.from_type(cls_candidate) == ANY_DICT_TYPE_NODE:
-                        error_items = [(k, f) for k, f in init_fields.items() if isinstance(f, Exception)]
+                        error_items = [(k, f) for k, f in init_fields.items()
+                                       if isinstance(f, Exception)]
                     else:
-                        error_items = [(n, f) for n, f in enumerate(init_fields) if isinstance(f, Exception)]
+                        error_items = [(n, f) for n, f in enumerate(init_fields)
+                                       if isinstance(f, Exception)]
                     if error_items:
                         for n, f in error_items:
                             errors.setdefault(parent_path, []).append(
                                 {"fields": init_fields, "exception": f}
                             )
-                        parent_init_fields[parent_key] = ItemSerializationError([n for n, _ in error_items])
+                        parent_init_fields[parent_key] = ItemSerializationError(
+                            [n for n, _ in error_items]
+                        )
                         continue
                     parent_init_fields[parent_key] = cls_candidate(init_fields)
                 except Exception as e:
@@ -1099,7 +1104,8 @@ class Base(ABase, metaclass=BaseMeta):
 
         if "root" not in root_init_fields and errors:
             raise SerializationError(errors)
-
+        if isinstance(root_init_fields['root'], Exception):
+            raise SerializationError(errors)
         return root_init_fields["root"]
 
     @classmethod
@@ -2294,6 +2300,13 @@ class Traction(Base, metaclass=TractionMeta):
     details: TDict[str, str] = dataclasses.field(default_factory=TDict[str, str])
     "List of details of the execution of the Traction."
     "Inherited class can add details here manually"
+
+    @property
+    def log(self):
+        """Return logger for the traction."""
+        if not self.log:
+            self._log = logging.getLogger(self.uid)
+        return self._log
 
     def __post_init__(self):
         """Adjust class instance after initialization."""
