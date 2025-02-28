@@ -241,3 +241,51 @@ def test_base_content_to_json():
     print(tc_content)
     tc2 = TestC4.content_from_json(tc_content)
     assert tc == tc2
+
+
+def test_tdict_complex():
+    t: TDict[str, TDict[str, TList[str]]] = TDict[str, TDict[str, TList[str]]](
+        {
+            "a": TDict[str, TList[str]]({"b": TList[str](["c", "d"])}),
+            "e": TDict[str, TList[str]]({"f": TList[str](["g", "h"])}),
+        }
+    )
+    assert t.content_to_json() == {"a": {"b": ["c", "d"]}, "e": {"f": ["g", "h"]}}
+
+
+def test_tdict_complex_from_json():
+    t = TDict[str, TDict[str, TList[str]]].content_from_json(
+        {"a": {"b": ["c", "d"]}, "e": {"f": ["g", "h"]}}
+    )
+    assert t == TDict[str, TDict[str, TList[str]]](
+        {
+            "a": TDict[str, TList[str]]({"b": TList[str](["c", "d"])}),
+            "e": TDict[str, TList[str]]({"f": TList[str](["g", "h"])}),
+        }
+    )
+
+
+class TestModel(Base):
+    foo: int
+    bar: str
+
+
+def test_tdict_complex_from_json2():
+    assert TDict[str, TDict[str, TList[TestModel]]].content_from_json(
+        {
+            "identity": {
+                "digest": [
+                    {"foo": 1, "bar": "2"},
+                ],
+                "digest2": [
+                    {"foo": 3, "bar": "3"},
+                    {"foo": 4, "bar": "4"},
+                ],
+            }
+        }) == TDict[str, TDict[str, TList[TestModel]]](
+        {
+            "identity": TDict[str, TList[TestModel]]({
+                "digest": TList[TestModel]([TestModel(foo=1, bar="2")]),
+                "digest2": TList[TestModel]([TestModel(foo=3, bar="3"), TestModel(foo=4, bar="4")]),
+            })
+        })

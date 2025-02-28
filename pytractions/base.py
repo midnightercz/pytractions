@@ -342,6 +342,11 @@ class SerializationError(Exception):
 
     pass
 
+class ItemSerializationError(Exception):
+    """Raise when it's not possible to deserialize class from given string."""
+
+    pass
+
 
 def is_wrapped(objcls):
     """Determine if objcls is Arg, In, Out or Res Wrapper."""
@@ -1034,6 +1039,7 @@ class Base(ABase, metaclass=BaseMeta):
                         0, (o_cls, parent_init_fields, parent_key, init_fields, parent_path)
                     )
             elif other_uargs:
+                #print("OTHER", other_uargs)
                 for o_cls in other_uargs:
                     init_fields = {}
                     if o_cls in (
@@ -1060,16 +1066,28 @@ class Base(ABase, metaclass=BaseMeta):
 
         errors = {}
         for cls_candidate, parent_init_fields, parent_key, init_fields, parent_path in order:
-            if parent_key in parent_init_fields:
+            if parent_key in parent_init_fields and parent_init_fields[parent_key] is not SerializationError:
                 continue
             if TypeNode.from_type(cls_candidate) == ANY_LIST_TYPE_NODE or\
                     TypeNode.from_type(cls_candidate) == ANY_DICT_TYPE_NODE:
                 try:
+                    if TypeNode.from_type(cls_candidate) == ANY_DICT_TYPE_NODE:
+                        error_items = [(k, f) for k, f in init_fields.items() if isinstance(f, Exception)]
+                    else:
+                        error_items = [(n, f) for n, f in enumerate(init_fields) if isinstance(f, Exception)]
+                    if error_items:
+                        for n, f in error_items:
+                            errors.setdefault(parent_path, []).append(
+                                {"fields": init_fields, "exception": f}
+                            )
+                        parent_init_fields[parent_key] = ItemSerializationError([n for n, _ in error_items])
+                        continue
                     parent_init_fields[parent_key] = cls_candidate(init_fields)
                 except Exception as e:
                     errors.setdefault(parent_path, []).append(
                         {"fields": init_fields, "exception": e}
                     )
+                    parent_init_fields[parent_key] = e
             else:
                 try:
                     parent_init_fields[parent_key] = cls_candidate(**init_fields)
@@ -1077,6 +1095,8 @@ class Base(ABase, metaclass=BaseMeta):
                     errors.setdefault(parent_path, []).append(
                         {"fields": init_fields, "exception": e}
                     )
+                    parent_init_fields[parent_key] = e
+
         if "root" not in root_init_fields and errors:
             raise SerializationError(errors)
 
@@ -2280,7 +2300,6 @@ class Traction(Base, metaclass=TractionMeta):
         self._elementary_outs = {}
         for f in self._fields:
             if f.startswith("a_") or f.startswith("r_"):
-                print(self.uid, "Setting raw", f)
                 self._no_validate_setattr_("_raw_" + f, super().__getattribute__(f))
 
             elif f.startswith("o_") or f.startswith("i_"):
