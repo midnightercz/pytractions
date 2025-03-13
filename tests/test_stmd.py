@@ -196,8 +196,23 @@ class G_TTest1(Traction):
     a_multiplier: Port[float]
 
     def _run(self, on_update) -> None:  # pragma: no cover
-        print("I", self.i_in1, "*", "A", self.a_multiplier)
         self.o_out1 = self.i_in1 * self.a_multiplier
+
+
+class Complex(Base):
+    real: float = 0.0
+    imag: float = 0.0
+
+
+class G_TTest2(Traction):
+    """Test traction."""
+
+    o_out1: Port[Complex]
+    i_in1: Port[Complex]
+    a_multiplier: Port[float]
+
+    def _run(self, on_update) -> None:  # pragma: no cover
+        self.o_out1 = self.i_in1
 
 
 class G_TestTractor(Tractor):
@@ -269,10 +284,10 @@ def test_stmd_threads(fixture_isodate_now) -> None:
     class TestSTMD(STMD):
         a_multiplier: Port[float] = Port[float](data=0.0)
 
-        _traction: Type[Traction] = G_TTest1
+        _traction: Type[Traction] = G_TTest2
 
-        o_out1: Port[TList[float]] = Port[TList[float]](data=TList[float]([]))
-        i_in1: Port[TList[float]]
+        o_out1: Port[Complex] = Port[TList[Complex]](data=TList[Complex]([]))
+        i_in1: Port[Comple]
 
     stmd_in1 = Port[TList[float]](
         data=TList[float](

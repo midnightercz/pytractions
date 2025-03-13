@@ -662,8 +662,8 @@ class Base(ABase, metaclass=BaseMeta):
     @property
     def _properties(self):
         if not hasattr(self, "_p_properties"):
-            self._p_properties = dict(inspect.getmembers(self.__class__,
-                                                         lambda o: isinstance(o, property)))
+            self._p_properties = list(dict(inspect.getmembers(self.__class__,
+                                                         lambda o: isinstance(o, property))).keys())
         return self._p_properties
 
     def _no_validate_setattr_(self, name: str, value: Any) -> None:
@@ -2304,7 +2304,7 @@ class Traction(Base, metaclass=TractionMeta):
     @property
     def log(self):
         """Return logger for the traction."""
-        if not self.log:
+        if not hasattr(self, "_log") or not self._log:
             self._log = logging.getLogger(self.uid)
         return self._log
 
