@@ -233,7 +233,7 @@ class TractorMeta(TractionMeta):
                     else:
                         raise WrongInputMappingError(
                             f"Input {name}.{_traction.__class__}[{_traction.uid}]->{tf}"
-                            "is mapped to "
+                            " is mapped to "
                             "Port which is not tractor input or output of any traction."
                         )
 
