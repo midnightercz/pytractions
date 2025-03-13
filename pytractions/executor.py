@@ -1,4 +1,7 @@
 import logging
+import multiprocessing
+
+import ray
 
 from pytractions.base import Base
 
@@ -15,13 +18,13 @@ class Executor(Base):
     pass
 
 
-def _copy_traction(traction, inputs, resources, args, uid="0"):
+def _init_traction(traction_cls, inputs, resources, args, uid="0"):
     """After tractor is created, all tractions needs to be copied.
 
     This way it's possible to use same Tractor class multiple times
     """
     init_fields = {}
-    for ft, field in traction.__dataclass_fields__.items():
+    for ft, field in traction_cls.__dataclass_fields__.items():
         # set all inputs for the traction to outputs of traction copy
         # created bellow
 
@@ -36,13 +39,13 @@ def _copy_traction(traction, inputs, resources, args, uid="0"):
 
     init_fields["uid"] = uid
     # create copy of existing traction
-    ret = traction(**init_fields)
+    ret = traction_cls(**init_fields)
     return ret
 
 
-def _execute_traction(uid, traction, inputs, args, resources, on_update=None):
+def _execute_traction(uid, traction_cls, inputs, args, resources, on_update=None):
     """Eexecute traction and return outputs."""
-    traction = _copy_traction(traction, inputs, resources, args, uid=uid)
+    traction = _init_traction(traction_cls, inputs, resources, args, uid=uid)
     traction.run(on_update=on_update)
     outputs = {}
     for o in traction._fields:
@@ -54,7 +57,7 @@ def _execute_traction(uid, traction, inputs, args, resources, on_update=None):
 class ProcessPoolExecutor(Executor):
     """Execute tractions in parallel using pythons concurrent ProcessPoolExecutor."""
 
-    pool_size: int = 1
+    pool_size: int = multiprocessing.cpu_count()
 
     def __post_init__(self):
         """Initialize executor."""
@@ -71,12 +74,13 @@ class ProcessPoolExecutor(Executor):
         """Shutdown the executor."""
         self._executor.shutdown()
 
-    def execute(self, uid, traction, inputs, args, resources, on_update=None):
+    def execute(self, uid, traction_cls, inputs, args, resources, on_update=None):
         """Execute the traction with given inputs args and resources."""
+
         res = self._executor.submit(
             _execute_traction,
             uid,
-            traction,
+            traction_cls,
             inputs,
             args,
             resources,
@@ -176,3 +180,57 @@ class LoopExecutor(Executor):
     def shutdown(self):
         """Shutdown the executor."""
         return None
+
+
+@ray.remote
+def _ray_execute_traction(uid, traction_cls, inputs, args, resources, on_update=None):
+    """Eexecute traction and return outputs."""
+    traction = _init_traction(traction_cls, inputs, resources, args, uid=uid)
+    traction.run(on_update=on_update)
+    outputs = {}
+    for o in traction._fields:
+        if o.startswith("o_"):
+            outputs[o] = getattr(traction, o)
+    return outputs
+
+class RayExecutor(Executor):
+    """Execute tractions in sequentially in for loop."""
+
+    pool_size: int = multiprocessing.cpu_count()
+
+    def __post_init__(self):
+        """Initialize executor."""
+        self._outputs = {}
+
+
+    def execute(self, uid, traction, inputs, args, resources, on_update=None):
+        """Execute the traction with given inputs args and resources."""
+        res = _ray_execute_traction.remote(uid, traction, inputs, args, resources, on_update=on_update)
+        self._outputs[uid] = res
+
+    def get_outputs(self, uids):
+        """Fetch outputs of executed tractions."""
+        _outs = []
+        for uid in uids:
+            _outs.append(self._outputs[uid])
+
+        outs = {}
+        for out, uid in zip(ray.get(_outs), uids):
+            outs[uid] = out
+
+        return outs
+
+    def clear_output(self, uid):
+        """Clear stored outputs."""
+        self._outputs[uid] = None
+
+    def init(self):
+        """Start the executor."""
+        ray.init(num_cpus=self.pool_size, ignore_reinit_error=True)
+
+    def shutdown(self):
+        """Shutdown the executor."""
+        ray.shutdown()
+        return None
+
+

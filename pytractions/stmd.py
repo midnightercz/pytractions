@@ -22,7 +22,7 @@ from .base import (
     _defaultNone,
     is_wrapped,
 )
-from .executor import ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor
+from .executor import ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor, RayExecutor
 from .types import TypeNode
 from .utils import isodate_now  # noqa: F401
 
@@ -188,8 +188,8 @@ class STMD(Traction, metaclass=STMDMeta):
     _traction: Type[Traction] = Traction
     a_delete_after_finished: Port[bool] = Port[bool](data=True)
     a_allow_unset_inputs: Port[bool] = Port[bool](data=False)
-    a_executor: Port[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]] = Port[
-        Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]
+    a_executor: Port[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor, RayExecutor]] = Port[
+        Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor, RayExecutor]
     ](data=_loop_executor)
     tractions: TList[Union[Traction, None]] = dataclasses.field(
         default_factory=TList[Optional[Traction]]
@@ -215,9 +215,11 @@ class STMD(Traction, metaclass=STMDMeta):
                     annotations[k] = STMDSingleIn[v._params[0]]
                 else:
                     annotations[k] = Port[TList[v._params[0]]]
-            if k.startswith("o_"):
+            elif k.startswith("o_"):
                 annotations[k] = Port[TList[v._params[0]]]
-            if k.startswith("a_") or k.startswith("r_"):
+            elif k.startswith("a_") or k.startswith("r_"):
+                if clstowrap.__dataclass_fields__[k].default:
+                    attrs[k] = clstowrap.__dataclass_fields__[k].default
                 annotations[k] = v
 
         meta, ns, kwds = prepare_class(f"STMD{clstowrap.__name__}", [cls], attrs)
@@ -235,6 +237,7 @@ class STMD(Traction, metaclass=STMDMeta):
             self.tractions_state = TList[TractionState]([])
             self.tractions_state.extend(TList[TractionState]([TractionState.READY] * len(first_in)))
 
+            # clear outputs and set each of them to deault value
             for o in outputs:
                 o_type = getattr(self, "_raw_" + o).data._params[0]
                 getattr(self, "_raw_" + o).data.clear()
@@ -251,7 +254,7 @@ class STMD(Traction, metaclass=STMDMeta):
         if self.state not in (TractionState.READY, TractionState.ERROR):
             return self
 
-        LOGGER.info(f"Running STMD {self.fullname}")
+        LOGGER.info(f"Running STMD {self.fullname} on {self.a_executor}")
         self._reset_stats()
         self.stats.started = isodate_now()
 
