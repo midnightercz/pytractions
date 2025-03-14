@@ -103,9 +103,12 @@ class TestTractorNestedAttrs(Tractor):
 def test_tractor_nested_attrs():
     print(TestTractorNestedAttrs._io_map)
     print(TestTractorNestedAttrs._outputs_map)
-    t = TestTractorNestedAttrs(uid="1",
-                               i_in1=Port[float](data=33.0),
-                               i_in2=Port[float](data=22.0), r_seq=Port[Seq](data=Seq(val=10)))
+    t = TestTractorNestedAttrs(
+        uid="1",
+        i_in1=Port[float](data=33.0),
+        i_in2=Port[float](data=22.0),
+        r_seq=Port[Seq](data=Seq(val=10)),
+    )
 
     t.run()
     print(t.o_out1)
@@ -114,6 +117,7 @@ def test_tractor_nested_attrs():
 
 def test_tractor_input_to_arg():
     """Test traction arg a_arg is set to tractor input i_in1. Which should fail."""
+
     class TestTractionArg(Traction):
         a_arg: float
         o_output: float
@@ -122,6 +126,7 @@ def test_tractor_input_to_arg():
             self.o_output = self.i_arg
 
     with pytest.raises(WrongArgMappingError):
+
         class TestTractorInputToArg(Tractor):
             i_in1: Port[float] = NullPort[float]()
             t_t1: TestTractionArg = TestTractionArg(uid="1", a_arg=i_in1)
@@ -130,6 +135,7 @@ def test_tractor_input_to_arg():
 
 def test_tractor_arg_to_input():
     """Test traction input i_int is set to tractor arg a_arg1. Which should fail."""
+
     class TestTractionInt(Traction):
         i_int: float
         o_output: float
@@ -138,6 +144,7 @@ def test_tractor_arg_to_input():
             self.o_output = self.i_int
 
     with pytest.raises(WrongInputMappingError):
+
         class TestTractorArgToInput(Tractor):
             a_arg1: Port[float] = NullPort[float]()
             t_t1: TestTractionInt = TestTractionInt(uid="1", i_int=a_arg1)

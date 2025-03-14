@@ -24,3 +24,31 @@ class WrongArgMappingError(Exception):
 
 class WrongResMappingError(Exception):
     """Exception raised when traction arg is set to wrong port type."""
+
+
+class NoDefaultError(TypeError):
+    """Exception raised when no default value is provided."""
+
+
+class NoAnnotationError(TypeError):
+    """Raised when class attribute is missing an annotation."""
+
+    pass
+
+
+class JSONIncompatibleError(TypeError):
+    """Raised when class contains attributes not compatible with json serialization."""
+
+    pass
+
+
+class SerializationError(Exception):
+    """Raise when it's not possible to deserialize class from given string."""
+
+    pass
+
+
+class ItemSerializationError(Exception):
+    """Raise when it's not possible to deserialize class from given string."""
+
+    pass

@@ -23,14 +23,10 @@ ignore_types = (
     "TDict",
     "Union",
     "Optional",
-    "In",
-    "Res",
-    "Out",
-    "TRes",
-    "Arg",
+    "Port",
+    "NullPort",
     "STMDSingleIn",
     "ABase",
-    "TIn",
 )
 
 

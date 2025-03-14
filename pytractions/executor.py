@@ -193,6 +193,7 @@ def _ray_execute_traction(uid, traction_cls, inputs, args, resources, on_update=
             outputs[o] = getattr(traction, o)
     return outputs
 
+
 class RayExecutor(Executor):
     """Execute tractions in sequentially in for loop."""
 
@@ -202,10 +203,11 @@ class RayExecutor(Executor):
         """Initialize executor."""
         self._outputs = {}
 
-
     def execute(self, uid, traction, inputs, args, resources, on_update=None):
         """Execute the traction with given inputs args and resources."""
-        res = _ray_execute_traction.remote(uid, traction, inputs, args, resources, on_update=on_update)
+        res = _ray_execute_traction.remote(
+            uid, traction, inputs, args, resources, on_update=on_update
+        )
         self._outputs[uid] = res
 
     def get_outputs(self, uids):
@@ -232,5 +234,3 @@ class RayExecutor(Executor):
         """Shutdown the executor."""
         ray.shutdown()
         return None
-
-

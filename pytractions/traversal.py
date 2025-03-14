@@ -62,24 +62,32 @@ class Tree:
     def add_to_process(self, data=None, data_type=None, parent_index=None, result=None):
         """Add new item to stack to process."""
         if self.TYPE == Type.FIFO:
-            titem = TreeItem(data=data,
-                             data_type=data_type,
-                             parent=self.current,
-                             parent_index=parent_index,
-                             result=result,
-                             path=self.current.path + "." + str(parent_index)
-                             if self.current else str(parent_index)
-                             )
+            titem = TreeItem(
+                data=data,
+                data_type=data_type,
+                parent=self.current,
+                parent_index=parent_index,
+                result=result,
+                path=(
+                    self.current.path + "." + str(parent_index)
+                    if self.current
+                    else str(parent_index)
+                ),
+            )
             self.stack.insert(0, titem)
         else:
-            titem = TreeItem(data=data,
-                             data_type=data_type,
-                             parent=self.current,
-                             parent_index=parent_index,
-                             result=result,
-                             path=self.current.path + "." + str(parent_index)
-                             if self.current else str(parent_index)
-                             )
+            titem = TreeItem(
+                data=data,
+                data_type=data_type,
+                parent=self.current,
+                parent_index=parent_index,
+                result=result,
+                path=(
+                    self.current.path + "." + str(parent_index)
+                    if self.current
+                    else str(parent_index)
+                ),
+            )
             self.stack.append(titem)
 
     # def add_to_result(self):

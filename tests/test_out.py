@@ -1,12 +1,18 @@
 import pytest
 
-from pytractions.base import Port, Base, Traction, OnUpdateCallable, TList
+from pytractions.base import Field, Port, Base, Traction, OnUpdateCallable, TList
+from pytractions.exc import NoDefaultError
+
+
+class Nested(Base):
+    x: int
 
 
 class OutContainerNoDef(Base):
     """Out container with no default value."""
 
-    out: str
+    out: str = "x"
+    nested: Nested = Field(default_factory=Nested)
 
 
 class OutContainer(Base):
@@ -16,7 +22,7 @@ class OutContainer(Base):
 
 
 def test_traction_out_no_def():
-    with pytest.raises(TypeError):
+    with pytest.raises(NoDefaultError):
 
         class TestTractionOutNoDef(Traction):
             """Test Traction."""

@@ -30,36 +30,39 @@ from typing import (
     Callable,
     _UnionGenericAlias,
     get_args,
+    Literal,
 )
 
 import dataclasses
 
-from .exc import TractionFailedError
+from .exc import (
+    TractionFailedError,
+    NoDefaultError,
+    JSONIncompatibleError,
+    NoAnnotationError,
+    SerializationError,
+    ItemSerializationError,
+)
 from .utils import ANY, doc, isodate_now  # noqa: F401
 from .types import (
-    TypeNode, JSON_COMPATIBLE, _defaultInt, _defaultStr,
-    _defaultFloat, _defaultBool, _defaultNone
+    TypeNode,
+    JSON_COMPATIBLE,
+    _defaultInt,
+    _defaultStr,
+    _defaultFloat,
+    _defaultBool,
+    _defaultNone,
 )
+from .base_field import Field
 from .abase import ABase, ATList, ATDict
 from .traversal import Tree, ItemHandler
+from .validators import LiteralValidator
 
 
 LOGGER = logging.getLogger(__name__)
 
 _Base = ForwardRef("Base")
 _Traction = ForwardRef("Traction")
-
-
-class NoAnnotationError(TypeError):
-    """Raised when class attribute is missing an annotation."""
-
-    pass
-
-
-class JSONIncompatibleError(TypeError):
-    """Raised when class contains attributes not compatible with json serialization."""
-
-    pass
 
 
 def find_attr(objects, attr_name):
@@ -134,6 +137,17 @@ def _hash(obj):
     )
 
 
+def extract_from_optional(opt):
+    if (
+        get_origin(opt) == Union
+        and len(get_args(opt)) == 2
+        and get_args(opt)[-1] is type(None)
+    ):
+        return get_args(opt)[0]
+    return opt
+
+
+
 type_to_default_type = {
     int: _defaultInt,
     str: _defaultStr,
@@ -186,8 +200,8 @@ class BaseMeta(type):
         """Prepare attributes for class creation."""
         return attrs
 
-    def __new__(cls, name, bases, attrs):
-        """Create new class."""
+    @classmethod
+    def _determine_config(cls, attrs):
         if "_config" in attrs:
             assert TypeNode.from_type(type(attrs["_config"])) == TypeNode(BaseConfig)
             config = attrs["_config"]
@@ -195,7 +209,10 @@ class BaseMeta(type):
             # if not, provide default config
             config = BaseConfig()
             attrs["_config"] = config
+        return config
 
+    @classmethod
+    def _determine_setattr_(cls, attrs, config, bases):
         if config.validate_set_attr:
             # if setter validation is on, use _validate_setattr_
             # or find it in class bases
@@ -210,6 +227,41 @@ class BaseMeta(type):
             else:
                 _setattr = find_attr(bases, "_no_validate_setattr_")
             attrs["__setattr__"] = attrs["_no_validate_setattr_"]
+
+    @classmethod
+    def _replace_self(cls, ret):
+        # replace Self
+        for f, ftype in ret._fields.items():
+            if ftype == Self:
+                ret._fields[f] = ret
+            else:
+                tn = TypeNode.from_type(ftype)
+                if tn.replace_params({Self: ret}):
+                    ret._fields[f] = tn.to_type()
+
+    @classmethod
+    def _replace_literal(cls, ret):
+        # replace Literal
+        for f, ftype in ret._fields.items():
+            if get_origin(ftype) == Literal:
+                ret._fields[f] = type(get_args(ftype)[0])
+                ret.__dataclass_fields__[f] = Field(
+                    default=ret.__dataclass_fields__[f].default,
+                    default_factory=ret.__dataclass_fields__[f].default_factory,
+                    init=ret.__dataclass_fields__[f].init,
+                    repr=ret.__dataclass_fields__[f].repr,
+                    hash=ret.__dataclass_fields__[f].hash,
+                    compare=ret.__dataclass_fields__[f].compare,
+                    metadata=ret.__dataclass_fields__[f].metadata,
+                    kw_only=ret.__dataclass_fields__[f].kw_only,
+                    validator=LiteralValidator(get_args(ftype)),
+                )
+
+    def __new__(cls, name, bases, attrs):
+        """Create new class."""
+
+        config = cls._determine_config(attrs)
+        cls._determine_setattr_(attrs, config, bases)
 
         annotations = attrs.get("__annotations__", {})
         for attr, attrv in attrs.items():
@@ -242,7 +294,7 @@ class BaseMeta(type):
                     f"Attribute {attr} is not json compatible {annotations[attr]}"
                 )
             if attr in attrs:
-                if type(attrs[attr]) is dataclasses.Field:
+                if type(attrs[attr]) is Field:
                     default = dataclasses.MISSING
                     if attrs[attr].default is not dataclasses.MISSING:
                         default = attrs[attr].default
@@ -284,13 +336,13 @@ class BaseMeta(type):
                     if f in defaults:
                         continue
                     if base.__dataclass_fields__[f].default is not dataclasses.MISSING:
-                        defaults[f] = dataclasses.field(
+                        defaults[f] = Field(
                             default=base.__dataclass_fields__[f].default,
                             init=base.__dataclass_fields__[f].init,
                             repr=base.__dataclass_fields__[f].repr,
                         )
                     elif base.__dataclass_fields__[f].default_factory is not dataclasses.MISSING:
-                        defaults[f] = dataclasses.field(
+                        defaults[f] = Field(
                             default_factory=base.__dataclass_fields__[f].default_factory,
                             init=base.__dataclass_fields__[f].init,
                             repr=base.__dataclass_fields__[f].repr,
@@ -322,31 +374,14 @@ class BaseMeta(type):
         cls._before_new(name, attrs, bases)
         ret = super().__new__(cls, name, bases, attrs)
 
-        # replace Self
-        for f, ftype in ret._fields.items():
-            if ftype == Self:
-                ret._fields[f] = ret
-            else:
-                tn = TypeNode.from_type(ftype)
-                if tn.replace_params({Self: ret}):
-                    ret._fields[f] = tn.to_type()
+        cls._replace_self(ret)
 
         # wrap with dataclass
         ret = dataclasses.dataclass(ret, kw_only=attrs.get("_KW_ONLY", True))
 
+        cls._replace_literal(ret)
+
         return ret
-
-
-class SerializationError(Exception):
-    """Raise when it's not possible to deserialize class from given string."""
-
-    pass
-
-
-class ItemSerializationError(Exception):
-    """Raise when it's not possible to deserialize class from given string."""
-
-    pass
 
 
 def is_wrapped(objcls):
@@ -366,8 +401,9 @@ class ListItemHandler(ItemHandler):
 
     def match(self, item):
         """Match list items."""
-        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATList) \
-                or isinstance(item.data, TList):
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATList) or isinstance(
+            item.data, TList
+        ):
             return True
 
     def process(self, tree, item):
@@ -387,7 +423,8 @@ class ListItemHandler(ItemHandler):
                     data=litem,
                     data_type=item.data._params[0],
                     parent_index=n,
-                    result=item.result[item.parent_index]["$data"])
+                    result=item.result[item.parent_index]["$data"],
+                )
 
 
 class ListItemHandlerContent(ItemHandler):
@@ -395,8 +432,9 @@ class ListItemHandlerContent(ItemHandler):
 
     def match(self, item):
         """Match list items."""
-        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATList)\
-                or isinstance(item.data, TList):
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATList) or isinstance(
+            item.data, TList
+        ):
             return True
 
     def process(self, tree, item):
@@ -409,10 +447,12 @@ class ListItemHandlerContent(ItemHandler):
                 item.result[item.parent_index].append(litem)
             else:
                 item.result[item.parent_index].append(None)
-                tree.add_to_process(data=litem,
-                                    data_type=item.data._params[0],
-                                    parent_index=n,
-                                    result=item.result[item.parent_index])
+                tree.add_to_process(
+                    data=litem,
+                    data_type=item.data._params[0],
+                    parent_index=n,
+                    result=item.result[item.parent_index],
+                )
 
 
 class DictItemHandler(ItemHandler):
@@ -420,8 +460,9 @@ class DictItemHandler(ItemHandler):
 
     def match(self, item):
         """Match dict items."""
-        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATDict)\
-                or isinstance(item.data, TDict):
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATDict) or isinstance(
+            item.data, TDict
+        ):
             return True
 
     def process(self, tree, item):
@@ -435,10 +476,12 @@ class DictItemHandler(ItemHandler):
             if not isinstance(k, (str, int, float, bool, type(None))):
                 jsonk = json.dumps(k.to_json(), sort_keys=True)
             item.result[item.parent_index]["$data"][jsonk] = None
-            tree.add_to_process(data=v,
-                                data_type=item.data._params[1],
-                                parent_index=jsonk,
-                                result=item.result[item.parent_index]["$data"])
+            tree.add_to_process(
+                data=v,
+                data_type=item.data._params[1],
+                parent_index=jsonk,
+                result=item.result[item.parent_index]["$data"],
+            )
 
 
 class DictItemHandlerContent(ItemHandler):
@@ -446,8 +489,9 @@ class DictItemHandlerContent(ItemHandler):
 
     def match(self, item):
         """Match dict items."""
-        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATDict)\
-                or isinstance(item.data, TDict):
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATDict) or isinstance(
+            item.data, TDict
+        ):
             return True
 
     def process(self, tree, item):
@@ -458,10 +502,12 @@ class DictItemHandlerContent(ItemHandler):
             if not isinstance(k, (str, int, float, bool, type(None))):
                 jsonk = json.dumps(k.to_json(), sort_keys=True)
             item.result[item.parent_index][jsonk] = None
-            tree.add_to_process(data=v,
-                                data_type=item.data._params[1],
-                                parent_index=jsonk,
-                                result=item.result[item.parent_index])
+            tree.add_to_process(
+                data=v,
+                data_type=item.data._params[1],
+                parent_index=jsonk,
+                result=item.result[item.parent_index],
+            )
 
 
 class BasicItemHandler(ItemHandler):
@@ -472,8 +518,9 @@ class BasicItemHandler(ItemHandler):
         data_type = item.data_type
         if item.data_type.__class__ == _UnionGenericAlias and item.data_type._name == "Optional":
             data_type = item.data_type.__args__[0]
-        uni = Union[int, str, bool, float, type(None),
-                    _defaultNone, _defaultInt, _defaultStr, _defaultFloat]
+        uni = Union[
+            int, str, bool, float, type(None), _defaultNone, _defaultInt, _defaultStr, _defaultFloat
+        ]
 
         ret1 = TypeNode.from_type(uni) == TypeNode.from_type(data_type)
         ret2 = TypeNode.from_type(uni) == TypeNode.from_type(type(item.data))
@@ -481,9 +528,9 @@ class BasicItemHandler(ItemHandler):
 
     def process(self, tree, item):
         """Process primitive types items."""
-        if isinstance(item.data,
-                      (_defaultInt, _defaultStr,
-                       _defaultFloat, _defaultBool, _defaultNone)):
+        if isinstance(
+            item.data, (_defaultInt, _defaultStr, _defaultFloat, _defaultBool, _defaultNone)
+        ):
             item.result[item.parent_index] = item.data._val
         else:
             item.result[item.parent_index] = item.data
@@ -517,9 +564,7 @@ class PortItemHandler(ItemHandler):
             "$data": {},
         }
         for f in item.data_type._fields:
-            if isinstance(item.data,
-                          (_defaultInt, _defaultStr,
-                           _defaultFloat, _defaultBool)):
+            if isinstance(item.data, (_defaultInt, _defaultStr, _defaultFloat, _defaultBool)):
                 item.result[item.parent_index]["$data"][f] = item.data._val
             elif isinstance(item.data, (int, float, str, bool, type(None))):
                 item.result[item.parent_index]["$data"][f] = item.data
@@ -529,13 +574,15 @@ class PortItemHandler(ItemHandler):
                         data=item.data,
                         data_type=type(item.data),
                         parent_index=f,
-                        result=item.result[item.parent_index]["$data"])
+                        result=item.result[item.parent_index]["$data"],
+                    )
                 else:
                     tree.add_to_process(
                         data=getattr(item.data, f),
                         data_type=item.data._fields[f],
                         parent_index=f,
-                        result=item.result[item.parent_index]["$data"])
+                        result=item.result[item.parent_index]["$data"],
+                    )
 
 
 class PortItemHandlerContent(ItemHandler):
@@ -550,9 +597,7 @@ class PortItemHandlerContent(ItemHandler):
         """Process Port items."""
         item.result[item.parent_index] = {}
         for f in item.data_type._fields:
-            if isinstance(item.data,
-                          (_defaultInt, _defaultStr,
-                           _defaultFloat, _defaultBool)):
+            if isinstance(item.data, (_defaultInt, _defaultStr, _defaultFloat, _defaultBool)):
                 item.result[item.parent_index][f] = item.data._val
             elif isinstance(item.data, (int, float, str, bool, type(None))):
                 item.result[item.parent_index][f] = item.data
@@ -561,7 +606,8 @@ class PortItemHandlerContent(ItemHandler):
                     data=getattr(item.data, f),
                     data_type=item.data._fields[f],
                     parent_index=f,
-                    result=item.result[item.parent_index])
+                    result=item.result[item.parent_index],
+                )
 
 
 class BaseItemHandler(ItemHandler):
@@ -569,8 +615,9 @@ class BaseItemHandler(ItemHandler):
 
     def match(self, item):
         """Match Base subclasses."""
-        if TypeNode.from_type(Union[int, str, bool, float, type(None)]) != \
-                TypeNode.from_type(item.data_type):
+        if TypeNode.from_type(Union[int, str, bool, float, type(None)]) != TypeNode.from_type(
+            item.data_type
+        ):
             return True
 
     def process(self, tree, item):
@@ -590,7 +637,8 @@ class BaseItemHandler(ItemHandler):
                 data=data,
                 data_type=item.data._fields[f],
                 parent_index=_f,
-                result=item.result[item.parent_index]["$data"])
+                result=item.result[item.parent_index]["$data"],
+            )
 
 
 class BaseItemHandlerContent(ItemHandler):
@@ -598,8 +646,9 @@ class BaseItemHandlerContent(ItemHandler):
 
     def match(self, item):
         """Match Base subclasses."""
-        if TypeNode.from_type(Union[int, str, bool, float, type(None)]) !=\
-                TypeNode.from_type(item.data_type):
+        if TypeNode.from_type(Union[int, str, bool, float, type(None)]) != TypeNode.from_type(
+            item.data_type
+        ):
             return True
 
     def process(self, tree, item):
@@ -612,7 +661,8 @@ class BaseItemHandlerContent(ItemHandler):
                 data=data,
                 data_type=item.data._fields[f],
                 parent_index=_f,
-                result=item.result[item.parent_index])
+                result=item.result[item.parent_index],
+            )
 
 
 class ToJsonTree(Tree):
@@ -624,7 +674,8 @@ class ToJsonTree(Tree):
         EnumItemHandler(),
         BasicItemHandler(),
         PortItemHandler(),
-        BaseItemHandler()]
+        BaseItemHandler(),
+    ]
 
 
 class ContentToJsonTree(Tree):
@@ -636,14 +687,15 @@ class ContentToJsonTree(Tree):
         EnumItemHandler(),
         BasicItemHandler(),
         PortItemHandlerContent(),
-        BaseItemHandlerContent()]
+        BaseItemHandlerContent(),
+    ]
 
 
 class Base(ABase, metaclass=BaseMeta):
     """Base class supporting type validation."""
 
-    _CUSTOM_TYPE_TO_JSON: ClassVar[bool] = dataclasses.field(default=False, init=False)
-    _CUSTOM_TO_JSON: ClassVar[bool] = dataclasses.field(default=False, init=False)
+    _CUSTOM_TYPE_TO_JSON: ClassVar[bool] = Field(default=False, init=False)
+    _CUSTOM_TO_JSON: ClassVar[bool] = Field(default=False, init=False)
     _SERIALIZE_REPLACE_FIELDS: ClassVar[dict] = {}
 
     # dataclasses configuration class
@@ -655,15 +707,16 @@ class Base(ABase, metaclass=BaseMeta):
     # use to store actual parameters when creating generic subclass
     _params: ClassVar[List[Any]] = []
     # used to store original class when creating generic subclass
-    _orig_cls: Optional[Type[Any]] = dataclasses.field(default=None, init=False)
+    _orig_cls: Optional[Type[Any]] = Field(default=None, init=False)
 
     _KW_ONLY: ClassVar[bool] = True
 
     @property
     def _properties(self):
         if not hasattr(self, "_p_properties"):
-            self._p_properties = list(dict(inspect.getmembers(self.__class__,
-                                                         lambda o: isinstance(o, property))).keys())
+            self._p_properties = list(
+                dict(inspect.getmembers(self.__class__, lambda o: isinstance(o, property))).keys()
+            )
         return self._p_properties
 
     def _no_validate_setattr_(self, name: str, value: Any) -> None:
@@ -674,9 +727,11 @@ class Base(ABase, metaclass=BaseMeta):
         """Set attribute with type validation."""
         if not name.startswith("_"):  # do not check for private attrs
 
-            if name not in self._fields and\
-                    not self._config.allow_extra and \
-                    name not in self._properties:
+            if (
+                name not in self._fields
+                and not self._config.allow_extra
+                and name not in self._properties
+            ):
                 raise AttributeError(f"{self.__class__} doesn't have attribute {name}")
 
             if name not in self._properties:
@@ -690,6 +745,12 @@ class Base(ABase, metaclass=BaseMeta):
                         f"Cannot set attribute {self.__class__}.{name} to {value}({vtype}), "
                         f"expected {self._fields[name]}"
                     )
+                if (
+                    hasattr(self.__dataclass_fields__[name], "validator")
+                    and self.__dataclass_fields__[name].validator
+                ):
+                    self.__dataclass_fields__[name].validator(value)
+
             else:
                 getattr(self.__class__, name).setter(value)
                 return
@@ -787,9 +848,9 @@ class Base(ABase, metaclass=BaseMeta):
             kwds["__annotations__"][attr] = new_type
 
         for k, kf in kwds.items():
-            if not isinstance(kf, dataclasses.Field):
+            if not isinstance(kf, Field):
                 continue
-            new_kf = dataclasses.Field(
+            new_kf = Field(
                 default=kf.default,
                 default_factory=kf.default_factory,
                 init=kf.init,
@@ -841,12 +902,9 @@ class Base(ABase, metaclass=BaseMeta):
         """
         result = {}
         tree = ToJsonTree(result)
-        tree.add_to_process(data=self,
-                            data_type=self.__class__,
-                            parent_index="root",
-                            result=result)
+        tree.add_to_process(data=self, data_type=self.__class__, parent_index="root", result=result)
         tree.process()
-        return result['root']
+        return result["root"]
 
     def content_to_json(self) -> Dict[str, Any]:
         """Similar to `Base.to_json` method, but doesn't include information of type of the object.
@@ -856,12 +914,9 @@ class Base(ABase, metaclass=BaseMeta):
         """
         result = {}
         tree = ContentToJsonTree(result)
-        tree.add_to_process(data=self,
-                            data_type=self.__class__,
-                            parent_index="root",
-                            result=result)
+        tree.add_to_process(data=self, data_type=self.__class__, parent_index="root", result=result)
         tree.process()
-        return result['root']
+        return result["root"]
 
     @classmethod
     def content_from_json(cls, json_dict: Dict[str, Any]):
@@ -1066,18 +1121,23 @@ class Base(ABase, metaclass=BaseMeta):
 
         errors = {}
         for cls_candidate, parent_init_fields, parent_key, init_fields, parent_path in order:
-            if (parent_key in parent_init_fields
-                    and not isinstance(parent_init_fields[parent_key], Exception)):
+            if parent_key in parent_init_fields and not isinstance(
+                parent_init_fields[parent_key], Exception
+            ):
                 continue
-            if TypeNode.from_type(cls_candidate) == ANY_LIST_TYPE_NODE or\
-                    TypeNode.from_type(cls_candidate) == ANY_DICT_TYPE_NODE:
+            if (
+                TypeNode.from_type(cls_candidate) == ANY_LIST_TYPE_NODE
+                or TypeNode.from_type(cls_candidate) == ANY_DICT_TYPE_NODE
+            ):
                 try:
                     if TypeNode.from_type(cls_candidate) == ANY_DICT_TYPE_NODE:
-                        error_items = [(k, f) for k, f in init_fields.items()
-                                       if isinstance(f, Exception)]
+                        error_items = [
+                            (k, f) for k, f in init_fields.items() if isinstance(f, Exception)
+                        ]
                     else:
-                        error_items = [(n, f) for n, f in enumerate(init_fields)
-                                       if isinstance(f, Exception)]
+                        error_items = [
+                            (n, f) for n, f in enumerate(init_fields) if isinstance(f, Exception)
+                        ]
                     if error_items:
                         for n, f in error_items:
                             errors.setdefault(parent_path, []).append(
@@ -1104,7 +1164,7 @@ class Base(ABase, metaclass=BaseMeta):
 
         if "root" not in root_init_fields and errors:
             raise SerializationError(errors)
-        if isinstance(root_init_fields['root'], Exception):
+        if isinstance(root_init_fields["root"], Exception):
             raise SerializationError(errors)
         return root_init_fields["root"]
 
@@ -1333,7 +1393,7 @@ class TList(Base, ATList, Generic[T]):
     Example usage: TList[str](['foo'])
     """
 
-    _list: List[T] = dataclasses.field(default_factory=list)
+    _list: List[T] = Field(default_factory=list)
 
     def __new__(cls, *args, **kwargs):
         """Return new TList instance."""
@@ -1450,23 +1510,17 @@ class TList(Base, ATList, Generic[T]):
         """Serialize TList to json representation."""
         result = {}
         tree = ToJsonTree(result)
-        tree.add_to_process(data=self,
-                            data_type=self.__class__,
-                            parent_index="root",
-                            result=result)
+        tree.add_to_process(data=self, data_type=self.__class__, parent_index="root", result=result)
         tree.process()
-        return result['root']
+        return result["root"]
 
     def content_to_json(self) -> Dict[str, Any]:
         """Serialize TList content to json representation."""
         result = {}
         tree = ContentToJsonTree(result)
-        tree.add_to_process(data=self,
-                            data_type=self.__class__,
-                            parent_index="root",
-                            result=result)
+        tree.add_to_process(data=self, data_type=self.__class__, parent_index="root", result=result)
         tree.process()
-        return result['root']
+        return result["root"]
 
     @classmethod
     def from_json(cls, json_data, _locals={}) -> _Base:
@@ -1511,9 +1565,10 @@ class TList(Base, ATList, Generic[T]):
                         break
                 else:
                     stack.append((parent_args, parent_key, data, type(None), type_args))
-            elif TypeNode.from_type(type_) == ANY_LIST_TYPE_NODE or TypeNode.from_type(
-                type_
-            ) == ANY_DICT_TYPE_NODE:
+            elif (
+                TypeNode.from_type(type_) == ANY_LIST_TYPE_NODE
+                or TypeNode.from_type(type_) == ANY_DICT_TYPE_NODE
+            ):
                 parent_args[parent_key] = type_.from_json(data, _locals=_locals)
             elif type_ not in (int, str, bool, float, type(None)) and not issubclass(
                 type_, enum.Enum
@@ -1573,7 +1628,7 @@ class TDict(Base, ATDict, Generic[TK, TV]):
     Example usage: TDict[str, int]({'foo': 1})
     """
 
-    _dict: Dict[TK, TV] = dataclasses.field(default_factory=dict)
+    _dict: Dict[TK, TV] = Field(default_factory=dict)
 
     def __new__(cls, *args, **kwargs):
         """Return new TDict instance."""
@@ -1726,23 +1781,17 @@ class TDict(Base, ATDict, Generic[TK, TV]):
         """Serialize TDict to json representation."""
         result = {}
         tree = ToJsonTree(result)
-        tree.add_to_process(data=self,
-                            data_type=self.__class__,
-                            parent_index="root",
-                            result=result)
+        tree.add_to_process(data=self, data_type=self.__class__, parent_index="root", result=result)
         tree.process()
-        return result['root']
+        return result["root"]
 
     def content_to_json(self) -> Dict[str, Any]:
         """Serialize TDict content to json representation."""
         result = {}
         tree = ContentToJsonTree(result)
-        tree.add_to_process(data=self,
-                            data_type=self.__class__,
-                            parent_index="root",
-                            result=result)
+        tree.add_to_process(data=self, data_type=self.__class__, parent_index="root", result=result)
         tree.process()
-        return result['root']
+        return result["root"]
 
     @classmethod
     def from_json(cls, json_data, _locals={}) -> "TDict":
@@ -1862,17 +1911,15 @@ class STMDSingleIn(Base, Generic[T]):
 
     _KW_ONLY: ClassVar[bool] = False
 
-    _ref: Optional[T] = dataclasses.field(repr=False, init=False, default=None, compare=False)
+    _ref: Optional[T] = Field(repr=False, init=False, default=None, compare=False)
     # data here are actually not used after input is assigned to some output
     # it's just to deceive mypy
     data: Optional[T] = None
     _data_proxy: Optional[list[str]] = None
-    _name: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
-    _owner: Optional[_Traction] = dataclasses.field(
-        repr=False, init=False, default=None, compare=False
-    )
+    _name: str = Field(repr=False, init=False, default=None, compare=False)
+    _owner: Optional[_Traction] = Field(repr=False, init=False, default=None, compare=False)
     # _io_store: IOStore = dataclasses.field(repr=False, init=False, compare=False)
-    _uid: str = dataclasses.field(repr=False, init=False, default=None, compare=False)
+    _uid: str = Field(repr=False, init=False, default=None, compare=False)
 
     def __post_init__(self):
         """Post init of STMDIn class."""
@@ -1888,9 +1935,11 @@ class STMDSingleIn(Base, Generic[T]):
             object.__setattr__(self, name, value)
             return
         if not name.startswith("_"):  # do not check for private attrs
-            if name not in self._fields and\
-                    not self._config.allow_extra and\
-                    name not in self._properties:
+            if (
+                name not in self._fields
+                and not self._config.allow_extra
+                and name not in self._properties
+            ):
                 raise AttributeError(f"{self.__class__} doesn't have attribute {name}")
             if name == "data":
                 # if not hasattr(self, "_io_store"):
@@ -1898,10 +1947,10 @@ class STMDSingleIn(Base, Generic[T]):
                 vtype = (
                     value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
                 )
-                tt1 = TypeNode.from_type(vtype,
-                                         type_aliases=[(type(True), _defaultBool)])
-                tt2 = TypeNode.from_type(self._fields[name],
-                                         type_aliases=[(type(True), _defaultBool)])
+                tt1 = TypeNode.from_type(vtype, type_aliases=[(type(True), _defaultBool)])
+                tt2 = TypeNode.from_type(
+                    self._fields[name], type_aliases=[(type(True), _defaultBool)]
+                )
                 if tt1 != tt2:
                     raise TypeError(
                         f"Cannot set attribute {self.__class__}.{name} to type {value}({vtype}),"
@@ -1970,6 +2019,7 @@ class NullPort(Port, Generic[T]):
     """
 
     pass
+
 
 # Currently not used
 # class MemoryIOStore(IOStore):
@@ -2047,8 +2097,7 @@ class MultiArgMeta(BaseMeta):
     def _attribute_check(cls, attr, type_, all_attrs):
         """Check if given attribute is type of arg."""
         if attr.startswith("a_"):
-            if TypeNode.from_type(type_, subclass_check=False)\
-                    != ANY_PORT_TYPE_NODE:
+            if TypeNode.from_type(type_, subclass_check=False) != ANY_PORT_TYPE_NODE:
                 raise TypeError(f"Attribute {attr} has to be type Port[ANY], but is {type_}")
         else:
             raise TypeError(f"Attribute {attr} has start with i_, o_, a_ or r_")
@@ -2117,8 +2166,12 @@ class TractionMeta(BaseMeta):
                         f"Attribute {attr.replace('d_', '', 1)} is not defined for description "
                         f"{attr}: {all_attrs}"
                     )
-            elif not (attr.startswith("i_") or attr.startswith("o_")
-                      or attr.startswith("a_") or attr.startswith("r_")):
+            elif not (
+                attr.startswith("i_")
+                or attr.startswith("o_")
+                or attr.startswith("a_")
+                or attr.startswith("r_")
+            ):
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or d_")
 
             if (
@@ -2128,7 +2181,7 @@ class TractionMeta(BaseMeta):
                 and not attr.startswith("o_")
                 and not attr.startswith("d_")
             ):
-                if not isinstance(type_, dataclasses.Field):
+                if not isinstance(type_, Field):
                     raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or d_")
 
     def __new__(cls, name, bases, attrs):
@@ -2156,33 +2209,40 @@ class TractionMeta(BaseMeta):
                     attrs["_fields"][f] = Port[ftype]
 
             if f.startswith("i_"):
-                if TypeNode.from_type(ftype) != TypeNode.from_type(STMDSingleIn[ANY]) and\
-                        TypeNode.from_type(ftype) != TypeNode.from_type(Port[ANY]):
+                if TypeNode.from_type(ftype) != TypeNode.from_type(
+                    STMDSingleIn[ANY]
+                ) and TypeNode.from_type(ftype) != TypeNode.from_type(Port[ANY]):
                     attrs["_fields"][f] = Port[ftype]
                 if f.startswith("i_") and f not in attrs:
-                    attrs[f] = dataclasses.field(
-                        default_factory=NullPort[attrs["_fields"][f]._params]
-                    )
+                    attrs[f] = Field(default_factory=NullPort[attrs["_fields"][f]._params])
 
             if f.startswith("o_"):
                 if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Port[ANY]):
                     attrs["_fields"][f] = Port[ftype]
 
                 ftype_final = ftype._params[0] if is_wrapped(ftype) else ftype
+                print("--", f, ftype_final)
 
                 if inspect.isclass(ftype_final) and issubclass(ftype_final, Base):
-                    for ff, fft in ftype._fields.items():
-                        df = ftype.__dataclass_fields__[ff]
-                        if (
-                            df.default is dataclasses.MISSING
-                            and df.default_factory is dataclasses.MISSING
-                        ):
-                            raise TypeError(
-                                f"Cannot use {ftype} for output, as it "
-                                f"doesn't have default value for field {ff}"
-                            )
+                    stack = [(ftype_final, str(ftype_final))]
+                    while stack:
+                        ftype, path = stack.pop(0)
+                        for ff, fft in ftype._fields.items():
+                            fft = extract_from_optional(fft)
+                            df = ftype.__dataclass_fields__[ff]
+                            if (
+                                df.default is dataclasses.MISSING
+                                and df.default_factory is dataclasses.MISSING
+                            ):
+                                raise NoDefaultError(
+                                    f"Cannot use {path} for output, as it "
+                                    f"doesn't have default value for field '{ff}'"
+                                )
+                            if issubclass(fft, Base):
+                                stack.append((fft, path + "." + ff))
+
                 if f not in attrs:
-                    attrs[f] = dataclasses.field(
+                    attrs[f] = Field(
                         init=False,
                         default_factory=DefaultOut(
                             type_=ftype_final, params=(attrs["_fields"][f]._params)
@@ -2292,12 +2352,12 @@ class Traction(Base, metaclass=TractionMeta):
     "Flag indicating if execution of the traction was skipped."
     skip_reason: Optional[str] = ""
     "Can be se to explain why the execution of the traction was skipped."
-    errors: TList[str] = dataclasses.field(default_factory=TList[str])
+    errors: TList[str] = Field(default_factory=TList[str])
     """List of errors which occured during the traction execution. Inherited class should add errors
     here manually"""
-    stats: TractionStats = dataclasses.field(default_factory=TractionStats)
+    stats: TractionStats = Field(default_factory=TractionStats)
     "Collection of traction stats"
-    details: TDict[str, str] = dataclasses.field(default_factory=TDict[str, str])
+    details: TDict[str, str] = Field(default_factory=TDict[str, str])
     "List of details of the execution of the Traction."
     "Inherited class can add details here manually"
 
@@ -2317,9 +2377,9 @@ class Traction(Base, metaclass=TractionMeta):
 
             elif f.startswith("o_") or f.startswith("i_"):
                 self._no_validate_setattr_("_raw_" + f, super().__getattribute__(f))
-                if TypeNode.from_type(super().__getattribute__(f).__class__,
-                                      subclass_check=True) ==\
-                        TypeNode.from_type(NullPort[ANY]):
+                if TypeNode.from_type(
+                    super().__getattribute__(f).__class__, subclass_check=True
+                ) == TypeNode.from_type(NullPort[ANY]):
                     continue
                 if not super().__getattribute__(f)._owner:
                     super().__getattribute__(f)._name = f
@@ -2336,12 +2396,18 @@ class Traction(Base, metaclass=TractionMeta):
         """
         if name.startswith("a_"):
             default_convertor = type_to_default_type.get(type(super().__getattribute__(name).data))
-            return default_convertor(super().__getattribute__(name).data)\
-                if default_convertor else super().__getattribute__(name).data
+            return (
+                default_convertor(super().__getattribute__(name).data)
+                if default_convertor
+                else super().__getattribute__(name).data
+            )
         if name.startswith("r_"):
             default_convertor = type_to_default_type.get(type(super().__getattribute__(name).data))
-            return default_convertor(super().__getattribute__(name).data)\
-                if default_convertor else super().__getattribute__(name).data
+            return (
+                default_convertor(super().__getattribute__(name).data)
+                if default_convertor
+                else super().__getattribute__(name).data
+            )
         if name.startswith("o_"):
             default_convertor = type_to_default_type.get(type(super().__getattribute__(name).data))
             if default_convertor:
@@ -2360,8 +2426,11 @@ class Traction(Base, metaclass=TractionMeta):
                 _class = super().__getattribute__("__class__")
                 raise AttributeError(f"{_class} doesn't have attribute {name}")
 
-            return default_convertor(super().__getattribute__(name).data)\
-                if default_convertor else super().__getattribute__(name).data
+            return (
+                default_convertor(super().__getattribute__(name).data)
+                if default_convertor
+                else super().__getattribute__(name).data
+            )
 
         return super().__getattribute__(name)
 
@@ -2380,14 +2449,17 @@ class Traction(Base, metaclass=TractionMeta):
         ):
             default_attr = self.__dataclass_fields__[name].default
             vtype = value.__class__
-            tt1 = TypeNode.from_type(vtype, subclass_check=True,
-                                     type_aliases=[(type(True), _defaultBool)])
+            tt1 = TypeNode.from_type(
+                vtype, subclass_check=True, type_aliases=[(type(True), _defaultBool)]
+            )
             if is_wrapped(vtype):
-                tt2 = TypeNode.from_type(self._fields[name],
-                                         type_aliases=[(type(True), _defaultBool)])
+                tt2 = TypeNode.from_type(
+                    self._fields[name], type_aliases=[(type(True), _defaultBool)]
+                )
             else:
-                tt2 = TypeNode.from_type(self._fields[name]._params[0],
-                                         type_aliases=[(type(True), _defaultBool)])
+                tt2 = TypeNode.from_type(
+                    self._fields[name]._params[0], type_aliases=[(type(True), _defaultBool)]
+                )
                 # Value is not wrapped in Arg, In, Out or Res
                 wrapped = False
             if tt1 != tt2:
@@ -2402,9 +2474,7 @@ class Traction(Base, metaclass=TractionMeta):
                 # Allow overwrite default input values
                 if super().__getattribute__(name) == default_attr or TypeNode.from_type(
                     super().__getattribute__(name)
-                ) == TypeNode.from_type(
-                    NullPort[ANY]
-                ):
+                ) == TypeNode.from_type(NullPort[ANY]):
                     if wrapped:
                         self._no_validate_setattr_(name, value)
                         self._no_validate_setattr_("_raw_" + name, value)
@@ -2460,9 +2530,7 @@ class Traction(Base, metaclass=TractionMeta):
                 # Allow overwrite default input values
                 if super().__getattribute__(name) == default_attr or TypeNode.from_type(
                     super().__getattribute__(name)
-                ) == TypeNode.from_type(
-                    NullPort[ANY]
-                ):
+                ) == TypeNode.from_type(NullPort[ANY]):
                     if wrapped:
                         self._no_validate_setattr_(name, value)
                         self._no_validate_setattr_("_raw_" + name, value)

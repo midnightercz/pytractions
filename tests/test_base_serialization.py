@@ -281,10 +281,16 @@ def test_tdict_complex_from_json2():
                     {"foo": 4, "bar": "4"},
                 ],
             }
-        }) == TDict[str, TDict[str, TList[TestModel]]](
+        }
+    ) == TDict[str, TDict[str, TList[TestModel]]](
         {
-            "identity": TDict[str, TList[TestModel]]({
-                "digest": TList[TestModel]([TestModel(foo=1, bar="2")]),
-                "digest2": TList[TestModel]([TestModel(foo=3, bar="3"), TestModel(foo=4, bar="4")]),
-            })
-        })
+            "identity": TDict[str, TList[TestModel]](
+                {
+                    "digest": TList[TestModel]([TestModel(foo=1, bar="2")]),
+                    "digest2": TList[TestModel](
+                        [TestModel(foo=3, bar="3"), TestModel(foo=4, bar="4")]
+                    ),
+                }
+            )
+        }
+    )

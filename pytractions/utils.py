@@ -5,6 +5,8 @@ import datetime
 
 from typing import get_origin, get_args
 
+from pytractions.base_field import Field
+
 
 class ANYMeta(abc.ABCMeta):
     """Metaclass for helper object that compares equal to everything."""
@@ -48,7 +50,7 @@ class ANY(metaclass=ANYMeta):
 
 def doc(docstring: str):
     """Create dataclass field for doctring fields."""
-    return dataclasses.field(init=False, repr=False, default=docstring)
+    return Field(init=False, repr=False, default=docstring)
 
 
 def isodate_now() -> str:

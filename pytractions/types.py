@@ -2,15 +2,17 @@ import enum
 import inspect
 import importlib
 import json
+
 try:
     from typing import Self
 except ImportError:
     from typing_extensions import Self
-from typing import get_origin, TypeVar, Union, ForwardRef, Dict, Any, Tuple, List
+from typing import get_origin, TypeVar, Union, ForwardRef, Dict, Any, Tuple, List, Literal
 import sys
 
 
 from .abase import ABase
+from .exc import JSONIncompatibleError
 
 X = TypeVar("X")
 
@@ -152,7 +154,21 @@ class TypeNode:
         current = root
         stack = []
         while True:
-            if hasattr(current.type_, "__args__"):
+            if get_origin(current.type_) is Literal:
+                arg_type = set()
+                for arg in current.type_.__args__:
+                    if not TypeNode.from_type(type(arg)).json_compatible():
+                        raise JSONIncompatibleError(
+                            f"Literal arg ({arg} {type(arg)}) type can contain only json compatible types"
+                        )
+                    arg_type.add(type(arg))
+                if len(arg_type) > 1:
+                    raise JSONIncompatibleError("Literal type can contain only one type")
+                arg_type = list(arg_type)[0]
+                n = cls(type_=arg_type)
+                stack.append(n)
+                current.children.append(n)
+            elif hasattr(current.type_, "__args__"):
                 for arg in current.type_.__args__:
                     n = cls(type_=arg)
                     stack.append(n)
@@ -265,13 +281,13 @@ class TypeNode:
 
             elif current_node.n1.type_ is Union and current_node.n2.type_ is Union:
                 for ch1 in current_node.n1.children:
-                    node_uni = CMPNode(ch1, current_node.n2, 'any', 'any')
+                    node_uni = CMPNode(ch1, current_node.n2, "any", "any")
                     stack.insert(0, node_uni)
                     post_order.insert(0, node_uni)
                     current_node.children.append(node_uni)
 
             elif current_node.op == "all":
-                for ch1, ch2 in zip(current_node. n1.children, current_node.n2.children):
+                for ch1, ch2 in zip(current_node.n1.children, current_node.n2.children):
                     op = self.__determine_op(ch1, ch2)
                     node = CMPNode(ch1, ch2, op, op)
                     stack.insert(0, node)
@@ -389,19 +405,10 @@ class TypeNode:
             current_node = stack.pop()
             if current_node.n1.children:
                 for ch1 in current_node.n1.children:
-                    # if ch1.children:
-                    #     op = "all"
-                    # else:
-                    #     op = "any"
-                    node = CMPNode(ch1, TypeNode(JSON_COMPATIBLE), 'all', 'all')
+                    node = CMPNode(ch1, TypeNode(JSON_COMPATIBLE), "all", "all")
                     stack.insert(0, node)
                     post_order.insert(0, node)
                     current_node.children.append(node)
-            # else:
-            #     for u in (int, float, str, bool, ABase, type(None), TypeVar("X"), Self):
-            #         node = CMPNode(current_node.n1, TypeNode(u), "any", "any")
-            #         post_order.insert(0, node)
-            #         current_node.children.append(node)
 
         for cmp_node in post_order:
             n1_type = get_origin(cmp_node.n1.type_) or cmp_node.n1.type_
@@ -411,6 +418,8 @@ class TypeNode:
             elif n1_type is type(None):
                 continue
             elif n1_type is Union:
+                continue
+            elif n1_type is Literal:
                 continue
             elif n1_type in (int, float, str, bool):
                 continue
@@ -422,59 +431,12 @@ class TypeNode:
                 continue
             elif issubclass(n1_type, enum.Enum):
                 continue
-            elif issubclass(n1_type,
-                            (_defaultInt, _defaultStr, _defaultFloat, _defaultBool, _defaultNone)):
+            elif issubclass(
+                n1_type, (_defaultInt, _defaultStr, _defaultFloat, _defaultBool, _defaultNone)
+            ):
                 continue
             else:
                 return False
-
-            # n2_type = get_origin(cmp_node.n2.type_) or cmp_node.n2.type_
-            # if isinstance(n1_type, ForwardRef):
-            #     frame = sys._getframe(1)
-            #     n1_type = evaluate_forward_ref(n1_type, frame)
-            #
-            # if isinstance(n1_type, ForwardRef):
-            #     frame = sys._getframe(1)
-            #     n2_type = evaluate_forward_ref(n2_type, frame)
-
-            # if cmp_node.children:
-            #     if cmp_node.ch_op == "any":
-            #         ch_eq = any([ch.eq for ch in cmp_node.children])
-            #     else:
-            #         ch_eq = all([ch.eq for ch in cmp_node.children] or [True])
-            # else:
-            #     ch_eq = True
-            # # check types only of both types are not union
-            # # otherwise equality was already decided by check above
-            #
-            # if type(n1_type) is TypeVar and type(n2_type) is TypeVar:
-            #     ch_eq &= n1_type == n1_type
-            # elif type(n1_type) is TypeVar:
-            #     if n2_type == Union:
-            #         ch_eq = True
-            #     else:
-            #         ch_eq = False
-            # elif type(n2_type) is TypeVar:
-            #     if n1_type == Union:
-            #         ch_eq = True
-            #     else:
-            #         ch_eq = False
-            #     ch_eq = False
-            #
-            # elif n1_type != Union and n2_type != Union:
-            #     if not inspect.isclass(n1_type):
-            #         raise TypeError(f"{n1_type} is not class")
-            #     if not inspect.isclass(n2_type):
-            #         raise TypeError(f"{n2_type} is not class")
-            #     ch_eq &= issubclass(n1_type, n2_type)
-            #
-            # elif n1_type != Union and n2_type == Union:
-            #     if not inspect.isclass(n1_type):
-            #         raise TypeError(f"{n1_type} is not class")
-            #     ch_eq &= any(
-            #         [issubclass(n1_type, t) for t in [int, float, str, bool, type(None), ABase]]
-            #     )
-            # cmp_node.eq = ch_eq
 
         return True
 

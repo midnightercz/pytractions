@@ -222,9 +222,7 @@ class G_TestTractor(Tractor):
     a_multiplier: Port[float] = Port[float](data=1.0)
 
     t_traction_1: G_TTest1 = G_TTest1(uid="1", i_in1=i_in1, a_multiplier=a_multiplier)
-    t_traction_2: G_TTest1 = G_TTest1(
-        uid="2", i_in1=t_traction_1.o_out1, a_multiplier=a_multiplier
-    )
+    t_traction_2: G_TTest1 = G_TTest1(uid="2", i_in1=t_traction_1.o_out1, a_multiplier=a_multiplier)
 
     o_out1: Port[float] = t_traction_2._raw_o_out1
 
@@ -286,17 +284,17 @@ def test_stmd_threads(fixture_isodate_now) -> None:
 
         _traction: Type[Traction] = G_TTest2
 
-        o_out1: Port[Complex] = Port[TList[Complex]](data=TList[Complex]([]))
-        i_in1: Port[Comple]
+        o_out1: Port[TList[Complex]] = Port[TList[Complex]](data=TList[Complex]([]))
+        i_in1: Port[TList[Complex]]
 
-    stmd_in1 = Port[TList[float]](
-        data=TList[float](
+    stmd_in1 = Port[TList[Complex]](
+        data=TList[Complex](
             [
-                1.0,
-                2.0,
-                3.0,
-                4.0,
-                5.0,
+                Complex(real=1.0, imag=1.0),
+                Complex(real=2.0, imag=1.0),
+                Complex(real=3.0, imag=1.0),
+                Complex(real=4.0, imag=1.0),
+                Complex(real=5.0, imag=1.0),
             ]
         )
     )
@@ -310,11 +308,11 @@ def test_stmd_threads(fixture_isodate_now) -> None:
         i_in1=stmd_in1,
     )
     stmd1.run()
-    assert stmd1.o_out1[0] == 10.0
-    assert stmd1.o_out1[1] == 20.0
-    assert stmd1.o_out1[2] == 30.0
-    assert stmd1.o_out1[3] == 40.0
-    assert stmd1.o_out1[4] == 50.0
+    assert stmd1.o_out1[0] == Complex(real=1.0, imag=1.0)
+    assert stmd1.o_out1[1] == Complex(real=2.0, imag=1.0)
+    assert stmd1.o_out1[2] == Complex(real=3.0, imag=1.0)
+    assert stmd1.o_out1[3] == Complex(real=4.0, imag=1.0)
+    assert stmd1.o_out1[4] == Complex(real=5.0, imag=1.0)
 
 
 class GTestSTMD(STMD):

@@ -5,6 +5,7 @@ from typing import Optional, Dict, Any, Tuple, List, ClassVar
 
 from .base import (
     Base,
+    Field,
     Traction,
     TractionStats,
     TractionState,
@@ -21,7 +22,7 @@ from .base import (
     isodate_now,
     Port,
     NullPort,
-    STMDSingleIn
+    STMDSingleIn,
 )
 from .exc import UninitiatedResource, WrongInputMappingError, WrongArgMappingError
 
@@ -65,18 +66,29 @@ class TractorMeta(TractionMeta):
                         f"Attribute {attr.replace('d_', '', 1)} is not defined for description "
                         f"{attr}: {all_attrs}"
                     )
-            elif not (attr.startswith("_")
-                      or attr.startswith("i_")
-                      or attr.startswith("o_")
-                      or attr.startswith("a_")
-                      or attr.startswith("r_")
-                      or attr.startswith("t_")
-                      or attr.startswith("d_")):
+            elif not (
+                attr.startswith("_")
+                or attr.startswith("i_")
+                or attr.startswith("o_")
+                or attr.startswith("a_")
+                or attr.startswith("r_")
+                or attr.startswith("t_")
+                or attr.startswith("d_")
+            ):
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or t_")
 
     @classmethod
-    def _process_output(cls, traction, output_name, raw_output, output, outputs_map,
-                        all_outputs, traction_waves, output_waves):
+    def _process_output(
+        cls,
+        traction,
+        output_name,
+        raw_output,
+        output,
+        outputs_map,
+        all_outputs,
+        traction_waves,
+        output_waves,
+    ):
         to_process = []
         all_outputs.append(id(output))
         outputs_map[id(raw_output)] = (traction, output_name)
@@ -91,9 +103,7 @@ class TractorMeta(TractionMeta):
             output_waves[id(current)] = traction_waves[traction]
             if isinstance(current, Base):
                 for f in current._fields:
-                    to_process.append(
-                        (getattr(current, f), current_mapping + [f])
-                    )
+                    to_process.append((getattr(current, f), current_mapping + [f]))
 
     @classmethod
     def _overwrite_attributes_from_base_class(cls, base, _attr, destination):
@@ -110,12 +120,10 @@ class TractorMeta(TractionMeta):
 
     @classmethod
     def _validate_input_type(cls, f, fo):
-        if TypeNode.from_type(type(fo)) !=\
-                TypeNode.from_type(STMDSingleIn[ANY]) and \
-                TypeNode.from_type(type(fo)) !=\
-                TypeNode.from_type(type(Port[ANY])):
-            raise ValueError(
-                f"Tractor input {f} has to be type Port[ANY] but is {type(fo)}")
+        if TypeNode.from_type(type(fo)) != TypeNode.from_type(
+            STMDSingleIn[ANY]
+        ) and TypeNode.from_type(type(fo)) != TypeNode.from_type(type(Port[ANY])):
+            raise ValueError(f"Tractor input {f} has to be type Port[ANY] but is {type(fo)}")
 
     @classmethod
     def _before_new(cls, name, attrs, bases):
@@ -159,7 +167,7 @@ class TractorMeta(TractionMeta):
             if not t.startswith("t_"):
                 continue
             traction = attrs[t]
-            if isinstance(traction, dataclasses.Field):
+            if isinstance(traction, Field):
                 traction_fields = traction.default._fields
                 _traction = traction.default
             else:
@@ -199,7 +207,7 @@ class TractorMeta(TractionMeta):
             wave = 0
             traction = attrs[t]
             # in the case of using inputs from parent
-            if isinstance(traction, dataclasses.Field):
+            if isinstance(traction, Field):
                 traction_fields = traction.default._fields
                 _traction = traction.default
             else:
@@ -211,13 +219,16 @@ class TractorMeta(TractionMeta):
                 tfo = getattr(_traction, tf)
                 if tf.startswith("i_"):
                     cls._validate_input_type(tf, raw_tfo)
-                    if TypeNode.from_type(type(raw_tfo), subclass_check=False)\
-                            != TypeNode.from_type(NullPort[ANY]):
+                    if TypeNode.from_type(
+                        type(raw_tfo), subclass_check=False
+                    ) != TypeNode.from_type(NullPort[ANY]):
                         if id(raw_tfo._owner) != id(traction):
                             # if input is not default input of the tractor,
                             # check wether is mapped to known output
-                            if id(raw_tfo) not in known_output_ids and \
-                                    id(tfo) not in known_output_ids:
+                            if (
+                                id(raw_tfo) not in known_output_ids
+                                and id(tfo) not in known_output_ids
+                            ):
                                 raise WrongInputMappingError(
                                     f"Input {name}.{_traction.__class__}[{_traction.uid}]->{tf} "
                                     "is mapped to output which is not known yet"
@@ -247,8 +258,16 @@ class TractorMeta(TractionMeta):
                 raw_tfo = object.__getattribute__(_traction, tf)
 
                 if tf.startswith("o_"):
-                    cls._process_output(t, tf, raw_tfo, tfo, outputs_map,
-                                        known_output_ids, traction_waves, output_waves)
+                    cls._process_output(
+                        t,
+                        tf,
+                        raw_tfo,
+                        tfo,
+                        outputs_map,
+                        known_output_ids,
+                        traction_waves,
+                        output_waves,
+                    )
                 elif tf.startswith("r_"):
                     if id(tfo) in resources:
                         resources_map[(t, tf)] = resources[id(tfo)]
@@ -270,9 +289,9 @@ class TractorMeta(TractionMeta):
                     elif id(tfo) in margs:
                         args_map[(t, tf)] = margs[id(tfo)]
 
-                    elif TypeNode.from_type(
-                        type(tfo), subclass_check=True
-                    ) == TypeNode.from_type(MultiArg):
+                    elif TypeNode.from_type(type(tfo), subclass_check=True) == TypeNode.from_type(
+                        MultiArg
+                    ):
                         for maf, mafo in raw_tfo._fields.items():
                             if id(mafo) in args:
                                 margs_map[(t, tf, maf)] = args[id(mafo)]
@@ -280,7 +299,8 @@ class TractorMeta(TractionMeta):
                     elif id(raw_tfo) in resources_map or id(raw_tfo) in outputs_map:
                         raise WrongArgMappingError(
                             f"{t}.{tf} is argument and cannot be mapped to "
-                            "inputs, outputs or resources")
+                            "inputs, outputs or resources"
+                        )
 
         for f, fo in attrs.items():
             if f.startswith("o_"):
@@ -315,12 +335,10 @@ class Tractor(Traction, metaclass=TractorMeta):
     state: str = "ready"
     skip: bool = False
     skip_reason: Optional[str] = ""
-    errors: TList[str] = dataclasses.field(default_factory=TList[str])
-    stats: TractionStats = dataclasses.field(default_factory=TractionStats)
-    details: TDict[str, str] = dataclasses.field(default_factory=TDict[str, str])
-    tractions: TDict[str, Traction] = dataclasses.field(
-        default_factory=TDict[str, Traction], init=False
-    )
+    errors: TList[str] = Field(default_factory=TList[str])
+    stats: TractionStats = Field(default_factory=TractionStats)
+    details: TDict[str, str] = Field(default_factory=TDict[str, str])
+    tractions: TDict[str, Traction] = Field(default_factory=TDict[str, Traction], init=False)
 
     def _init_traction_input(self, traction_name, traction):
         init_fields = {}
@@ -436,9 +454,7 @@ class Tractor(Traction, metaclass=TractorMeta):
                     out = object.__getattribute__(out, o_name)
 
                 self._no_validate_setattr_(f, out)
-                self._no_validate_setattr_(
-                    "_raw_" + f, out
-                )
+                self._no_validate_setattr_("_raw_" + f, out)
             elif f.startswith("a_"):
                 # for MulArgs which are mapped to args, overwrite them
                 fo = getattr(self, f)
@@ -619,10 +635,10 @@ class MultiTractor(Tractor, metaclass=TractorMeta):
     state: str = "ready"
     skip: bool = False
     skip_reason: Optional[str] = ""
-    errors: TList[str] = dataclasses.field(default_factory=TList[str])
-    stats: TractionStats = dataclasses.field(default_factory=TractionStats)
-    details: TList[str] = dataclasses.field(default_factory=TList[str])
-    tractions: TList[Traction] = dataclasses.field(default_factory=TList[Traction], init=False)
+    errors: TList[str] = Field(default_factory=TList[str])
+    stats: TractionStats = Field(default_factory=TractionStats)
+    details: TList[str] = Field(default_factory=TList[str])
+    tractions: TList[Traction] = Field(default_factory=TList[Traction], init=False)
     a_use_processes: Port[bool] = Port[bool](data=False)
 
     def _traction_runner(self, t_name, traction, on_update=None):
@@ -684,8 +700,9 @@ class LoopTractor(Tractor):
     Tractor runs all traction in loop until LoopTractorEnd exception is raised.
     """
 
-    def _run(self,
-             on_update: Optional[OnUpdateCallable] = None) -> "LoopTractor":  # pragma: no cover
+    def _run(
+        self, on_update: Optional[OnUpdateCallable] = None
+    ) -> "LoopTractor":  # pragma: no cover
         # Check for uninitialized resources
         for f in self._fields:
             if f.startswith("r_"):

@@ -6,6 +6,7 @@ from types import prepare_class
 
 from .base import (
     Base,
+    Field,
     ANY,
     Port,
     NullPort,
@@ -62,8 +63,12 @@ class STMDMeta(TractionMeta):
                         f"Attribute {attr.replace('d_', '', 1)} is not defined for "
                         "description {attr}: {all_attrs}"
                     )
-            elif not (attr.startswith("i_") or attr.startswith("o_")
-                      or attr.startswith("a_") or attr.startswith("r_")):
+            elif not (
+                attr.startswith("i_")
+                or attr.startswith("o_")
+                or attr.startswith("a_")
+                or attr.startswith("r_")
+            ):
                 raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or d_")
 
     def __new__(cls, name, bases, attrs):
@@ -128,19 +133,19 @@ class STMDMeta(TractionMeta):
                                 f"doesn't have default value for field {ff}"
                             )
                 if is_wrapped(ftype):
-                    attrs[f] = dataclasses.field(
+                    attrs[f] = Field(
                         init=False,
                         default_factory=DefaultOut(type_=ftype._params[0], params=ftype._params),
                     )
                 else:
-                    attrs[f] = dataclasses.field(
+                    attrs[f] = Field(
                         init=False,
                         default_factory=DefaultOut(type_=ftype, params=(ftype,)),
                     )
 
             # Set all inputs to NullPort after as default
             if f.startswith("i_") and f not in attrs:
-                attrs[f] = dataclasses.field(default_factory=NullPort[ftype._params])
+                attrs[f] = Field(default_factory=NullPort[ftype._params])
 
         attrs["_fields"] = {
             k: v for k, v in attrs.get("__annotations__", {}).items() if not k.startswith("_")
@@ -182,19 +187,19 @@ class STMD(Traction, metaclass=STMDMeta):
     state: str = TractionState.READY
     skip: bool = False
     skip_reason: Optional[str] = ""
-    errors: TList[str] = dataclasses.field(default_factory=TList[str])
-    stats: TractionStats = dataclasses.field(default_factory=TractionStats)
-    details: TDict[str, str] = dataclasses.field(default_factory=TDict[str, str])
+    errors: TList[str] = Field(default_factory=TList[str])
+    stats: TractionStats = Field(default_factory=TractionStats)
+    details: TDict[str, str] = Field(default_factory=TDict[str, str])
     _traction: Type[Traction] = Traction
     a_delete_after_finished: Port[bool] = Port[bool](data=True)
     a_allow_unset_inputs: Port[bool] = Port[bool](data=False)
-    a_executor: Port[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor, RayExecutor]] = Port[
-        Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor, RayExecutor]
-    ](data=_loop_executor)
-    tractions: TList[Union[Traction, None]] = dataclasses.field(
-        default_factory=TList[Optional[Traction]]
+    a_executor: Port[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor, RayExecutor]] = (
+        Port[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor, RayExecutor]](
+            data=_loop_executor
+        )
     )
-    tractions_state: TList[TractionState] = dataclasses.field(default_factory=TList[TractionState])
+    tractions: TList[Union[Traction, None]] = Field(default_factory=TList[Optional[Traction]])
+    tractions_state: TList[TractionState] = Field(default_factory=TList[TractionState])
 
     _wrap_cache: ClassVar[Dict[str, Type[Any]]] = {}
 
@@ -281,11 +286,11 @@ class STMD(Traction, metaclass=STMDMeta):
             for f, ftype in self._fields.items():
                 if f.startswith("i_"):
                     # Raise error if allow_unset_inputs is False and input is missing
-                    if (not self.a_allow_unset_inputs
-                            and (getattr(self, f) is None
-                                 or isinstance(getattr(self, f), _defaultNone))):
+                    if not self.a_allow_unset_inputs and (
+                        getattr(self, f) is None or isinstance(getattr(self, f), _defaultNone)
+                    ):
                         raise ValueError(f"{self.fullname}: No input data for '{f}'")
-                    elif (getattr(self, f) is None or isinstance(getattr(self, f), _defaultNone)):
+                    elif getattr(self, f) is None or isinstance(getattr(self, f), _defaultNone):
                         continue
                     if TypeNode.from_type(
                         self._fields[f], subclass_check=False

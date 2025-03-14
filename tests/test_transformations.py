@@ -1,7 +1,4 @@
-from pytractions.base import (
-    TList,
-    Port
-)
+from pytractions.base import TList, Port
 
 from pytractions.transformations import Flatten, FilterDuplicates, ListMultiplier
 
