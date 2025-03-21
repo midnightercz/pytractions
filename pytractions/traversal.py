@@ -100,7 +100,7 @@ class Tree:
                 handler.process(self, stack_item)
                 break
         else:
-            raise UnknownItemError(stack_item.data)
+            raise UnknownItemError(stack_item.path, stack_item.data, self.handlers)
 
 
 class ItemHandler:

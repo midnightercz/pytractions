@@ -1,37 +1,25 @@
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
-import dataclasses
 import logging
 from typing import Optional, Dict, Any, Tuple, List, ClassVar
 
 from .base import (
     Base,
     Field,
-    Traction,
-    TractionStats,
-    TractionState,
     TList,
     TDict,
-    TractionMeta,
     MultiArg,
     ANY,
     TypeNode,
-    OnUpdateCallable,
-    OnErrorCallable,
-    on_update_empty,
-    TractionFailedError,
-    isodate_now,
     Port,
     NullPort,
     STMDSingleIn,
 )
+from .traction import Traction, TractionState, TractionStats, TractionMeta, TractionFailedError
 from .exc import UninitiatedResource, WrongInputMappingError, WrongArgMappingError
+from .utils import isodate_now
 
 
 LOGGER = logging.getLogger(__name__)
-
-
-class _TractorOutputOwner(Base):
-    fullname: str
 
 
 class TractorMeta(TractionMeta):
@@ -339,6 +327,7 @@ class Tractor(Traction, metaclass=TractorMeta):
     stats: TractionStats = Field(default_factory=TractionStats)
     details: TDict[str, str] = Field(default_factory=TDict[str, str])
     tractions: TDict[str, Traction] = Field(default_factory=TDict[str, Traction], init=False)
+    _initialized: bool = Field(default=False, init=False, repr=False)
 
     def _init_traction_input(self, traction_name, traction):
         init_fields = {}
@@ -425,17 +414,23 @@ class Tractor(Traction, metaclass=TractorMeta):
 
         return traction.__class__(**init_fields)
 
-    def __post_init__(self):
-        """Tractor post init."""
-        super().__post_init__()
+    #def __post_init__(self):
+    #    super().__post_init__()
+    #    self._before_run()
 
+    def _before_run(self):
+        """Tractor setup before run."""
         self._elementary_outs = {}
         self.tractions = TDict[str, Traction]({})
+
         for f in self._fields:
             # Init all tractions to self.tractions
             if f.startswith("t_"):
                 traction = getattr(self, f)
                 new_traction = self._init_traction(f, traction)
+                if hasattr(new_traction, "_before_run"):
+                    new_traction._before_run()
+                    new_traction._initialized = True
                 self.tractions[f] = new_traction
 
         for f in self._fields:
@@ -453,6 +448,7 @@ class Tractor(Traction, metaclass=TractorMeta):
                 for o_name in tf_path:
                     out = object.__getattribute__(out, o_name)
 
+                self._observed(f, out)
                 self._no_validate_setattr_(f, out)
                 self._no_validate_setattr_("_raw_" + f, out)
             elif f.startswith("a_"):
@@ -477,7 +473,11 @@ class Tractor(Traction, metaclass=TractorMeta):
             else:
                 traction.state = TractionState.FINISHED
 
-    def _run(self, on_update: Optional[OnUpdateCallable] = None) -> "Tractor":  # pragma: no cover
+    def _run(self) -> "Tractor":  # pragma: no cover
+        if not self._initialized:
+            self._before_run()
+            self._initialized = True
+
         # Check for uninitialized resources
         for f in self._fields:
             if f.startswith("r_"):
@@ -486,54 +486,45 @@ class Tractor(Traction, metaclass=TractorMeta):
                     raise UninitiatedResource(f"{f}")
 
         for tname, traction in self.tractions.items():
-            traction.run(on_update=on_update)
-            if on_update:
-                on_update(self)
+            traction.run()
             if traction.state == TractionState.ERROR:
                 LOGGER.error(f"traction {traction.fullname} ERROR")
                 self.state = TractionState.ERROR
+                traction.stats = traction.stats
                 return self
             elif traction.state == TractionState.FAILED:
                 LOGGER.error(f"traction {traction.fullname} FAILED")
                 self.state = TractionState.FAILED
+                traction.stats = traction.stats
                 return self
             else:
                 LOGGER.info(f"Traction {traction.fullname} FINISHED")
         return self
 
-    def run(
-        self,
-        on_update: Optional[OnUpdateCallable] = None,
-        on_error: Optional[OnErrorCallable] = None,
-    ) -> "Tractor":
+    def run(self) -> "Tractor":
         """Run the tractor."""
-        _on_update: OnUpdateCallable = on_update or on_update_empty
-        _on_error: OnErrorCallable = on_error or on_update_empty
         self._reset_stats()
         if self.state == TractionState.READY:
             self.stats.started = isodate_now()
 
             self.state = TractionState.PREP
             self._pre_run()
-            _on_update(self)  # type: ignore
         try:
             if self.state not in (TractionState.PREP, TractionState.ERROR):
                 return self
             if not self.skip:
                 self.state = TractionState.RUNNING
-                _on_update(self)  # type: ignore
-                self._run(on_update=_on_update)
+                self._run()
         except TractionFailedError:
             self.state = TractionState.FAILED
         except Exception as e:
             self.state = TractionState.ERROR
             self.errors.append(str(e))
-            _on_error(self)
             raise
         finally:
             self.state = TractionState.FINISHED
             self._finish_stats()
-            _on_update(self)  # type: ignore
+            self.stats = self.stats
         return self
 
     @classmethod
@@ -600,7 +591,9 @@ class Tractor(Traction, metaclass=TractorMeta):
                             tractions[f], tf
                         )
                 for tf, tfval in json_data[f].items():
-                    if tf.startswith("i_") and isinstance(tfval, str):
+                    if (
+                        tf.startswith("i_") or tf.startswith("r_") or tf.startswith("a_")
+                    ) and isinstance(tfval, str):
                         traction_name, o_name = tfval.split("#")
                         setattr(tractions[f], tf, traction_outputs[traction_name][o_name])
             elif f.startswith("i_"):
@@ -647,11 +640,7 @@ class MultiTractor(Tractor, metaclass=TractorMeta):
         traction.run(on_update=on_update)
         return traction
 
-    def _run(self, on_update: Optional[OnUpdateCallable] = None):  # pragma: no cover
-        _on_update: OnUpdateCallable = lambda step: None
-        if on_update:
-            _on_update = on_update
-
+    def _run(self):  # pragma: no cover
         traction_groups: Dict[int, Dict[str, Traction]] = {}
         for t in self._fields:
             if not t.startswith("t_"):
@@ -671,12 +660,10 @@ class MultiTractor(Tractor, metaclass=TractorMeta):
                         self._traction_runner, t_name, traction, on_update=on_update
                     )
                     ft_results[res] = t_name
-                _on_update(self)
                 for ft in as_completed(ft_results):
                     t_name = ft_results[ft]
                     nt = ft.result()
                     self._tractions[t_name] = nt
-                _on_update(self)
 
         for f in self._fields:
             if f.startswith("o_"):
@@ -700,9 +687,7 @@ class LoopTractor(Tractor):
     Tractor runs all traction in loop until LoopTractorEnd exception is raised.
     """
 
-    def _run(
-        self, on_update: Optional[OnUpdateCallable] = None
-    ) -> "LoopTractor":  # pragma: no cover
+    def _run(self) -> "LoopTractor":  # pragma: no cover
         # Check for uninitialized resources
         for f in self._fields:
             if f.startswith("r_"):
@@ -714,9 +699,7 @@ class LoopTractor(Tractor):
             try:
                 for tname, traction in self.tractions.items():
                     traction.state = TractionState.READY
-                    traction.run(on_update=on_update)
-                    if on_update:
-                        on_update(self)
+                    traction.run()
                     if traction.state == TractionState.ERROR:
                         LOGGER.error(f"Traction {traction.fullname} ERROR")
                         self.state = TractionState.ERROR

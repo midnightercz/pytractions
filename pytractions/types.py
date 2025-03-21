@@ -104,6 +104,12 @@ class _defaultNone:
     def __bool__(self):
         return False
 
+    def __eq__(self, other):
+        return other is None
+
+    def __hash__(self):
+        return hash(None)
+
 
 class CMPNode:
     """CMPNode class for TypeNode comparison."""

@@ -9,7 +9,8 @@ import re
 import yaml
 from typing import _UnionGenericAlias
 
-from .base import TypeNode, ANY, TList, TDict, Port, Traction
+from .base import TypeNode, ANY, TList, TDict, Port
+from .traction import Traction
 from .tractor import Tractor
 from .runner_utils import (
     parse_traction_str,

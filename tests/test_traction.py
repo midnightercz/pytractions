@@ -2,10 +2,9 @@ import pytest
 
 from pytractions.base import (
     Base,
-    Traction,
     Port,
-    OnUpdateCallable,
 )
+from pytractions.traction import Traction
 from pytractions.exc import TractionFailedError
 
 
@@ -45,7 +44,7 @@ def test_to_json_from_json():
         r_res: Port[NOOPResource]
         a_arg: Port[str]
 
-        def _run(self, on_update: OnUpdateCallable) -> None:
+        def _run(self) -> None:
             self.o_output.data = self.i_input.data
 
     t = TestTraction(
@@ -171,7 +170,7 @@ def test_to_json_from_json():
                 },
                 "$type": {
                     "args": [],
-                    "module": "pytractions.base",
+                    "module": "pytractions.traction",
                     "type": "TractionStats",
                 },
             },
@@ -194,7 +193,7 @@ def test_to_run_failed():
         r_res: Port[NOOPResource]
         a_arg: Port[str]
 
-        def _run(self, on_update: OnUpdateCallable) -> None:
+        def _run(self) -> None:
             self.o_output = self.i_input
             raise TractionFailedError
 
@@ -215,7 +214,7 @@ def test_to_run_error():
         r_res: Port[NOOPResource]
         a_arg: Port[str]
 
-        def _run(self, on_update: OnUpdateCallable) -> None:
+        def _run(self) -> None:
             self.o_output = self.i_input
             raise ValueError("test error")
 
@@ -238,6 +237,6 @@ def test_traction_log():
         r_res: Port[NOOPResource]
         a_arg: Port[str]
 
-        def _run(self, on_update: OnUpdateCallable) -> None:
+        def _run(self) -> None:
             self.o_output = self.i_input
             self.log("test log")

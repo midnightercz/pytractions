@@ -1,6 +1,7 @@
 import pytest
 
-from pytractions.base import Field, Port, Base, Traction, OnUpdateCallable, TList
+from pytractions.base import Field, Port, Base, TList
+from pytractions.traction import Traction
 from pytractions.exc import NoDefaultError
 
 
@@ -29,7 +30,7 @@ def test_traction_out_no_def():
 
             o_out: Port[OutContainerNoDef]
 
-            def _run(self, on_update: OnUpdateCallable) -> None:
+            def _run(self) -> None:
                 pass
 
 
@@ -38,7 +39,7 @@ class TestTraction(Traction):
 
     o_out: Port[OutContainer]
 
-    def _run(self, on_update: OnUpdateCallable) -> None:
+    def _run(self) -> None:
         pass
 
 
@@ -47,7 +48,7 @@ class TestTractionOutList(Traction):
 
     o_out: Port[TList[str]]
 
-    def _run(self, on_update: OnUpdateCallable) -> None:
+    def _run(self) -> None:
         pass
 
 

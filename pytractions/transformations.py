@@ -1,5 +1,6 @@
 from typing import TypeVar, Generic
-from .base import Traction, OnUpdateCallable, TList
+from .base import TList
+from .traction import Traction
 
 T = TypeVar("T")
 X = TypeVar("X")
@@ -11,7 +12,7 @@ class Flatten(Traction, Generic[T]):
     i_complex: TList[TList[T]]
     o_flat: TList[T]
 
-    def _run(self, on_update: OnUpdateCallable):
+    def _run(self):
         for nested in self.i_complex:
             for item in nested:
                 self.o_flat.append(item)
@@ -23,7 +24,7 @@ class FilterDuplicates(Traction, Generic[T]):
     i_list: TList[T]
     o_list: TList[T]
 
-    def _run(self, on_update: OnUpdateCallable):
+    def _run(self):
         for item in self.i_list:
             if item not in self.o_list:
                 self.o_list.append(item)
@@ -36,7 +37,7 @@ class Extractor(Traction, Generic[T, X]):
     i_model: T
     o_model: X
 
-    def _run(self, on_update: OnUpdateCallable):
+    def _run(self):
         self.o_model = getattr(self.i_model, self.a_field)
 
 
@@ -53,7 +54,7 @@ with scalar value."""
     d_i_scalar: str = "Scalar value."
     d_o_list: str = "Output list."
 
-    def _run(self, on_update: OnUpdateCallable):
+    def _run(self):
         for _ in range(len(self.i_list)):
             self.o_list.append(
                 self._raw_i_scalar.content_from_json(self._raw_i_scalar.content_to_json()).data

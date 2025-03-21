@@ -1,13 +1,12 @@
 from typing import Union, Type
 
 from pytractions.base import (
-    Traction,
     TList,
     NullPort,
     Port,
     Base,
-    OnUpdateCallable,
 )
+from pytractions.traction import Traction
 from pytractions.tractor import Tractor
 from pytractions.stmd import STMD
 
@@ -25,7 +24,7 @@ def test_traction_simple_io():
         i_in: int
         o_out: int
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             self.o_out = self.i_in + 10
 
     t = TTest1(uid="1", i_in=10)
@@ -53,14 +52,14 @@ def test_traction_chain():
     class TTest1(Traction):
         o_out1: int
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             self.o_out1 = 20
 
     class TTest2(Traction):
         i_in1: int
         o_out1: int
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             print("IN", self.i_in1)
             self.o_out1 = self.i_in1 + 10
 
@@ -76,14 +75,14 @@ def test_traction_chain_in_to_out():
     class TTest1(Traction):
         o_out1: int
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             self.o_out1 = 20
 
     class TTest2(Traction):
         i_in1: int
         o_out1: int
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             self.o_out1 = self.i_in1
 
     t1 = TTest1(uid="1")
@@ -103,7 +102,7 @@ def test_tractor_run() -> None:
         o_out1: float
         a_reducer: float
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             print("I", self.i_in1, "/", "A", self.a_reducer)
             self.o_out1 = (self.i_in1 + 1) / float(self.a_reducer)
 
@@ -154,7 +153,7 @@ class TestTraction(Traction):
     o_output: int
     r_seq: Seq
 
-    def _run(self, on_update: OnUpdateCallable) -> None:
+    def _run(self) -> None:
         self.o_output = self.i_input + self.r_seq.inc()
 
 
@@ -192,7 +191,7 @@ class G_TTest1(Traction):
     i_in1: Union[float, int]
     a_multiplier: float
 
-    def _run(self, on_update) -> None:  # pragma: no cover
+    def _run(self) -> None:  # pragma: no cover
         print("I", self.i_in1, "*", "A", self.a_multiplier)
         self.o_out1 = self.i_in1 * self.a_multiplier
 

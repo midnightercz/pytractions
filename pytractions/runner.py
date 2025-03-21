@@ -5,8 +5,8 @@ import sys
 import os
 import yaml
 
-from .monitor import StructuredMonitor
-from .base import Traction
+from .monitor import OBSERVERS
+from .traction import Traction
 from .runner_utils import parse_traction_str, gen_default_inputs
 
 
@@ -19,18 +19,17 @@ LOGGER.addHandler(sh)
 class SimpleRunner:
     """Simple runner class."""
 
-    def __init__(self, tractor, monitor_file):
+    def __init__(self, tractor, observer, run_id):
         """Initialize the runner."""
         self.tractor = tractor
-        self.monitor_file = monitor_file
+        self.observer = observer
+        self.run_id = run_id
 
     def run(self):
         """Run tractor."""
-        monitor = StructuredMonitor(self.tractor, self.monitor_file)
-        try:
-            self.tractor.run(on_update=monitor.on_update)
-        finally:
-            monitor.close(self.tractor)
+        self.tractor._observer._observers[id(self.observer)] = (self.observer, self.run_id)
+        self.observer.setup(self.tractor)
+        self.tractor.run()
 
     def resubmit(self, traction):
         """Run tractor from specific traction."""
@@ -145,8 +144,12 @@ def run_main(args):
 
     LOGGER.info("Running with init fields %s", traction_init_fields)
     traction = traction_cls(uid="0", **traction_init_fields)
-    LOGGER.info("Running simple runner on directory {args.monitor}")
-    runner = SimpleRunner(traction, args.monitor)
+    if args.observer:
+        observer_cls = OBSERVERS[args.observer]
+        observer = observer_cls(root=args.run_id)
+        if args.observer_config:
+            observer.load_config(args.observer_config)
+    runner = SimpleRunner(traction, observer, args.run_id)
     runner.run()
 
 
@@ -172,7 +175,25 @@ def make_parsers(subparsers):
     p_runner = subparsers.add_parser("local_run", help="Run pytraction module")
     p_runner.add_argument("traction", help="Path of traction to run (module:traction)", type=str)
     p_runner.add_argument(
-        "--monitor", "-m", help="Path to monitor directory", type=str, default="monitor"
+        "--observer",
+        "-o",
+        help="Observer type",
+        type=str,
+        choices=OBSERVERS.keys(),
+        default="file",
+    )
+    p_runner.add_argument(
+        "--observer-config",
+        help="Observer config",
+        type=str,
+        default='{"path": "monitor"}',
+    )
+    p_runner.add_argument(
+        "--run-id",
+        "-i",
+        help="Run id",
+        type=str,
+        default="root"
     )
     p_runner.add_argument(
         "--level",

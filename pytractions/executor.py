@@ -1,9 +1,12 @@
 import logging
 import multiprocessing
+import traceback
 
 import ray
 
-from pytractions.base import Base
+from pytractions.base import Base, TDict, Port, Any, JSON_COMPATIBLE
+from pytractions.stmd_utils import _init_traction
+from pytractions.traction import TractionState, TractionStats
 
 from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
 from concurrent.futures import ProcessPoolExecutor as _ProcessPoolExecutor
@@ -18,40 +21,25 @@ class Executor(Base):
     pass
 
 
-def _init_traction(traction_cls, inputs, resources, args, uid="0"):
-    """After tractor is created, all tractions needs to be copied.
-
-    This way it's possible to use same Tractor class multiple times
-    """
-    init_fields = {}
-    for ft, field in traction_cls.__dataclass_fields__.items():
-        # set all inputs for the traction to outputs of traction copy
-        # created bellow
-
-        if ft.startswith("r_"):
-            init_fields[ft] = resources[ft]
-
-        elif ft.startswith("a_"):
-            init_fields[ft] = args[ft]
-
-        elif ft.startswith("i_") and ft in inputs:
-            init_fields[ft] = inputs[ft]
-
-    init_fields["uid"] = uid
-    # create copy of existing traction
-    ret = traction_cls(**init_fields)
-    return ret
+class TractionResult(Base):
+    outputs: TDict[str, JSON_COMPATIBLE]
+    state: TractionState
+    stats: TractionStats
 
 
-def _execute_traction(uid, traction_cls, inputs, args, resources, on_update=None):
+def _execute_traction(index, uid, traction_cls, inputs, args, resources, observer):
     """Eexecute traction and return outputs."""
-    traction = _init_traction(traction_cls, inputs, resources, args, uid=uid)
-    traction.run(on_update=on_update)
-    outputs = {}
+    traction = _init_traction(traction_cls, inputs, resources, args, index, uid=uid, observer=observer)
+    traction.run()
+    outputs: TDict[str, JSON_COMPATIBLE] = TDict[str, JSON_COMPATIBLE]({})
     for o in traction._fields:
         if o.startswith("o_"):
-            outputs[o] = getattr(traction, o)
-    return outputs
+            outputs[o] = getattr(traction, o).data
+    return TractionResult(
+        outputs=outputs,
+        state=traction.state,
+        stats=traction.stats
+    )
 
 
 class ProcessPoolExecutor(Executor):
@@ -74,16 +62,18 @@ class ProcessPoolExecutor(Executor):
         """Shutdown the executor."""
         self._executor.shutdown()
 
-    def execute(self, uid, traction_cls, inputs, args, resources, on_update=None):
+    def execute(self, index, uid, traction_cls, inputs, args, resources, observer=None):
         """Execute the traction with given inputs args and resources."""
 
         res = self._executor.submit(
             _execute_traction,
+            index,
             uid,
             traction_cls,
             inputs,
             args,
             resources,
+            observer,
         )
         self._outputs[res] = uid
         self._outputs_by_uid[uid] = res
@@ -95,8 +85,26 @@ class ProcessPoolExecutor(Executor):
         for uid in uids:
             outs.append(self._outputs_by_uid[uid])
         for ft in as_completed(outs):
+            exc = ft.exception()
+            if exc:
+                for line in traceback.format_exception(exc):
+                    LOGGER.error("Error in traction execution: %s", line)
             uid = self._outputs[ft]
-            completed[uid] = ft.result()
+            completed[uid] = ft.result().outputs
+        return completed
+
+    def get_states(self, uids):
+        """Fetch outputs of executed tractions."""
+        states = []
+        completed = {}
+        for uid in uids:
+            states.append(self._outputs_by_uid[uid])
+        for ft in as_completed(states):
+            uid = self._outputs[ft]
+            if ft.exception():
+                completed[uid] = (TractionState.ERROR, ft.result().stats)
+            else:
+                completed[uid] = (ft.result().state, ft.result().stats)
         return completed
 
     def clear_output(self, uid):
@@ -126,9 +134,10 @@ class ThreadPoolExecutor(Executor):
         """Shutdown the executor."""
         self._executor.shutdown()
 
-    def execute(self, uid, traction, inputs, args, resources, on_update=None):
+    def execute(self, index, uid, traction, inputs, args, resources, observer=None):
         """Execute the traction with given inputs args and resources."""
-        res = self._executor.submit(_execute_traction, uid, traction, inputs, args, resources)
+        res = self._executor.submit(_execute_traction, index, uid,
+                                    traction, inputs, args, resources, observer)
         self._outputs[res] = uid
         self._outputs_by_uid[uid] = res
 
@@ -140,7 +149,27 @@ class ThreadPoolExecutor(Executor):
             outs.append(self._outputs_by_uid[uid])
         for ft in as_completed(outs):
             uid = self._outputs[ft]
-            completed[uid] = ft.result()
+            exc = ft.exception()
+            if exc:
+                for line in traceback.format_exception(exc):
+                    LOGGER.error("Error in traction execution: %s", line)
+            uid = self._outputs[ft]
+            completed[uid] = ft.result().outputs
+        return completed
+
+    def get_states(self, uids):
+        """Fetch outputs of executed tractions."""
+        states = []
+        completed = {}
+        for uid in uids:
+            states.append(self._outputs_by_uid[uid])
+        for ft in as_completed(states):
+            uid = self._outputs[ft]
+            if ft.exception():
+                print("Error in traction execution: %s", ft.exception())
+                completed[uid] = (TractionState.ERROR, ft.result().stats)
+            else:
+                completed[uid] = (ft.result().state, ft.result().stats)
         return completed
 
     def clear_output(self, uid):
@@ -157,16 +186,27 @@ class LoopExecutor(Executor):
         """Initialize executor."""
         self._outputs = {}
 
-    def execute(self, uid, traction, inputs, args, resources, on_update=None):
+    def execute(self, index, uid, traction, inputs, args, resources, observer):
         """Execute the traction with given inputs args and resources."""
-        res = _execute_traction(uid, traction, inputs, args, resources, on_update=on_update)
+        try:
+            res = _execute_traction(index, uid, traction, inputs, args, resources, observer)
+        except Exception as e:
+            LOGGER.error("Error in traction execution: %s", traceback.format_exc(e))
+            res = TractionResult(outputs={}, state=TractionState.ERROR)
         self._outputs[uid] = res
+
+    def get_states(self, uids):
+        """Fetch outputs of executed tractions."""
+        completed = {}
+        for uid in uids:
+            completed[uid] = (self._outputs[uid].state, self._outputs[uid].stats)
+        return completed
 
     def get_outputs(self, uids):
         """Fetch outputs of executed tractions."""
         outs = {}
         for uid in uids:
-            outs[uid] = self._outputs[uid]
+            outs[uid] = self._outputs[uid].outputs
         return outs
 
     def clear_output(self, uid):
@@ -183,15 +223,15 @@ class LoopExecutor(Executor):
 
 
 @ray.remote
-def _ray_execute_traction(uid, traction_cls, inputs, args, resources, on_update=None):
+def _ray_execute_traction(index, uid, traction_cls, inputs, args, resources, observer=None):
     """Eexecute traction and return outputs."""
-    traction = _init_traction(traction_cls, inputs, resources, args, uid=uid)
-    traction.run(on_update=on_update)
-    outputs = {}
+    traction = _init_traction(traction_cls, inputs, resources, args, index, uid=uid, observer=observer)
+    traction.run()
+    outputs: TDict[str, JSON_COMPATIBLE] = TDict[str, JSON_COMPATIBLE]({})
     for o in traction._fields:
         if o.startswith("o_"):
-            outputs[o] = getattr(traction, o)
-    return outputs
+            outputs[o] = getattr(traction, "_raw_" + o).data
+    return TractionResult(state=traction.state, stats=traction.stats, outputs=outputs).to_json()
 
 
 class RayExecutor(Executor):
@@ -203,11 +243,9 @@ class RayExecutor(Executor):
         """Initialize executor."""
         self._outputs = {}
 
-    def execute(self, uid, traction, inputs, args, resources, on_update=None):
+    def execute(self, index, uid, traction, inputs, args, resources, observer):
         """Execute the traction with given inputs args and resources."""
-        res = _ray_execute_traction.remote(
-            uid, traction, inputs, args, resources, on_update=on_update
-        )
+        res = _ray_execute_traction.remote(index, uid, traction, inputs, args, resources, observer)
         self._outputs[uid] = res
 
     def get_outputs(self, uids):
@@ -216,11 +254,36 @@ class RayExecutor(Executor):
         for uid in uids:
             _outs.append(self._outputs[uid])
 
-        outs = {}
-        for out, uid in zip(ray.get(_outs), uids):
-            outs[uid] = out
+        outputs = {}
+        _serialized_outputs_ = ray.get(_outs)
 
-        return outs
+        d_outputs = []
+        for out in _serialized_outputs_:
+            d_out = Base.from_json(out)
+            d_outputs.append(d_out)
+
+        for out, uid in zip(d_outputs, uids):
+            outputs[uid] = out.outputs
+
+        return outputs
+
+    def get_states(self, uids):
+        """Fetch outputs of executed tractions."""
+        _outs = []
+        for uid in uids:
+            _outs.append(self._outputs[uid])
+
+        states = {}
+        _serialized_outputs_ = ray.get(_outs)
+        d_states = []
+        for out in _serialized_outputs_:
+            d_out = Base.from_json(out)
+            d_states.append(d_out)
+
+        for out, uid in zip(d_states, uids):
+            states[uid] = (out.state, out.stats)
+
+        return states
 
     def clear_output(self, uid):
         """Clear stored outputs."""

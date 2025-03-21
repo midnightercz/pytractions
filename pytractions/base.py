@@ -1,5 +1,3 @@
-import abc
-import datetime
 import hashlib
 import inspect
 import json
@@ -27,7 +25,6 @@ from typing import (
     Generic,
     Tuple,
     Type,
-    Callable,
     _UnionGenericAlias,
     get_args,
     Literal,
@@ -36,14 +33,12 @@ from typing import (
 import dataclasses
 
 from .exc import (
-    TractionFailedError,
-    NoDefaultError,
     JSONIncompatibleError,
     NoAnnotationError,
     SerializationError,
     ItemSerializationError,
 )
-from .utils import ANY, doc, isodate_now  # noqa: F401
+from .utils import ANY  # noqa: F401
 from .types import (
     TypeNode,
     JSON_COMPATIBLE,
@@ -57,6 +52,7 @@ from .base_field import Field
 from .abase import ABase, ATList, ATDict
 from .traversal import Tree, ItemHandler
 from .validators import LiteralValidator
+from .observer import Observer
 
 
 LOGGER = logging.getLogger(__name__)
@@ -138,14 +134,9 @@ def _hash(obj):
 
 
 def extract_from_optional(opt):
-    if (
-        get_origin(opt) == Union
-        and len(get_args(opt)) == 2
-        and get_args(opt)[-1] is type(None)
-    ):
+    if get_origin(opt) == Union and len(get_args(opt)) == 2 and get_args(opt)[-1] is type(None):
         return get_args(opt)[0]
     return opt
-
 
 
 type_to_default_type = {
@@ -335,6 +326,10 @@ class BaseMeta(type):
                     # Skip if default is already set
                     if f in defaults:
                         continue
+                    # Skip if parameter is defined again in child class but has no default, in that case we don't want to use default from base
+                    if f in attrs.get("__annotations__", {}) and f not in defaults:
+                        continue
+
                     if base.__dataclass_fields__[f].default is not dataclasses.MISSING:
                         defaults[f] = Field(
                             default=base.__dataclass_fields__[f].default,
@@ -601,10 +596,19 @@ class PortItemHandlerContent(ItemHandler):
                 item.result[item.parent_index][f] = item.data._val
             elif isinstance(item.data, (int, float, str, bool, type(None))):
                 item.result[item.parent_index][f] = item.data
-            else:
+            elif TypeNode.from_type(type(item.data)) == TypeNode.from_type(Port[ANY]):
+                # data is wrapped in Port[]
                 tree.add_to_process(
                     data=getattr(item.data, f),
                     data_type=item.data._fields[f],
+                    parent_index=f,
+                    result=item.result[item.parent_index],
+                )
+            else:
+                # data is not wrapped in Port[]
+                tree.add_to_process(
+                    data=item.data,
+                    data_type=item.data,
                     parent_index=f,
                     result=item.result[item.parent_index],
                 )
@@ -617,6 +621,8 @@ class BaseItemHandler(ItemHandler):
         """Match Base subclasses."""
         if TypeNode.from_type(Union[int, str, bool, float, type(None)]) != TypeNode.from_type(
             item.data_type
+        ) or TypeNode.from_type(Union[int, str, bool, float, type(None)]) != TypeNode.from_type(
+            type(item.data)
         ):
             return True
 
@@ -678,6 +684,28 @@ class ToJsonTree(Tree):
     ]
 
 
+class BaseObserver:
+    """Base observer class."""
+
+    def __init__(self):
+        """Initialize observer."""
+        self._observers = {}
+
+    def _observed(self, attr, value, extra=None):
+        """Observed method."""
+        #print("OBSERVED", attr, value)
+        if not hasattr(self, "_observers"):
+            # print("NO Observers")
+            return
+        #print("--->", self.__class__, "Observers", self._observers)
+        for _, (_observer, path) in list(self._observers.items()):
+            if path and attr:
+                _observer._observed(path + "." + str(attr), value, extra=extra)
+            elif path:
+                _observer._observed(path, value, extra=extra)
+            else:
+                _observer._observed(attr, value, extra=extra)
+
 class ContentToJsonTree(Tree):
     """Tree for content serialization."""
 
@@ -689,6 +717,10 @@ class ContentToJsonTree(Tree):
         PortItemHandlerContent(),
         BaseItemHandlerContent(),
     ]
+
+
+class NoAttr:
+    pass
 
 
 class Base(ABase, metaclass=BaseMeta):
@@ -709,7 +741,19 @@ class Base(ABase, metaclass=BaseMeta):
     # used to store original class when creating generic subclass
     _orig_cls: Optional[Type[Any]] = Field(default=None, init=False)
 
+    _observer: BaseObserver = Field(default_factory=BaseObserver, init=False, repr=False, compare=False)
+
     _KW_ONLY: ClassVar[bool] = True
+
+    def _extra_observed_events(self, attr, value, extra):
+        """Extra observed events."""
+        return extra
+
+    def _observed(self, attr, value):
+        if not hasattr(self, "_observer"):
+            #print(self, "NO Observers")
+            return
+        self._observer._observed(attr, value, extra=self._extra_observed_events(attr, value, {}))
 
     @property
     def _properties(self):
@@ -723,8 +767,28 @@ class Base(ABase, metaclass=BaseMeta):
         """Set attribute without any type validation."""
         return super().__setattr__(name, value)
 
+    def _update_observers(self, attr, value, path_attr=None):
+        if not hasattr(self, "_observer"):
+            #print("NO OBSERVER SELF")
+            return
+
+        #print("->>>>> UPDATING OBSERVERS", attr, value)
+        existing = getattr(self, attr, NoAttr)
+        if isinstance(existing, Base):
+            if hasattr(existing, "_observer"):
+                if id(self._observer) in existing._observer._observers:
+                    del existing._observer._observers[id(self._observer)]
+
+        if isinstance(value, Base):
+            if not hasattr(value, "_observer"):
+                #print("NO OBSERVER", attr, value)
+                return
+            if id(self._observer) not in value._observer._observers:
+                value._observer._observers[id(self._observer)] = (self._observer, path_attr if path_attr is not None else attr)
+
     def _validate_setattr_(self, name: str, value: Any) -> None:
         """Set attribute with type validation."""
+        #print("BASE VALIDATE SETATTR", name, value)
         if not name.startswith("_"):  # do not check for private attrs
 
             if (
@@ -754,6 +818,11 @@ class Base(ABase, metaclass=BaseMeta):
             else:
                 getattr(self.__class__, name).setter(value)
                 return
+
+        if not name.startswith("_"):  # do not observe private attributes
+            self._update_observers(name, value)
+            # print("BASE OBSERVED", name)
+            self._observed(name, value)
 
         return super().__setattr__(name, value)
 
@@ -1379,6 +1448,15 @@ class Base(ABase, metaclass=BaseMeta):
         return True
 
 
+class _REMOVED(Base):
+    """Class used to indicate that field was removed from the list or dict."""
+
+    pass
+
+
+REMOVED = _REMOVED()
+
+
 T = TypeVar("T")
 TK = TypeVar("TK")
 TV = TypeVar("TV")
@@ -1410,6 +1488,7 @@ class TList(Base, ATList, Generic[T]):
                     f"Cannot assign item {type(item)} to list of type {self._params[0]}"
                 )
         list.__init__(self._list, iterable)
+        self._observer = BaseObserver()
 
     def __add__(self, value):
         """Return two lists joined together."""
@@ -1425,6 +1504,7 @@ class TList(Base, ATList, Generic[T]):
 
     def __delitem__(self, x):
         """Remove item from the list."""
+        self._observed(x, None)
         return self._list.__delitem__(x)
 
     def __getitem__(self, x):
@@ -1448,12 +1528,15 @@ class TList(Base, ATList, Generic[T]):
         """Set item to the list."""
         if TypeNode.from_type(type(value)) != TypeNode.from_type(self._params[0]):
             raise TypeError(f"Cannot assign item {type(value)} to list of type {self._params[0]}")
+        self._update_observers(f'[{key}]', value)
+        self._observed(f'["{key}"]', value)
         self._list.__setitem__(key, value)
 
     def append(self, obj: T) -> None:
         """Append item to the end of the list."""
         if TypeNode.from_type(type(obj)) != TypeNode.from_type(self._params[0]):
             raise TypeError(f"Cannot assign item {type(obj)} to list of type {self._params[0]}")
+        self._observed(f"[{len(self._list)}]", obj)
         self._list.append(obj)
 
     def clear(self):
@@ -1496,6 +1579,7 @@ class TList(Base, ATList, Generic[T]):
 
     def remove(self, value):
         """Remove item from the list."""
+        self._observed(value, REMOVED)
         return self._list.remove(value)
 
     def reverse(self):
@@ -1600,7 +1684,10 @@ class TList(Base, ATList, Generic[T]):
             elif issubclass(type_, enum.Enum):
                 parent_args[parent_key] = type_(data)
             else:
-                parent_args[parent_key] = data
+                if type_ is type(None):
+                    parent_args[parent_key] = None
+                else:
+                    parent_args[parent_key] = data
 
         for parent_args, parent_key, type_, type_args in post_order:
             init_fields = {}
@@ -1655,6 +1742,7 @@ class TDict(Base, ATDict, Generic[TK, TV]):
                 f"Cannot remove key {key} of type {type(key)} in dict of type {Dict[_tk, _tv]}"
             )
         self._dict.__delitem__(key)
+        self._observed(f'["{key}"]', REMOVED)
 
     def __getitem__(self, key: TK) -> TV:
         """Return item from the dict for given key."""
@@ -1671,6 +1759,7 @@ class TDict(Base, ATDict, Generic[TK, TV]):
         self._dict = {}
         for k, v in d.items():
             self.__setitem__(k, v)
+        self._observer = BaseObserver()
 
     def __iter__(self):
         """Iterate over the dict."""
@@ -1696,6 +1785,8 @@ class TDict(Base, ATDict, Generic[TK, TV]):
             raise TypeError(
                 f"Cannot set item {v} of type {type(v)} in dict of type {Dict[_tk, _tv]}"
             )
+        self._update_observers(f'["{k}"]', v)
+        self._observed(f'["{k}"]', v)
         self._dict.__setitem__(k, v)
 
     def clear(self):
@@ -1745,6 +1836,7 @@ class TDict(Base, ATDict, Generic[TK, TV]):
             raise TypeError(
                 f"Cannot pop item by key {k} of type {type(k)} in dict of type {Dict[_tk, _tv]}"
             )
+        self._observed(f'["{k}"]', REMOVED)
         return self._dict.pop(k, d)
 
     def popitem(self) -> Tuple[TK, TV]:
@@ -1765,6 +1857,7 @@ class TDict(Base, ATDict, Generic[TK, TV]):
                 f"Cannot setdefault '{default}' of type {type(default)} in dict of "
                 f"type {Dict[_tk, _tv]}"
             )
+        self._observed(f'["{key}"]', default)
         return self._dict.setdefault(key, default)
 
     def update(self, other):
@@ -1878,7 +1971,10 @@ class TDict(Base, ATDict, Generic[TK, TV]):
             elif issubclass(type_, enum.Enum):
                 parent_args[parent_key] = type_(data)
             else:
-                parent_args[parent_key] = data
+                if type_ is type(None):
+                    parent_args[parent_key] = None
+                else:
+                    parent_args[parent_key] = data
 
         for parent_args, parent_key, type_, type_args in post_order:
             init_fields = {}
@@ -1956,6 +2052,10 @@ class STMDSingleIn(Base, Generic[T]):
                         f"Cannot set attribute {self.__class__}.{name} to type {value}({vtype}),"
                         f"expected {self._fields[name]}"
                     )
+
+                self._update_observers(name, value, path_attr="")
+                # print("PORT OBSERVED", name)
+                self._observed(None, value)
                 object.__setattr__(self, name, value)
                 # getattr(self.__class__, name).setter(value)
                 return
@@ -2107,658 +2207,3 @@ class MultiArg(Base, metaclass=MultiArgMeta):
     """Multiarg class."""
 
     pass
-
-
-class TractionMeta(BaseMeta):
-    """Traction metaclass."""
-
-    @classmethod
-    def _attribute_check(cls, attr, type_, all_attrs):
-        if attr not in (
-            "uid",
-            "state",
-            "skip",
-            "skip_reason",
-            "errors",
-            "stats",
-            "details",
-        ):
-            """Check attribute on class creation."""
-            type_type_node = TypeNode.from_type(type_, subclass_check=False)
-            # if attr.startswith("i_"):
-            #     if (
-            #         type_type_node == ANY_OUT_TYPE_NODE
-            #         or type_type_node == ANY_ARG_TYPE_NODE
-            #         or type_type_node == ANY_RES_TYPE_NODE
-            #     ):
-            #         raise TypeError(f"Attribute {attr} has to be type In[ANY], but is {type_}")
-            # elif attr.startswith("o_"):
-            #     if (
-            #         type_type_node == ANY_IN_TYPE_NODE
-            #         or type_type_node == ANY_ARG_TYPE_NODE
-            #         or type_type_node == ANY_RES_TYPE_NODE
-            #     ):
-            #         raise TypeError(f"Attribute {attr} has to be type Out[ANY], but is {type_}")
-            # elif attr.startswith("a_"):
-            #     if (
-            #         type_type_node == ANY_IN_TYPE_NODE
-            #         or type_type_node == ANY_OUT_TYPE_NODE
-            #         or type_type_node == ANY_RES_TYPE_NODE
-            #     ):
-            #         raise TypeError(
-            #             f"Attribute {attr} has to be type Arg[ANY] or MultiArg, but is {type_}"
-            #         )
-            # elif attr.startswith("r_"):
-            #     if (
-            #         type_type_node == ANY_IN_TYPE_NODE
-            #         or type_type_node == ANY_OUT_TYPE_NODE
-            #         or type_type_node == ANY_ARG_TYPE_NODE
-            #     ):
-            #         raise TypeError(f"Attribute {attr} has to be type Res[ANY], but is {type_}")
-            if attr == "d_":
-                if type_type_node != TypeNode.from_type(str):
-                    raise TypeError(f"Attribute {attr} has to be type str, but is {type_}")
-            elif attr.startswith("d_"):
-                if type_type_node != TypeNode.from_type(str):
-                    raise TypeError(f"Attribute {attr} has to be type str, but is {type_}")
-                if attr != "d_" and attr.replace("d_", "", 1) not in all_attrs["__annotations__"]:
-                    raise TypeError(
-                        f"Attribute {attr.replace('d_', '', 1)} is not defined for description "
-                        f"{attr}: {all_attrs}"
-                    )
-            elif not (
-                attr.startswith("i_")
-                or attr.startswith("o_")
-                or attr.startswith("a_")
-                or attr.startswith("r_")
-            ):
-                raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or d_")
-
-            if (
-                not attr.startswith("i_")
-                and not attr.startswith("a_")
-                and not attr.startswith("r_")
-                and not attr.startswith("o_")
-                and not attr.startswith("d_")
-            ):
-                if not isinstance(type_, Field):
-                    raise TypeError(f"Attribute {attr} has start with i_, o_, a_, r_ or d_")
-
-    def __new__(cls, name, bases, attrs):
-        """Create new traction class."""
-        annotations = attrs.get("__annotations__", {})
-        # check if all attrs are in supported types
-        for attr, type_ in annotations.items():
-            # skip private attributes
-            if attr.startswith("_"):
-                continue
-            cls._attribute_check(attr, type_, attrs)
-
-        attrs = cls._attributes_preparation(name, attrs, bases)
-
-        # record fields to private attribute
-        attrs["_attrs"] = attrs
-        attrs["_fields"] = {
-            k: v for k, v in attrs.get("__annotations__", {}).items() if not k.startswith("_")
-        }
-
-        for f, ftype in list(attrs["_fields"].items()):
-            # Do not include outputs in init
-            if f.startswith("a_") or f.startswith("r_"):
-                if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Port[ANY]):
-                    attrs["_fields"][f] = Port[ftype]
-
-            if f.startswith("i_"):
-                if TypeNode.from_type(ftype) != TypeNode.from_type(
-                    STMDSingleIn[ANY]
-                ) and TypeNode.from_type(ftype) != TypeNode.from_type(Port[ANY]):
-                    attrs["_fields"][f] = Port[ftype]
-                if f.startswith("i_") and f not in attrs:
-                    attrs[f] = Field(default_factory=NullPort[attrs["_fields"][f]._params])
-
-            if f.startswith("o_"):
-                if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(Port[ANY]):
-                    attrs["_fields"][f] = Port[ftype]
-
-                ftype_final = ftype._params[0] if is_wrapped(ftype) else ftype
-                print("--", f, ftype_final)
-
-                if inspect.isclass(ftype_final) and issubclass(ftype_final, Base):
-                    stack = [(ftype_final, str(ftype_final))]
-                    while stack:
-                        ftype, path = stack.pop(0)
-                        for ff, fft in ftype._fields.items():
-                            fft = extract_from_optional(fft)
-                            df = ftype.__dataclass_fields__[ff]
-                            if (
-                                df.default is dataclasses.MISSING
-                                and df.default_factory is dataclasses.MISSING
-                            ):
-                                raise NoDefaultError(
-                                    f"Cannot use {path} for output, as it "
-                                    f"doesn't have default value for field '{ff}'"
-                                )
-                            if issubclass(fft, Base):
-                                stack.append((fft, path + "." + ff))
-
-                if f not in attrs:
-                    attrs[f] = Field(
-                        init=False,
-                        default_factory=DefaultOut(
-                            type_=ftype_final, params=(attrs["_fields"][f]._params)
-                        ),
-                    )
-
-        ret = super().__new__(cls, name, bases, attrs)
-
-        return ret
-
-
-class TractionStats(Base):
-    """Model class for traction stats."""
-
-    started: str = ""
-    finished: str = ""
-    skipped: bool = False
-
-
-class TractionState(str, enum.Enum):
-    """Enum-like class to store step state."""
-
-    READY = "ready"
-    PREP = "prep"
-    RUNNING = "running"
-    FINISHED = "finished"
-    FAILED = "failed"
-    ERROR = "error"
-
-
-OnUpdateCallable = Callable[[_Traction], None]
-OnErrorCallable = Callable[[_Traction], None]
-
-
-class Traction(Base, metaclass=TractionMeta):
-    """Class represeting basic processing element.
-
-    Traction works with data provided on defined inputs, using provided resources and arguments and
-    store output data to defined outputs.
-
-    Traction subclasses can have defined only 5 type of user attributes:
-    inputs
-        every input name needs to start with ``i_``
-    outputs
-        every output name needs to start with ``o_``
-    resources
-        every resource name needs to start with ``r_``
-    arguments
-        every argument name needs to start with ``a_``
-    documentation
-        every documentation argument needs to start with ``d_``, also rest of the
-        name must be already defined field. For example `i_in1` can be described in
-       ``d_i_in1``. With only ``d_`` is used as the field name, it should be used as
-       description of whole traction.
-
-    example of Traction subclass
-
-    .. code-block::
-
-        class AVG(Traction):
-            a_len: Arg[int]
-            a_timeframe: Arg[str]
-            r_ticker_client: Res[TickerClient]
-            o_avg: Out[float]
-
-            d_a_len: str = "Size of the window for calculation."
-            d_a_timeframe: str = "Timeframe which used for calculation"
-            d_r_ticker_client: str = "Ticker client which provides market data"
-            d_o_avg: str = "Average value of fetched candles for selected timeframe and window"
-            d_: str = "Traction used to fetch last spx500 candles and calculates average
-                       of their close values"
-
-            def run(self, on_update: Optional[OnUpdateCallable]=None):
-                ret = self.r_ticker_client.r.fetch_spx_data(self.a_timeframe.a)
-                closes = [x['close'] for x in ret[:self.a_len.a]]
-                self.o_avg.data = sum(closes)/self.a_len.a
-
-        tc = TickerClient(...)
-        avg = AVG(uid='spx-avg',
-                  a_len=Arg[int](a=10),
-                  a_timeframe=Arg[str](a='1H'),
-                  r_ticker_client=Res[TickerClient](r=tc)
-        )
-        avg.run()
-        print(avg.o_avg.data)
-
-    In the following example, output is set to Out member data. However it's also
-    possible to set output like this:
-
-    .. code-block::
-
-        self.o_avg = Out[float](data=1.0)
-
-    Traction class will internally set only data of the output, reference to the output
-    itself will not be overwritten
-    """
-
-    _TYPE: ClassVar[str] = "TRACTION"
-    _CUSTOM_TYPE_TO_JSON: ClassVar[bool] = False
-    _CUSTOM_TO_JSON: ClassVar[bool] = True
-
-    uid: str
-    "Unique identifier of the current traction."
-    state: TractionState = TractionState.READY
-    "Indicator of current state of the traction."
-    skip: bool = False
-    "Flag indicating if execution of the traction was skipped."
-    skip_reason: Optional[str] = ""
-    "Can be se to explain why the execution of the traction was skipped."
-    errors: TList[str] = Field(default_factory=TList[str])
-    """List of errors which occured during the traction execution. Inherited class should add errors
-    here manually"""
-    stats: TractionStats = Field(default_factory=TractionStats)
-    "Collection of traction stats"
-    details: TDict[str, str] = Field(default_factory=TDict[str, str])
-    "List of details of the execution of the Traction."
-    "Inherited class can add details here manually"
-
-    @property
-    def log(self):
-        """Return logger for the traction."""
-        if not hasattr(self, "_log") or not self._log:
-            self._log = logging.getLogger(self.uid)
-        return self._log
-
-    def __post_init__(self):
-        """Adjust class instance after initialization."""
-        self._elementary_outs = {}
-        for f in self._fields:
-            if f.startswith("a_") or f.startswith("r_"):
-                self._no_validate_setattr_("_raw_" + f, super().__getattribute__(f))
-
-            elif f.startswith("o_") or f.startswith("i_"):
-                self._no_validate_setattr_("_raw_" + f, super().__getattribute__(f))
-                if TypeNode.from_type(
-                    super().__getattribute__(f).__class__, subclass_check=True
-                ) == TypeNode.from_type(NullPort[ANY]):
-                    continue
-                if not super().__getattribute__(f)._owner:
-                    super().__getattribute__(f)._name = f
-                    super().__getattribute__(f)._owner = self
-
-    def __getattribute_orig__(self, name: str) -> Any:
-        """Get attribute of the class instance - unmodified version."""
-        return super().__getattribute__(name)
-
-    def __getattribute__(self, name: str) -> Any:
-        """Get attribute of the class instance.
-
-        with special handler for inputs.
-        """
-        if name.startswith("a_"):
-            default_convertor = type_to_default_type.get(type(super().__getattribute__(name).data))
-            return (
-                default_convertor(super().__getattribute__(name).data)
-                if default_convertor
-                else super().__getattribute__(name).data
-            )
-        if name.startswith("r_"):
-            default_convertor = type_to_default_type.get(type(super().__getattribute__(name).data))
-            return (
-                default_convertor(super().__getattribute__(name).data)
-                if default_convertor
-                else super().__getattribute__(name).data
-            )
-        if name.startswith("o_"):
-            default_convertor = type_to_default_type.get(type(super().__getattribute__(name).data))
-            if default_convertor:
-                if name not in self._elementary_outs:
-                    ret = default_convertor(super().__getattribute__(name).data)
-                    self._elementary_outs[name] = ret
-                else:
-                    self._elementary_outs[name]._val = super().__getattribute__(name).data
-                return self._elementary_outs[name]
-            else:
-                return super().__getattribute__(name).data
-
-        if name.startswith("i_"):
-            default_convertor = type_to_default_type.get(type(super().__getattribute__(name).data))
-            if name not in self._fields:
-                _class = super().__getattribute__("__class__")
-                raise AttributeError(f"{_class} doesn't have attribute {name}")
-
-            return (
-                default_convertor(super().__getattribute__(name).data)
-                if default_convertor
-                else super().__getattribute__(name).data
-            )
-
-        return super().__getattribute__(name)
-
-    def _validate_setattr_(self, name: str, value: Any) -> None:
-        """Set attribute to the instance with type validation and inputs handling."""
-        if not name.startswith("_"):  # do not check for private attrs
-            if name not in self._fields and not self._config.allow_extra:
-                raise AttributeError(f"{self.__class__} doesn't have attribute {name}")
-
-        wrapped = True
-        if (
-            name.startswith("i_")
-            or name.startswith("o_")
-            or name.startswith("a_")
-            or name.startswith("r_")
-        ):
-            default_attr = self.__dataclass_fields__[name].default
-            vtype = value.__class__
-            tt1 = TypeNode.from_type(
-                vtype, subclass_check=True, type_aliases=[(type(True), _defaultBool)]
-            )
-            if is_wrapped(vtype):
-                tt2 = TypeNode.from_type(
-                    self._fields[name], type_aliases=[(type(True), _defaultBool)]
-                )
-            else:
-                tt2 = TypeNode.from_type(
-                    self._fields[name]._params[0], type_aliases=[(type(True), _defaultBool)]
-                )
-                # Value is not wrapped in Arg, In, Out or Res
-                wrapped = False
-            if tt1 != tt2:
-                raise TypeError(
-                    f"Cannot set attribute {self.__class__}.{name} to type {vtype}, "
-                    f"expected  {tt2.to_type()}"
-                )
-
-        if name.startswith("i_"):
-            # Need to check with hasattr first to make sure inputs can be initialized
-            if hasattr(self, name):
-                # Allow overwrite default input values
-                if super().__getattribute__(name) == default_attr or TypeNode.from_type(
-                    super().__getattribute__(name)
-                ) == TypeNode.from_type(NullPort[ANY]):
-                    if wrapped:
-                        self._no_validate_setattr_(name, value)
-                        self._no_validate_setattr_("_raw_" + name, value)
-                    else:
-                        wrapped_val = self._fields[name](data=value)
-                        self._no_validate_setattr_(name, wrapped_val)
-                        self._no_validate_setattr_("_raw_" + name, wrapped_val)
-                    return
-                connected = (
-                    TypeNode.from_type(type(getattr(self, "_raw_" + name)), subclass_check=False)
-                    != TypeNode.from_type(NullPort[ANY])
-                    and TypeNode.from_type(
-                        type(getattr(self, "_raw_" + name)), subclass_check=False
-                    )
-                    != Port[ANY]
-                    and TypeNode.from_type(
-                        type(getattr(self, "_raw_" + name)), subclass_check=False
-                    )
-                    != TypeNode.from_type(NullPort[ANY])
-                )
-                if connected:
-                    raise AttributeError(f"Input {name} is already connected")
-
-            # in the case input is not set, initialize it
-            elif not hasattr(self, name):
-                if wrapped:
-                    self._no_validate_setattr_(name, value)
-                    self._no_validate_setattr_("_raw_" + name, value)
-                    if not object.__getattribute__(value, "_ref"):
-                        super().__getattribute__(name)._ref = value
-                else:
-                    self._no_validate_setattr_(name, self._fields[name](data=value))
-            return
-
-        elif name.startswith("o_"):
-            if not hasattr(self, name):
-                # output is set for the first time
-                if wrapped:
-                    self._no_validate_setattr_(name, self._fields[name](data=value.data))
-                else:
-                    self._no_validate_setattr_(name, self._fields[name](data=value))
-            if not self.__getattribute_orig__(name)._owner:
-                self.__getattribute_orig__(name)._owner = self
-                self.__getattribute_orig__(name)._name = name
-            # Do not overwrite whole output container, rather just copy update data
-            if wrapped:
-                self.__getattribute_orig__(name).data = value.data
-            else:
-                self.__getattribute_orig__(name).data = value
-            return
-        elif name.startswith("a_"):
-            if hasattr(self, name):
-                # Allow overwrite default input values
-                if super().__getattribute__(name) == default_attr or TypeNode.from_type(
-                    super().__getattribute__(name)
-                ) == TypeNode.from_type(NullPort[ANY]):
-                    if wrapped:
-                        self._no_validate_setattr_(name, value)
-                        self._no_validate_setattr_("_raw_" + name, value)
-                    else:
-                        wrapped_val = self._fields[name](data=value)
-                        self._no_validate_setattr_(name, wrapped_val)
-                        self._no_validate_setattr_("_raw_" + name, wrapped_val)
-                    return
-            # in the case input is not set, initialize it
-            elif not hasattr(self, name):
-                if wrapped:
-                    self._no_validate_setattr_(name, value)
-                    self._no_validate_setattr_("_raw_" + name, value)
-                else:
-                    self._no_validate_setattr_(name, self._fields[name](data=value))
-            return
-        elif name.startswith("r_"):
-            if not hasattr(self, name):
-                if wrapped:
-                    self._no_validate_setattr_(name, value)
-                else:
-                    self._no_validate_setattr_(name, self._fields[name](data=value))
-            else:
-                if super().__getattribute__(name) == default_attr:
-                    if wrapped:
-                        self._no_validate_setattr_(name, value)
-                    else:
-                        self._no_validate_setattr_(name, self._fields[name](data=value))
-                else:
-                    if wrapped:
-                        if TypeNode.from_type(vtype, subclass_check=True) == TypeNode.from_type(
-                            NullPort[ANY]
-                        ):
-                            self._no_validate_setattr_(name, value)
-                        else:
-                            self.__getattribute_orig__(name).data = value.data
-                    else:
-                        self.__getattribute_orig__(name).data = value
-            return
-
-        super().__setattr__(name, value)
-
-    def add_details(self, detail):
-        """Add details about traction run."""
-        self.details[datetime.datetime.utcnow().isoformat()] = detail
-
-    @property
-    def fullname(self) -> str:
-        """Full name of traction instance. It's composition of class name and instance uid."""
-        return f"{self.__class__.__name__}[{self.uid}]"
-
-    def to_json(self) -> Dict[str, Any]:
-        """Serialize class instance to json representation."""
-        ret = {"$data": {}}
-        for f in self._fields:
-            if f.startswith("i_"):
-                if (
-                    hasattr(getattr(self, "_raw_" + f), "_owner")
-                    and getattr(self, "_raw_" + f)._owner
-                    and getattr(self, "_raw_" + f)._owner != self
-                ):
-                    ret["$data"][f] = (
-                        getattr(self, "_raw_" + f)._owner.fullname
-                        + "#"
-                        + getattr(self, "_raw_" + f)._name
-                    )
-                else:
-                    i_json = getattr(self, "_raw_" + f).to_json()
-                    ret["$data"][f] = i_json
-            elif f.startswith("o_"):
-                ret["$data"][f] = object.__getattribute__(self, f).to_json()
-            elif f.startswith("a_"):
-                i_json = getattr(self, "_raw_" + f).to_json()
-                ret["$data"][f] = i_json
-            elif f.startswith("r_"):
-                ret["$data"][f] = object.__getattribute__(self, f).to_json()
-            elif isinstance(getattr(self, f), (enum.Enum)):
-                ret["$data"][f] = getattr(self, f).value
-            elif isinstance(getattr(self, f), (int, str, bool, float, type(None))):
-                ret["$data"][f] = getattr(self, f)
-            else:
-                ret["$data"][f] = getattr(self, f).to_json()
-
-        ret["$type"] = TypeNode.from_type(self.__class__).to_json()
-        # ret['$data']["name"] = self.__class__.__name__
-        # ret['$data']["type"] = self._TYPE
-        return ret
-
-    def _getstate_to_json(self) -> Dict[str, Any]:
-        ret = {}
-        for f in self._fields:
-            if isinstance(getattr(self, f), (int, str, bool, float, type(None))):
-                ret[f] = getattr(self, f)
-            else:
-                ret[f] = getattr(self, f).to_json()
-        return ret
-
-    def run(
-        self,
-        on_update: Optional[OnUpdateCallable] = None,
-        on_error: Optional[OnErrorCallable] = None,
-    ) -> "Traction":
-        """Start execution of the Traction.
-
-        * When traction is in `TractionState.READY` it runs the
-        user defined _pre_run method where user can do some
-        preparation before the run itself, potentially set `skip`
-        attribute to True to skip the execution. After that, traction
-        state is set to TractionState.PREP
-
-        * When traction is in TractionState.PREP or TractionState.ERROR, if skip is set to True
-          skipped attribute is set to True, and execution is finished.
-
-        * When skip is not set to True, state is set to TractionState.RUNNING
-          and user defined _run method is executed.
-        If an exception is raised during the execution:
-          * If exception is TractionFailedError, state is set to FAILED. This means
-            traction failed with defined failure and it's not possible to rerun it
-
-          * If unexpected exception is raised, traction state is set to ERROR which is
-            state from which it's possible to rerun the traction.
-
-         At the end of the execution traction stats are updated.
-        """
-        _on_update: OnUpdateCallable = on_update or on_update_empty
-        _on_error: OnErrorCallable = on_error or on_update_empty
-        self._reset_stats()
-        if self.state == TractionState.READY:
-            self.stats.started = isodate_now()
-
-            self.state = TractionState.PREP
-            LOGGER.debug(f"Starting traction {self.fullname} pre_run")
-            self._pre_run()
-            _on_update(self)  # type: ignore
-        try:
-            if self.state not in (TractionState.PREP, TractionState.ERROR):
-                LOGGER.debug(f"Skipping traction {self.fullname} as state is {self.state}")
-                return self
-            if not self.skip:
-                self.state = TractionState.RUNNING
-                _on_update(self)  # type: ignore
-                LOGGER.debug(f"Running traction {self.fullname}")
-                self._run(on_update=_on_update)
-        except TractionFailedError:
-            self.state = TractionState.FAILED
-        except Exception as e:
-            self.state = TractionState.ERROR
-            self.errors.append(str(e))
-            _on_error(self)
-            raise
-        else:
-            self.state = TractionState.FINISHED
-        finally:
-            LOGGER.debug(f"Traction {self.fullname} finished")
-            self._finish_stats()
-            _on_update(self)  # type: ignore
-        return self
-
-    def _pre_run(self) -> None:
-        """Execute code needed before step run.
-
-        In this method, all neccesary preparation of data can be done.
-        It can be also used to determine if step should run or not by setting
-        self.skip to True and providing self.skip_reason string with explanation.
-        """
-        pass
-
-    def _reset_stats(self) -> None:
-        """Reset stats of the traction."""
-        self.stats = TractionStats(
-            started="",
-            finished="",
-            skipped=False,
-        )
-
-    def _finish_stats(self) -> None:
-        self.stats.finished = isodate_now()
-        self.stats.skipped = self.skip
-
-    @abc.abstractmethod
-    def _run(self, on_update: Optional[OnUpdateCallable] = None) -> None:  # pragma: no cover
-        """Run code of the step.
-
-        Method expects raise StepFailedError if step code fails due data error
-        (incorrect configuration or missing/wrong data). That ends with step
-        state set to failed.
-        If error occurs due to uncaught exception in this method, step state
-        will be set to error
-        """
-        raise NotImplementedError
-
-    @classmethod
-    def from_json(cls, json_data, _locals={}) -> "Traction":
-        """Deserialize class instance from json representation."""
-        args = {}
-        outs = {}
-        data = json_data["$data"]
-        type_cls = TypeNode.from_json(json_data["$type"], _locals=_locals).to_type()
-        for f, ftype in cls._fields.items():
-            if f.startswith("i_") and isinstance(data[f], str):
-                continue
-            elif (
-                f.startswith("a_")
-                or f.startswith("i_")
-                or f.startswith("r_")
-                or f in ("errors", "stats", "details")
-            ):
-                if f.startswith("r_"):
-                    args[f] = (
-                        TypeNode.from_json(data[f]["$type"], _locals=_locals)
-                        .to_type()
-                        .from_json(data[f], _locals=_locals)
-                    )
-                else:
-                    args[f] = ftype.from_json(data[f], _locals=_locals)
-            elif f.startswith("i_"):
-                args[f] = ftype.from_json(data[f], _locals=_locals)
-            elif f.startswith("o_"):
-                outs[f] = ftype.from_json(data[f], _locals=_locals)
-            elif f == "tractions":
-                args[f] = TList[Union[Traction, None]].from_json(data[f], _locals=_locals)
-            elif f == "tractions_state":
-                args[f] = TList[TractionState].from_json(data[f], _locals=_locals)
-            elif f == "state":
-                args[f] = TractionState(data[f])
-            else:
-                args[f] = data[f]
-        ret = type_cls(**args)
-        for o, oval in outs.items():
-            setattr(ret, o, oval)
-        return ret

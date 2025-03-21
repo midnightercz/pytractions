@@ -3,15 +3,15 @@ from typing import Type, Union
 import pytest
 
 from pytractions.base import (
-    Traction,
     TList,
     Port,
     Base,
     STMDSingleIn,
 )
+from pytractions.traction import Traction
 from pytractions.stmd import STMD
 
-from pytractions.executor import ThreadPoolExecutor, ProcessPoolExecutor, LoopExecutor
+from pytractions.executor import ThreadPoolExecutor, ProcessPoolExecutor, LoopExecutor, RayExecutor
 
 from pytractions.tractor import Tractor
 
@@ -36,7 +36,7 @@ class EmptyTraction(Traction):
     a_arg: Port[int]
     r_res: Port[NOPResource]
 
-    def _run(self, on_update) -> None:  # pragma: no cover
+    def _run(self) -> None:  # pragma: no cover
         if not self.i_input.data:
             print(self.uid, "DATA", self.i_input.data)
         if not self.i_coeficient.data:
@@ -51,7 +51,7 @@ class Double(Traction):
     i_coeficient: Port[float]
     o_output: Port[float]
 
-    def _run(self, on_update) -> None:  # pragma: no cover
+    def _run(self) -> None:  # pragma: no cover
         if not self.i_input:
             print(self.uid, "DATA", self.i_input)
         if not self.i_coeficient:
@@ -77,7 +77,7 @@ class Half(Traction):
     i_coeficient: Port[float]
     o_output: Port[float]
 
-    def _run(self, on_update) -> None:  # pragma: no cover
+    def _run(self) -> None:  # pragma: no cover
         if not self.i_input:
             print(self.uid, "DATA", self.i_input)
         if not self.i_coeficient:
@@ -195,7 +195,7 @@ class G_TTest1(Traction):
     i_in1: Port[Union[float, int]]
     a_multiplier: Port[float]
 
-    def _run(self, on_update) -> None:  # pragma: no cover
+    def _run(self) -> None:  # pragma: no cover
         self.o_out1 = self.i_in1 * self.a_multiplier
 
 
@@ -211,7 +211,7 @@ class G_TTest2(Traction):
     i_in1: Port[Complex]
     a_multiplier: Port[float]
 
-    def _run(self, on_update) -> None:  # pragma: no cover
+    def _run(self) -> None:  # pragma: no cover
         self.o_out1 = self.i_in1
 
 
@@ -356,7 +356,7 @@ def test_stmd_processes(fixture_isodate_now) -> None:
     assert stmd1.o_out1[4] == 50.0
 
 
-def test_wrap_stmd(fixture_isodate_now) -> None:
+def test_wrap_stmd_threadpool(fixture_isodate_now) -> None:
 
     stmd_in1 = Port[TList[float]](
         data=TList[float](
@@ -375,6 +375,68 @@ def test_wrap_stmd(fixture_isodate_now) -> None:
         uid="tt1",
         a_executor=Port[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]](
             data=thread_pool_executor
+        ),
+        a_multiplier=Port[float](data=10.0),
+        i_in1=stmd_in1,
+    )
+    stmd1.run()
+    assert stmd1.o_out1[0] == 10.0
+    assert stmd1.o_out1[1] == 20.0
+    assert stmd1.o_out1[2] == 30.0
+    assert stmd1.o_out1[3] == 40.0
+    assert stmd1.o_out1[4] == 50.0
+
+
+def test_wrap_stmd_processpool(fixture_isodate_now) -> None:
+
+    stmd_in1 = Port[TList[float]](
+        data=TList[float](
+            [
+                1.0,
+                2.0,
+                3.0,
+                4.0,
+                5.0,
+            ]
+        )
+    )
+    process_pool_executor = ProcessPoolExecutor(pool_size=1)
+
+    stmd1 = STMD.wrap(G_TTest1)(
+        uid="tt1",
+        a_executor=Port[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]](
+            data=process_pool_executor
+        ),
+        a_multiplier=Port[float](data=10.0),
+        i_in1=stmd_in1,
+    )
+    stmd1.run()
+    assert stmd1.o_out1[0] == 10.0
+    assert stmd1.o_out1[1] == 20.0
+    assert stmd1.o_out1[2] == 30.0
+    assert stmd1.o_out1[3] == 40.0
+    assert stmd1.o_out1[4] == 50.0
+
+
+def test_wrap_stmd_ray(fixture_isodate_now) -> None:
+
+    stmd_in1 = Port[TList[float]](
+        data=TList[float](
+            [
+                1.0,
+                2.0,
+                3.0,
+                4.0,
+                5.0,
+            ]
+        )
+    )
+    ray_executor = RayExecutor(pool_size=1)
+
+    stmd1 = STMD.wrap(G_TTest1)(
+        uid="tt1",
+        a_executor=Port[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor, RayExecutor]](
+            data=ray_executor
         ),
         a_multiplier=Port[float](data=10.0),
         i_in1=stmd_in1,

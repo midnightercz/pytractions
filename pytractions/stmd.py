@@ -12,20 +12,16 @@ from .base import (
     NullPort,
     DefaultOut,
     STMDSingleIn,
-    TractionState,
-    TractionMeta,
     TList,
     TDict,
-    Traction,
-    TractionStats,
-    on_update_empty,
-    OnUpdateCallable,
     _defaultNone,
     is_wrapped,
 )
+from .traction import Traction, TractionMeta, TractionState, TractionStats
 from .executor import ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor, RayExecutor
 from .types import TypeNode
 from .utils import isodate_now  # noqa: F401
+from .stmd_utils import _init_traction
 
 
 LOGGER = logging.getLogger(__name__)
@@ -106,7 +102,7 @@ class STMDMeta(TractionMeta):
                 )
 
         if "_traction" not in attrs:
-            raise ValueError("Missing _traction: Type[<Traction>] = <Traction> definition")
+            raise ValueError(f"{name}: Missing _traction: Type[<Traction>] = <Traction> definition")
 
         # record fields to private attribute
         attrs["_attrs"] = attrs
@@ -236,8 +232,20 @@ class STMD(Traction, metaclass=STMDMeta):
         cls._wrap_cache[kwds["__qualname__"]] = ret
         return ret
 
-    def _prep_tractions(self, first_in, outputs):
+    def _prep_tractions(self, first_in, args, inputs, resources, outputs):
         """Prepare tractions for the run."""
+
+        self.tractions = TList[Union[Traction, None]]([])
+        for x in range(len(first_in)):
+            uid = "%s:%d" % (self.uid, x)
+            self.tractions.append(
+                _init_traction(self._traction,
+                               inputs[x],
+                               resources,
+                               args,
+                               x, uid, self._observer)
+            )
+
         if self.state == TractionState.READY:
             self.tractions_state = TList[TractionState]([])
             self.tractions_state.extend(TList[TractionState]([TractionState.READY] * len(first_in)))
@@ -249,12 +257,8 @@ class STMD(Traction, metaclass=STMDMeta):
                 for i in range(len(first_in)):
                     getattr(self, "_raw_" + o).data.append(o_type())
 
-    def run(
-        self,
-        on_update: Optional[OnUpdateCallable] = None,
-    ) -> "STMD":
+    def run(self) -> "STMD":
         """Run the STMD class."""
-        _on_update: OnUpdateCallable = on_update or on_update_empty
 
         if self.state not in (TractionState.READY, TractionState.ERROR):
             return self
@@ -266,9 +270,15 @@ class STMD(Traction, metaclass=STMDMeta):
         first_in_field = None
         for f, ftype in self._fields.items():
             if f.startswith("i_"):
-                if TypeNode.from_type(ftype, subclass_check=False) == TypeNode.from_type(
-                    Port[ANY],
-                ) and not isinstance(getattr(self, f), _defaultNone):
+                # check if input is not STMDSingleIn type and if it's not None or is NullPort
+                # if so, mark it as first input which we can iterate over.
+                if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(
+                    STMDSingleIn[ANY], subclass_check=False
+                ) and (
+                        not isinstance(getattr(self, f), _defaultNone)
+                        or TypeNode.from_type(type(getattr(self, "_raw_"+f)), subclass_check=False) ==
+                           TypeNode.from_type(NullPort[ANY], subclass_check=False)
+                ):
                     first_in_field = f
                     break
 
@@ -327,9 +337,8 @@ class STMD(Traction, metaclass=STMDMeta):
             if f.startswith("r_"):
                 resources[f] = getattr(self, f)
 
-        self._prep_tractions(getattr(self, first_in_field), outputs)
+        self._prep_tractions(getattr(self, first_in_field), args, inputs, resources, outputs)
         self.state = TractionState.RUNNING
-        _on_update(self)
 
         self.a_executor.init()
         for i in range(0, len(getattr(self, first_in_field))):
@@ -338,17 +347,26 @@ class STMD(Traction, metaclass=STMDMeta):
                 TractionState.ERROR,
             ):
                 uid = "%s:%d" % (self.uid, i)
-                self.a_executor.execute(
-                    uid, self._traction, inputs[i], args, resources, on_update=_on_update
-                )
+                self.a_executor.execute(i, uid, self._traction, inputs[i], args, resources, self._observer)
 
         uids = ["%s:%d" % (self.uid, i) for i in range(len(getattr(self, first_in_field)))]
+        for uid, (state, stats) in self.a_executor.get_states(uids).items():
+            index = uids.index(uid)
+            self.tractions_state[index] = state
+            self.tractions[index].state = state
+            self.tractions[index].stats = stats
+
         for uid, out in self.a_executor.get_outputs(uids).items():
             index = uids.index(uid)
             for o in out:
                 getattr(self, o)[index] = out[o]
 
-        self.state = TractionState.FINISHED
-        _on_update(self)
+        if any(s in (TractionState.ERROR) for s in self.tractions_state):
+            self.state = TractionState.ERROR
+        elif any(s in (TractionState.FAILED) for s in self.tractions_state):
+            self.state = TractionState.FAILED
+        else:
+            self.state = TractionState.FINISHED
         self._finish_stats()
+        self.stats = self.stats
         return self

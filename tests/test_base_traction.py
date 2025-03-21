@@ -3,7 +3,6 @@ from typing import Union, TypeVar
 import pytest
 
 from pytractions.base import (
-    Traction,
     TList,
     Port,
     Base,
@@ -11,7 +10,7 @@ from pytractions.base import (
     TypeNode,
 )
 
-
+from pytractions.traction import Traction
 from pytractions.tractor import Tractor
 from pytractions.exc import WrongInputMappingError
 
@@ -132,7 +131,7 @@ def test_traction_to_json():
             "state": "ready",
             "stats": {
                 "$data": {"finished": "", "skipped": False, "started": ""},
-                "$type": {"args": [], "type": "TractionStats", "module": "pytractions.base"},
+                "$type": {"args": [], "type": "TractionStats", "module": "pytractions.traction"},
             },
             "uid": "1",
         },
@@ -199,7 +198,7 @@ def test_traction_inlist_to_json():
             "state": "ready",
             "stats": {
                 "$data": {"finished": "", "skipped": False, "started": ""},
-                "$type": {"args": [], "type": "TractionStats", "module": "pytractions.base"},
+                "$type": {"args": [], "type": "TractionStats", "module": "pytractions.traction"},
             },
             "uid": "1",
         },
@@ -241,14 +240,14 @@ def test_traction_chain():
     class TTest1(Traction):
         o_out1: Port[int]
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             self.o_out1 = 20
 
     class TTest2(Traction):
         i_in1: Port[int]
         o_out1: Port[int]
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             print("IN", self.i_in1)
             self.o_out1 = self.i_in1 + 10
 
@@ -265,14 +264,14 @@ def test_traction_chain_in_to_out():
     class TTest1(Traction):
         o_out1: Port[int]
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             self.o_out1 = 20
 
     class TTest2(Traction):
         i_in1: Port[int]
         o_out1: Port[int]
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             self.o_out1 = self.i_in1
 
     t1 = TTest1(uid="1")
@@ -290,14 +289,14 @@ def test_traction_json(fixture_isodate_now):
     class TTest1(Traction):
         o_out1: Port[int]
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             self.o_out1 = 20
 
     class TTest2(Traction):
         i_in1: Port[Union[int, float]]
         o_out1: Port[int]
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             self.o_out1 = self.i_in1 + 10
 
     t1 = TTest1(uid="1")
@@ -343,7 +342,7 @@ def test_traction_json(fixture_isodate_now):
                     "skipped": False,
                     "started": "1990-01-01T00:00:00.00000Z",
                 },
-                "$type": {"args": [], "module": "pytractions.base", "type": "TractionStats"},
+                "$type": {"args": [], "module": "pytractions.traction", "type": "TractionStats"},
             },
             "uid": "1",
         },
@@ -393,7 +392,7 @@ def test_traction_json(fixture_isodate_now):
                     "skipped": False,
                     "started": "1990-01-01T00:00:02.00000Z",
                 },
-                "$type": {"args": [], "module": "pytractions.base", "type": "TractionStats"},
+                "$type": {"args": [], "module": "pytractions.traction", "type": "TractionStats"},
             },
             "uid": "2",
         },
@@ -410,7 +409,7 @@ def test_tractor_members_order() -> None:
         o_out1: Port[float]
         a_multiplier: Port[float]
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             self.o_out1.data = 20 * self.a_multiplier.a
 
     class TTest2(Traction):
@@ -418,7 +417,7 @@ def test_tractor_members_order() -> None:
         o_out1: Port[float]
         a_reducer: Port[float]
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             self.o_out1.data = (self.i_in1.data + 10) / float(self.a_reducer.a)
 
     class TestTractor(Tractor):
@@ -451,7 +450,7 @@ def test_tractor_members_invalid_order() -> None:
         o_out1: Port[float]
         a_multiplier: Port[float]
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             self.o_out1.data = 20 * self.a_multiplier.data
 
     class TTest2(Traction):
@@ -459,7 +458,7 @@ def test_tractor_members_invalid_order() -> None:
         o_out1: Port[float]
         a_reducer: Port[float]
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             self.o_out1.data = (self.i_in1.data + 10) / float(self.a_reducer.data)
 
     with pytest.raises(WrongInputMappingError):
@@ -485,7 +484,7 @@ def test_tractor_run() -> None:
         o_out1: Port[float]
         a_reducer: Port[float]
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             print(self.uid)
             print("I", self.i_in1, "/", "A", self.a_reducer)
             print("ID RAW BEFORE RUN", id(self._raw_o_out1))
@@ -544,7 +543,7 @@ def test_tractor_run_resources() -> None:
         a_reducer: Port[float]
         r_useless_res: Port[UselessResource]
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             useless_value = self.r_useless_res.get_some_value()
             self.o_out1 = (self.i_in1 + useless_value) / float(self.a_reducer)
             print("IN", self.i_in1, "/", "A", self.a_reducer, "/", "U", useless_value)
@@ -590,7 +589,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
         o_out1: Port[float]
         a_multiplier: Port[float]
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             self.o_out1 = 1 * self.a_multiplier
 
     class TTest2(Traction):
@@ -598,7 +597,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
         o_out1: Port[float]
         a_reducer: Port[float]
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             self.o_out1 = (self.i_in1 + 1) / float(self.a_reducer)
 
     class TestTractor(Tractor):
@@ -676,7 +675,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                     "skipped": False,
                     "started": "1990-01-01T00:00:00.00000Z",
                 },
-                "$type": {"args": [], "module": "pytractions.base", "type": "TractionStats"},
+                "$type": {"args": [], "module": "pytractions.traction", "type": "TractionStats"},
             },
             "t_ttest1": {
                 "$data": {
@@ -722,7 +721,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                         "$data": {"finished": "", "skipped": False, "started": ""},
                         "$type": {
                             "args": [],
-                            "module": "pytractions.base",
+                            "module": "pytractions.traction",
                             "type": "TractionStats",
                         },
                     },
@@ -792,7 +791,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                         "$data": {"finished": "", "skipped": False, "started": ""},
                         "$type": {
                             "args": [],
-                            "module": "pytractions.base",
+                            "module": "pytractions.traction",
                             "type": "TractionStats",
                         },
                     },
@@ -806,14 +805,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
             },
             "t_ttest3": {
                 "$data": {
-                    "a_reducer": {
-                        "$data": {"data": 0.0},
-                        "$type": {
-                            "args": [{"args": [], "type": "float", "module": "builtins"}],
-                            "type": "Port",
-                            "module": "pytractions.base",
-                        },
-                    },
+                    "a_reducer": "TTest2[2]#a_reducer",
                     "details": {
                         "$data": {},
                         "$type": {
@@ -862,7 +854,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                         "$data": {"finished": "", "skipped": False, "started": ""},
                         "$type": {
                             "args": [],
-                            "module": "pytractions.base",
+                            "module": "pytractions.traction",
                             "type": "TractionStats",
                         },
                     },
@@ -876,14 +868,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
             },
             "t_ttest4": {
                 "$data": {
-                    "a_reducer": {
-                        "$data": {"data": 0.0},
-                        "$type": {
-                            "args": [{"args": [], "type": "float", "module": "builtins"}],
-                            "type": "Port",
-                            "module": "pytractions.base",
-                        },
-                    },
+                    "a_reducer": "TTest2[2]#a_reducer",
                     "details": {
                         "$data": {},
                         "$type": {
@@ -932,7 +917,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                         "$data": {"finished": "", "skipped": False, "started": ""},
                         "$type": {
                             "args": [],
-                            "module": "pytractions.base",
+                            "module": "pytractions.traction",
                             "type": "TractionStats",
                         },
                     },
@@ -948,14 +933,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                 "$data": {
                     "t_ttest1": {
                         "$data": {
-                            "a_multiplier": {
-                                "$data": {"data": 10.0},
-                                "$type": {
-                                    "args": [{"args": [], "type": "float", "module": "builtins"}],
-                                    "module": "pytractions.base",
-                                    "type": "Port",
-                                },
-                            },
+                            "a_multiplier": "TestTractor[tt1]#a_multiplier",
                             "details": {
                                 "$data": {},
                                 "$type": {
@@ -994,7 +972,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                                 },
                                 "$type": {
                                     "args": [],
-                                    "module": "pytractions.base",
+                                    "module": "pytractions.traction",
                                     "type": "TractionStats",
                                 },
                             },
@@ -1008,14 +986,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                     },
                     "t_ttest2": {
                         "$data": {
-                            "a_reducer": {
-                                "$data": {"data": 2.0},
-                                "$type": {
-                                    "args": [{"args": [], "type": "float", "module": "builtins"}],
-                                    "module": "pytractions.base",
-                                    "type": "Port",
-                                },
-                            },
+                            "a_reducer": "TestTractor[tt1]#a_reducer",
                             "details": {
                                 "$data": {},
                                 "$type": {
@@ -1055,7 +1026,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                                 },
                                 "$type": {
                                     "args": [],
-                                    "module": "pytractions.base",
+                                    "module": "pytractions.traction",
                                     "type": "TractionStats",
                                 },
                             },
@@ -1069,14 +1040,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                     },
                     "t_ttest3": {
                         "$data": {
-                            "a_reducer": {
-                                "$data": {"data": 2.0},
-                                "$type": {
-                                    "args": [{"args": [], "type": "float", "module": "builtins"}],
-                                    "module": "pytractions.base",
-                                    "type": "Port",
-                                },
-                            },
+                            "a_reducer": "TestTractor[tt1]#a_reducer",
                             "details": {
                                 "$data": {},
                                 "$type": {
@@ -1116,7 +1080,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                                 },
                                 "$type": {
                                     "args": [],
-                                    "module": "pytractions.base",
+                                    "module": "pytractions.traction",
                                     "type": "TractionStats",
                                 },
                             },
@@ -1130,14 +1094,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                     },
                     "t_ttest4": {
                         "$data": {
-                            "a_reducer": {
-                                "$data": {"data": 2.0},
-                                "$type": {
-                                    "args": [{"args": [], "type": "float", "module": "builtins"}],
-                                    "module": "pytractions.base",
-                                    "type": "Port",
-                                },
-                            },
+                            "a_reducer": "TestTractor[tt1]#a_reducer",
                             "details": {
                                 "$data": {},
                                 "$type": {
@@ -1177,7 +1134,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                                 },
                                 "$type": {
                                     "args": [],
-                                    "module": "pytractions.base",
+                                    "module": "pytractions.traction",
                                     "type": "TractionStats",
                                 },
                             },
@@ -1193,7 +1150,7 @@ def test_tractor_to_json(fixture_isodate_now) -> None:
                 "$type": {
                     "args": [
                         {"args": [], "type": "str", "module": "builtins"},
-                        {"args": [], "type": "Traction", "module": "pytractions.base"},
+                        {"args": [], "type": "Traction", "module": "pytractions.traction"},
                     ],
                     "module": "pytractions.base",
                     "type": "TDict",
@@ -1219,7 +1176,7 @@ def test_traction_simple_io():
         i_in: int
         o_out: int
 
-        def _run(self, on_update) -> None:  # pragma: no cover
+        def _run(self) -> None:  # pragma: no cover
             self.o_out = self.i_in + 10
 
     t = TTest1(uid="1", i_in=10)
