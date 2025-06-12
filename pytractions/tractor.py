@@ -181,12 +181,12 @@ class TractorMeta(TractionMeta):
                 resources[id(fo)] = f
             if f.startswith("a_"):
                 args[id(fo)] = f
-                if isinstance(fo, MultiArg):
-                    for maf in fo._fields:
-                        mafo = getattr(fo, maf)
-                        margs[id(mafo)] = (f, maf)
-                        if id(mafo) in args:
-                            margs_map[("#", f, maf)] = args[id(mafo)]
+            #     if isinstance(fo, MultiArg):
+            #         for maf in fo._fields:
+            #             mafo = getattr(fo, maf)
+            #             margs[id(mafo)] = (f, maf)
+            #             if id(mafo) in args:
+            #                 margs_map[("#", f, maf)] = args[id(mafo)]
 
         # Process tractions
         for t in attrs["_fields"]:
@@ -277,13 +277,13 @@ class TractorMeta(TractionMeta):
                     elif id(tfo) in margs:
                         args_map[(t, tf)] = margs[id(tfo)]
 
-                    elif TypeNode.from_type(type(tfo), subclass_check=True) == TypeNode.from_type(
-                        MultiArg
-                    ):
-                        for maf, mafo in raw_tfo._fields.items():
-                            if id(mafo) in args:
-                                margs_map[(t, tf, maf)] = args[id(mafo)]
-
+                    # elif TypeNode.from_type(type(tfo), subclass_check=True) == TypeNode.from_type(
+                    #     MultiArg
+                    # ):
+                    #     for maf, mafo in raw_tfo._fields.items():
+                    #         if id(mafo) in args:
+                    #             margs_map[(t, tf, maf)] = args[id(mafo)]
+                    #
                     elif id(raw_tfo) in resources_map or id(raw_tfo) in outputs_map:
                         raise WrongArgMappingError(
                             f"{t}.{tf} is argument and cannot be mapped to "
@@ -389,16 +389,16 @@ class Tractor(Traction, metaclass=TractorMeta):
                         init_fields[ft] = getattr(getattr(self, self_field[0]), self_field[1])
                     else:
                         init_fields[ft] = object.__getattribute__(self, self_field)
-                # handle MultiArg type
-                elif TypeNode.from_type(field.type, subclass_check=True) == TypeNode.from_type(
-                    MultiArg
-                ):
-                    ma_init_fields = {}
-                    for maf, _ in field.type._fields.items():
-                        if (traction_name, ft, maf) in self._margs_map:
-                            self_field = self._margs_map[(traction_name, ft, maf)]
-                            ma_init_fields[maf] = getattr(self, self_field)
-                    init_fields[ft] = field.type(**ma_init_fields)
+                # # handle MultiArg type
+                # elif TypeNode.from_type(field.type, subclass_check=True) == TypeNode.from_type(
+                #     MultiArg
+                # ):
+                #     ma_init_fields = {}
+                #     for maf, _ in field.type._fields.items():
+                #         if (traction_name, ft, maf) in self._margs_map:
+                #             self_field = self._margs_map[(traction_name, ft, maf)]
+                #             ma_init_fields[maf] = getattr(self, self_field)
+                #     init_fields[ft] = field.type(**ma_init_fields)
                 # if argument is not found in arg mapping, use default value
                 elif (traction_name, ft) not in self._args_map:
                     init_fields[ft] = getattr(traction, ft)
@@ -451,13 +451,13 @@ class Tractor(Traction, metaclass=TractorMeta):
                 self._observed(f, out)
                 self._no_validate_setattr_(f, out)
                 self._no_validate_setattr_("_raw_" + f, out)
-            elif f.startswith("a_"):
-                # for MulArgs which are mapped to args, overwrite them
-                fo = getattr(self, f)
-                if isinstance(fo, MultiArg):
-                    for maf in fo._fields:
-                        if ("#", f, maf) in self._margs_map:
-                            setattr(fo, maf, getattr(self, self._margs_map[("#", f, maf)]))
+            # elif f.startswith("a_"):
+            #     # for MulArgs which are mapped to args, overwrite them
+            #     fo = getattr(self, f)
+            #     # if isinstance(fo, MultiArg):
+            #     #     for maf in fo._fields:
+            #     #         if ("#", f, maf) in self._margs_map:
+            #     #             setattr(fo, maf, getattr(self, self._margs_map[("#", f, maf)]))
             elif f.startswith("i_"):
                 self._no_validate_setattr_("_raw_" + f, object.__getattribute__(self, f))
 

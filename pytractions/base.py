@@ -68,11 +68,6 @@ def find_attr(objects, attr_name):
             return getattr(o, attr_name)
 
 
-def on_update_empty(T):
-    """No operation update callback."""
-    pass
-
-
 @dataclasses.dataclass
 class BaseConfig:
     """Base config model class."""
