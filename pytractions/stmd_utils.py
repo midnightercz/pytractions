@@ -1,4 +1,3 @@
-
 def _init_traction(traction_cls, inputs, resources, args, index, uid="0", observer=None):
     """After tractor is created, all tractions needs to be copied.
 

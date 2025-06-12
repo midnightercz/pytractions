@@ -345,15 +345,15 @@ class Traction(Base, metaclass=TractionMeta):
         return super().__getattribute__(name)
 
     def _extra_observed_events(self, attr, value, extra):
-        #print("PATH", attr)
+        # print("PATH", attr)
         if attr in ("state", "stats", "uid"):
-            extra['traction_extra'] = {}
+            extra["traction_extra"] = {}
             if hasattr(self, "uid"):
-                extra['traction_extra']["traction"] = self.fullname
+                extra["traction_extra"]["traction"] = self.fullname
             if hasattr(self, "uid"):
-                extra['traction_extra']['uid'] = self.uid
+                extra["traction_extra"]["uid"] = self.uid
             if hasattr(self, "state"):
-                extra['traction_extra']['state'] = self.state
+                extra["traction_extra"]["state"] = self.state
             if hasattr(self, "stats"):
                 extra["traction_extra"]["stats"] = self.stats.content_to_json()
         return extra

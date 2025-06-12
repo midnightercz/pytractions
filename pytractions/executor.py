@@ -29,17 +29,15 @@ class TractionResult(Base):
 
 def _execute_traction(index, uid, traction_cls, inputs, args, resources, observer):
     """Eexecute traction and return outputs."""
-    traction = _init_traction(traction_cls, inputs, resources, args, index, uid=uid, observer=observer)
+    traction = _init_traction(
+        traction_cls, inputs, resources, args, index, uid=uid, observer=observer
+    )
     traction.run()
     outputs: TDict[str, JSON_COMPATIBLE] = TDict[str, JSON_COMPATIBLE]({})
     for o in traction._fields:
         if o.startswith("o_"):
-            outputs[o] = getattr(traction, o).data
-    return TractionResult(
-        outputs=outputs,
-        state=traction.state,
-        stats=traction.stats
-    )
+            outputs[o] = getattr(traction, "_raw_" + o).data
+    return TractionResult(outputs=outputs, state=traction.state, stats=traction.stats)
 
 
 class ProcessPoolExecutor(Executor):
@@ -136,8 +134,9 @@ class ThreadPoolExecutor(Executor):
 
     def execute(self, index, uid, traction, inputs, args, resources, observer=None):
         """Execute the traction with given inputs args and resources."""
-        res = self._executor.submit(_execute_traction, index, uid,
-                                    traction, inputs, args, resources, observer)
+        res = self._executor.submit(
+            _execute_traction, index, uid, traction, inputs, args, resources, observer
+        )
         self._outputs[res] = uid
         self._outputs_by_uid[uid] = res
 
@@ -225,7 +224,9 @@ class LoopExecutor(Executor):
 @ray.remote
 def _ray_execute_traction(index, uid, traction_cls, inputs, args, resources, observer=None):
     """Eexecute traction and return outputs."""
-    traction = _init_traction(traction_cls, inputs, resources, args, index, uid=uid, observer=observer)
+    traction = _init_traction(
+        traction_cls, inputs, resources, args, index, uid=uid, observer=observer
+    )
     traction.run()
     outputs: TDict[str, JSON_COMPATIBLE] = TDict[str, JSON_COMPATIBLE]({})
     for o in traction._fields:

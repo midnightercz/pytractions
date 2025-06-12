@@ -272,6 +272,7 @@ class BaseMeta(type):
             # other attributes has to be annotated
             if attr not in annotations:
                 raise NoAnnotationError(f"{attr} has to be annotated")
+
         defaults = {}
 
         # check if all attrs are in supported types
@@ -314,6 +315,7 @@ class BaseMeta(type):
 
         # record fields to private attribute
         attrs["_attrs"] = attrs
+        attrs["_child_classes"] = []
         fields = {}
         all_annotations = {}
         for base in bases:
@@ -375,6 +377,11 @@ class BaseMeta(type):
         ret = dataclasses.dataclass(ret, kw_only=attrs.get("_KW_ONLY", True))
 
         cls._replace_literal(ret)
+        for base in bases:
+            if not hasattr(base, "_child_classes"):
+                continue
+            if ret not in base._child_classes:
+                base._child_classes.append(ret)
 
         return ret
 
@@ -693,11 +700,8 @@ class BaseObserver:
 
     def _observed(self, attr, value, extra=None):
         """Observed method."""
-        #print("OBSERVED", attr, value)
         if not hasattr(self, "_observers"):
-            # print("NO Observers")
             return
-        #print("--->", self.__class__, "Observers", self._observers)
         for _, (_observer, path) in list(self._observers.items()):
             if path and attr:
                 _observer._observed(path + "." + str(attr), value, extra=extra)
@@ -705,6 +709,7 @@ class BaseObserver:
                 _observer._observed(path, value, extra=extra)
             else:
                 _observer._observed(attr, value, extra=extra)
+
 
 class ContentToJsonTree(Tree):
     """Tree for content serialization."""
@@ -741,7 +746,9 @@ class Base(ABase, metaclass=BaseMeta):
     # used to store original class when creating generic subclass
     _orig_cls: Optional[Type[Any]] = Field(default=None, init=False)
 
-    _observer: BaseObserver = Field(default_factory=BaseObserver, init=False, repr=False, compare=False)
+    _observer: BaseObserver = Field(
+        default_factory=BaseObserver, init=False, repr=False, compare=False
+    )
 
     _KW_ONLY: ClassVar[bool] = True
 
@@ -751,7 +758,6 @@ class Base(ABase, metaclass=BaseMeta):
 
     def _observed(self, attr, value):
         if not hasattr(self, "_observer"):
-            #print(self, "NO Observers")
             return
         self._observer._observed(attr, value, extra=self._extra_observed_events(attr, value, {}))
 
@@ -769,10 +775,8 @@ class Base(ABase, metaclass=BaseMeta):
 
     def _update_observers(self, attr, value, path_attr=None):
         if not hasattr(self, "_observer"):
-            #print("NO OBSERVER SELF")
             return
 
-        #print("->>>>> UPDATING OBSERVERS", attr, value)
         existing = getattr(self, attr, NoAttr)
         if isinstance(existing, Base):
             if hasattr(existing, "_observer"):
@@ -781,14 +785,15 @@ class Base(ABase, metaclass=BaseMeta):
 
         if isinstance(value, Base):
             if not hasattr(value, "_observer"):
-                #print("NO OBSERVER", attr, value)
                 return
             if id(self._observer) not in value._observer._observers:
-                value._observer._observers[id(self._observer)] = (self._observer, path_attr if path_attr is not None else attr)
+                value._observer._observers[id(self._observer)] = (
+                    self._observer,
+                    path_attr if path_attr is not None else attr,
+                )
 
     def _validate_setattr_(self, name: str, value: Any) -> None:
         """Set attribute with type validation."""
-        #print("BASE VALIDATE SETATTR", name, value)
         if not name.startswith("_"):  # do not check for private attrs
 
             if (
@@ -821,7 +826,6 @@ class Base(ABase, metaclass=BaseMeta):
 
         if not name.startswith("_"):  # do not observe private attributes
             self._update_observers(name, value)
-            # print("BASE OBSERVED", name)
             self._observed(name, value)
 
         return super().__setattr__(name, value)
@@ -986,6 +990,19 @@ class Base(ABase, metaclass=BaseMeta):
         tree.add_to_process(data=self, data_type=self.__class__, parent_index="root", result=result)
         tree.process()
         return result["root"]
+
+    @classmethod
+    def _gather_child_classes(cls, parent_cls) -> List[Type[Any]]:
+        stack = [parent_cls]
+        results = []
+        while stack:
+            current_cls = stack.pop(0)
+            if hasattr(current_cls, "_child_classes") and current_cls._child_classes:
+                for child_cls in current_cls._child_classes:
+                    if child_cls not in results:
+                        results.append(child_cls)
+                        stack.append(child_cls)
+        return results
 
     @classmethod
     def content_from_json(cls, json_dict: Dict[str, Any]):
@@ -1189,47 +1206,58 @@ class Base(ABase, metaclass=BaseMeta):
                 )
 
         errors = {}
-        for cls_candidate, parent_init_fields, parent_key, init_fields, parent_path in order:
-            if parent_key in parent_init_fields and not isinstance(
-                parent_init_fields[parent_key], Exception
-            ):
-                continue
-            if (
-                TypeNode.from_type(cls_candidate) == ANY_LIST_TYPE_NODE
-                or TypeNode.from_type(cls_candidate) == ANY_DICT_TYPE_NODE
-            ):
-                try:
-                    if TypeNode.from_type(cls_candidate) == ANY_DICT_TYPE_NODE:
-                        error_items = [
-                            (k, f) for k, f in init_fields.items() if isinstance(f, Exception)
-                        ]
-                    else:
-                        error_items = [
-                            (n, f) for n, f in enumerate(init_fields) if isinstance(f, Exception)
-                        ]
-                    if error_items:
-                        for n, f in error_items:
-                            errors.setdefault(parent_path, []).append(
-                                {"fields": init_fields, "exception": f}
-                            )
-                        parent_init_fields[parent_key] = ItemSerializationError(
-                            [n for n, _ in error_items]
-                        )
-                        continue
-                    parent_init_fields[parent_key] = cls_candidate(init_fields)
-                except Exception as e:
-                    errors.setdefault(parent_path, []).append(
-                        {"fields": init_fields, "exception": e}
-                    )
-                    parent_init_fields[parent_key] = e
+        for _cls_candidate, parent_init_fields, parent_key, init_fields, parent_path in order:
+
+            # gather sub classes of cls candidate
+            if hasattr(_cls_candidate, "_child_classes"):
+                child_classes = cls._gather_child_classes(_cls_candidate)
+                child_classes.append(_cls_candidate)
             else:
-                try:
-                    parent_init_fields[parent_key] = cls_candidate(**init_fields)
-                except Exception as e:
-                    errors.setdefault(parent_path, []).append(
-                        {"fields": init_fields, "exception": e}
-                    )
-                    parent_init_fields[parent_key] = e
+                child_classes = [_cls_candidate]
+
+            for cls_candidate in child_classes:
+                if parent_key in parent_init_fields and not isinstance(
+                    parent_init_fields[parent_key], Exception
+                ):
+                    continue
+                if (
+                    TypeNode.from_type(cls_candidate) == ANY_LIST_TYPE_NODE
+                    or TypeNode.from_type(cls_candidate) == ANY_DICT_TYPE_NODE
+                ):
+                    try:
+                        if TypeNode.from_type(cls_candidate) == ANY_DICT_TYPE_NODE:
+                            error_items = [
+                                (k, f) for k, f in init_fields.items() if isinstance(f, Exception)
+                            ]
+                        else:
+                            error_items = [
+                                (n, f)
+                                for n, f in enumerate(init_fields)
+                                if isinstance(f, Exception)
+                            ]
+                        if error_items:
+                            for n, f in error_items:
+                                errors.setdefault(parent_path, []).append(
+                                    {"fields": init_fields, "exception": f}
+                                )
+                            parent_init_fields[parent_key] = ItemSerializationError(
+                                [n for n, _ in error_items]
+                            )
+                            continue
+                        parent_init_fields[parent_key] = cls_candidate(init_fields)
+                    except Exception as e:
+                        errors.setdefault(parent_path, []).append(
+                            {"fields": init_fields, "exception": e}
+                        )
+                        parent_init_fields[parent_key] = e
+                else:
+                    try:
+                        parent_init_fields[parent_key] = cls_candidate(**init_fields)
+                    except Exception as e:
+                        errors.setdefault(parent_path, []).append(
+                            {"fields": init_fields, "exception": e}
+                        )
+                        parent_init_fields[parent_key] = e
 
         if "root" not in root_init_fields and errors:
             raise SerializationError(errors)
@@ -1528,7 +1556,7 @@ class TList(Base, ATList, Generic[T]):
         """Set item to the list."""
         if TypeNode.from_type(type(value)) != TypeNode.from_type(self._params[0]):
             raise TypeError(f"Cannot assign item {type(value)} to list of type {self._params[0]}")
-        self._update_observers(f'[{key}]', value)
+        self._update_observers(f"[{key}]", value)
         self._observed(f'["{key}"]', value)
         self._list.__setitem__(key, value)
 
@@ -2054,7 +2082,6 @@ class STMDSingleIn(Base, Generic[T]):
                     )
 
                 self._update_observers(name, value, path_attr="")
-                # print("PORT OBSERVED", name)
                 self._observed(None, value)
                 object.__setattr__(self, name, value)
                 # getattr(self.__class__, name).setter(value)

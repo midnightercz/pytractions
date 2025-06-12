@@ -74,18 +74,26 @@ class RedisObserver(Base):
     extra_only: bool = False
 
     def __reduce__(self):
-        return (self.__class__, (), {"url": self.redis_url,
-                                     "port": self.port,
-                                     "root": self.root,
-                                     "extra_only": self.extra_only})
+        return (
+            self.__class__,
+            (),
+            {
+                "url": self.redis_url,
+                "port": self.port,
+                "root": self.root,
+                "extra_only": self.extra_only,
+            },
+        )
 
     def setup(self, traction):
         # self.redis.set(self.root + "-type", json.dumps(traction.type_to_json()))
         self.redis.set(self.root, json.dumps(traction.content_to_json()))
         # self.redis.xadd("timeline-%s" % self.root+"-type",
         #                 {"path": self.root, "value": json.dumps(traction.type_to_json())})
-        self.redis.xadd("timeline-%s" % self.root,
-                        {"path": self.root, "value": json.dumps(traction.content_to_json())})
+        self.redis.xadd(
+            "timeline-%s" % self.root,
+            {"path": self.root, "value": json.dumps(traction.content_to_json())},
+        )
 
     def load_config(self, config):
         parsed = json.loads(config)
@@ -102,28 +110,35 @@ class RedisObserver(Base):
     def _observed(self, path, value, extra=None):
         if self.extra_only:
             if extra:
-                #print("EXTRA", extra, value, path)
+                # print("EXTRA", extra, value, path)
                 if hasattr(value, "content_to_json"):
                     self.redis.set(path, json.dumps(extra))
-                    self.redis.xadd("timeline-%s" % self.root, {"path": path,
-                                                                "extra": json.dumps(extra),
-                                                                "value": json.dumps(value.content_to_json())})
+                    self.redis.xadd(
+                        "timeline-%s" % self.root,
+                        {
+                            "path": path,
+                            "extra": json.dumps(extra),
+                            "value": json.dumps(value.content_to_json()),
+                        },
+                    )
                 else:
                     self.redis.set(path, json.dumps(extra))
-                    self.redis.xadd("timeline-%s" % self.root, {"path": path,
-                                                                "extra": json.dumps(extra),
-                                                                "value": json.dumps(value)})
+                    self.redis.xadd(
+                        "timeline-%s" % self.root,
+                        {"path": path, "extra": json.dumps(extra), "value": json.dumps(value)},
+                    )
             else:
                 return
 
         if hasattr(value, "content_to_json"):
             self.redis.set(path, json.dumps(value.content_to_json()))
-            self.redis.xadd("timeline-%s" % self.root, {"path": path,
-                                                        "value": json.dumps(value.content_to_json())})
+            self.redis.xadd(
+                "timeline-%s" % self.root,
+                {"path": path, "value": json.dumps(value.content_to_json())},
+            )
         else:
             self.redis.set(path, json.dumps(value))
-            self.redis.xadd("timeline-%s" % self.root, {"path": path,
-                                                        "value": json.dumps(value)})
+            self.redis.xadd("timeline-%s" % self.root, {"path": path, "value": json.dumps(value)})
 
 
 class ElasticObserver(Base):
@@ -136,19 +151,25 @@ class ElasticObserver(Base):
     _ready: bool = False
 
     def __reduce__(self):
-        return (self.__class__, (), {"url": self.url,
-                                     "root": self.root,
-                                     "user": self.user,
-                                     "password": self.password,
-                                     "verify": self.verify,
-                                     "ca_cert": self.ca_cert})
+        return (
+            self.__class__,
+            (),
+            {
+                "url": self.url,
+                "root": self.root,
+                "user": self.user,
+                "password": self.password,
+                "verify": self.verify,
+                "ca_cert": self.ca_cert,
+            },
+        )
 
     def setup(self, traction):
         body = {"time": datetime.datetime.now().isoformat(), "path": self.root}
-        body['full'] = json.dumps(traction.content_to_json())
+        body["full"] = json.dumps(traction.content_to_json())
         self.elastic.index(index=self.root, body=body)
         body = {"time": datetime.datetime.now().isoformat(), "path": self.root}
-        body['add'] = json.dumps(traction.content_to_json())
+        body["add"] = json.dumps(traction.content_to_json())
         self._ready = True
 
     def load_config(self, config):
@@ -166,11 +187,11 @@ class ElasticObserver(Base):
         if not hasattr(self, "_elastic"):
             kwargs = {}
             if self.user and self.password:
-                kwargs['http_auth'] = (self.user, self.password)
+                kwargs["http_auth"] = (self.user, self.password)
             if self.verify:
-                kwargs['verify_certs'] = self.verify
+                kwargs["verify_certs"] = self.verify
             if self.ca_cert:
-                kwargs['ca_certs'] = self.ca_cert
+                kwargs["ca_certs"] = self.ca_cert
 
             self._elastic = Elasticsearch(f"{self.url}", **kwargs)
         return self._elastic
@@ -182,19 +203,16 @@ class ElasticObserver(Base):
         body = {"time": datetime.datetime.now().isoformat(), "path": path}
 
         if hasattr(value, "content_to_json"):
-            body['add'] = json.dumps(value.content_to_json())
+            body["add"] = json.dumps(value.content_to_json())
             self.elastic.index(index=self.root, document=body)
         else:
-            body['add'] = json.dumps(value)
+            body["add"] = json.dumps(value)
             self.elastic.index(index=self.root, document=body)
 
         if extra:
             body = {"time": datetime.datetime.now().isoformat(), "path": path}
-            body['extra'] = extra
+            body["extra"] = extra
             self.elastic.index(index=self.root, document=body)
 
-OBSERVERS = {
-    "file": FileObserver,
-    "redis": RedisObserver,
-    "elastic": ElasticObserver
-}
+
+OBSERVERS = {"file": FileObserver, "redis": RedisObserver, "elastic": ElasticObserver}

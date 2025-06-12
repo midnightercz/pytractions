@@ -64,7 +64,11 @@ def test_tractor_nested():
     seq = Seq(val=10)
     t = TestTractor2(uid="1", i_in1=Port[float](data=1.0), r_seq=Port[Seq](data=seq))
     t.run()
-    print("TRACTOR-1 RAW_OUT", id(t.tractions["t_tractor1"]._raw_o_out1), t.tractions["t_tractor1"]._raw_o_out1)
+    print(
+        "TRACTOR-1 RAW_OUT",
+        id(t.tractions["t_tractor1"]._raw_o_out1),
+        t.tractions["t_tractor1"]._raw_o_out1,
+    )
     print("TRACTOR-1 OUT", id(t.tractions["t_tractor1"].o_out1), t.tractions["t_tractor1"].o_out1)
     print("TRACTOR-2 RAW OOT", id(t._raw_o_out1), t._raw_o_out1)
     print("TRACTOR-2 OUT", id(t.o_out1), t.o_out1)

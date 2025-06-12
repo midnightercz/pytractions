@@ -2,7 +2,7 @@ import pytest
 
 from pytractions.base import Base, TList, TDict
 
-from typing import Optional, Union
+from typing import Optional, Union, Literal
 from enum import Enum
 
 
@@ -294,3 +294,33 @@ def test_tdict_complex_from_json2():
             )
         }
     )
+
+
+class GenericClass(Base):
+    a: int
+
+
+class SubclassClass1(GenericClass):
+    cls_type: Literal["sub1"]
+    b: str
+
+
+class SubclassClass2(GenericClass):
+    cls_type: Literal["sub2"]
+    c: str
+
+
+def test_subclasses_deserialization():
+    subcls_i = SubclassClass1(a=1, b="test1", cls_type="sub1")
+    content = subcls_i.content_to_json()
+
+    new_subcls_i = GenericClass.content_from_json(content)
+
+    assert subcls_i == new_subcls_i
+
+    subcls_i = SubclassClass2(a=1, c="test2", cls_type="sub2")
+    content = subcls_i.content_to_json()
+
+    new_subcls_i = GenericClass.content_from_json(content)
+
+    assert subcls_i == new_subcls_i

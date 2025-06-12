@@ -188,13 +188,7 @@ def make_parsers(subparsers):
         type=str,
         default='{"path": "monitor"}',
     )
-    p_runner.add_argument(
-        "--run-id",
-        "-i",
-        help="Run id",
-        type=str,
-        default="root"
-    )
+    p_runner.add_argument("--run-id", "-i", help="Run id", type=str, default="root")
     p_runner.add_argument(
         "--level",
         "-l",

@@ -3,3 +3,4 @@ pytest-cov
 typing_inspect
 bandit
 ray
+termcolor

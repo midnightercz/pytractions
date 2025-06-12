@@ -239,11 +239,7 @@ class STMD(Traction, metaclass=STMDMeta):
         for x in range(len(first_in)):
             uid = "%s:%d" % (self.uid, x)
             self.tractions.append(
-                _init_traction(self._traction,
-                               inputs[x],
-                               resources,
-                               args,
-                               x, uid, self._observer)
+                _init_traction(self._traction, inputs[x], resources, args, x, uid, self._observer)
             )
 
         if self.state == TractionState.READY:
@@ -275,9 +271,9 @@ class STMD(Traction, metaclass=STMDMeta):
                 if TypeNode.from_type(ftype, subclass_check=False) != TypeNode.from_type(
                     STMDSingleIn[ANY], subclass_check=False
                 ) and (
-                        not isinstance(getattr(self, f), _defaultNone)
-                        or TypeNode.from_type(type(getattr(self, "_raw_"+f)), subclass_check=False) ==
-                           TypeNode.from_type(NullPort[ANY], subclass_check=False)
+                    not isinstance(getattr(self, f), _defaultNone)
+                    or TypeNode.from_type(type(getattr(self, "_raw_" + f)), subclass_check=False)
+                    == TypeNode.from_type(NullPort[ANY], subclass_check=False)
                 ):
                     first_in_field = f
                     break
@@ -347,7 +343,9 @@ class STMD(Traction, metaclass=STMDMeta):
                 TractionState.ERROR,
             ):
                 uid = "%s:%d" % (self.uid, i)
-                self.a_executor.execute(i, uid, self._traction, inputs[i], args, resources, self._observer)
+                self.a_executor.execute(
+                    i, uid, self._traction, inputs[i], args, resources, self._observer
+                )
 
         uids = ["%s:%d" % (self.uid, i) for i in range(len(getattr(self, first_in_field)))]
         for uid, (state, stats) in self.a_executor.get_states(uids).items():
