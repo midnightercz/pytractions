@@ -74,6 +74,7 @@ class BaseConfig:
 
     validate_set_attr: bool = True
     allow_extra: bool = False
+    observers: bool = True
 
 
 @dataclasses.dataclass
@@ -189,7 +190,7 @@ class BaseMeta(type):
     @classmethod
     def _determine_config(cls, attrs):
         if "_config" in attrs:
-            assert TypeNode.from_type(type(attrs["_config"])) == TypeNode(BaseConfig)
+            #assert TypeNode.from_type(type(attrs["_config"])) == TypeNode(BaseConfig)
             config = attrs["_config"]
         else:
             # if not, provide default config
@@ -213,6 +214,22 @@ class BaseMeta(type):
             else:
                 _setattr = find_attr(bases, "_no_validate_setattr_")
             attrs["__setattr__"] = attrs["_no_validate_setattr_"]
+
+    @classmethod
+    def _determine_observers(cls, attrs, config, bases):
+        if config.observers:
+            pass
+        else:
+            if "_no_update_observers" in attrs:
+                update_observers = attrs["_no_update_observers"]
+            else:
+                update_observers = find_attr(bases, "_no_update_observers")
+            attrs["_update_observers"] = update_observers
+            if "_observerved" in attrs:
+                observed = attrs["_no_observed"]
+            else:
+                observed = find_attr(bases, "_no_observed")
+            attrs["_observerved"] = observed
 
     @classmethod
     def _replace_self(cls, ret):
@@ -240,7 +257,7 @@ class BaseMeta(type):
                     compare=ret.__dataclass_fields__[f].compare,
                     metadata=ret.__dataclass_fields__[f].metadata,
                     kw_only=ret.__dataclass_fields__[f].kw_only,
-                    validator=LiteralValidator(get_args(ftype)),
+                    validator=LiteralValidator(get_args(ftype), f),
                 )
 
     def __new__(cls, name, bases, attrs):
@@ -248,9 +265,13 @@ class BaseMeta(type):
 
         config = cls._determine_config(attrs)
         cls._determine_setattr_(attrs, config, bases)
+        cls._determine_observers(attrs, config, bases)
 
+        properties = []
         annotations = attrs.get("__annotations__", {})
         for attr, attrv in attrs.items():
+            if isinstance(attrv, property):
+                properties.append(attr)
             # skip annotation check for methods and functions
             if (
                 inspect.ismethod(attrv)
@@ -269,6 +290,7 @@ class BaseMeta(type):
                 raise NoAnnotationError(f"{attr} has to be annotated")
 
         defaults = {}
+        attrs["_properties"] = properties
 
         # check if all attrs are in supported types
         for attr, type_ in annotations.items():
@@ -360,6 +382,7 @@ class BaseMeta(type):
                 attrs[default] = defval
 
         attrs["_fields"] = fields
+        attrs["_field_type_nodes"] = {}
         attrs["__hash__"] = _hash
         attrs["__name__"] = name
 
@@ -367,11 +390,17 @@ class BaseMeta(type):
         ret = super().__new__(cls, name, bases, attrs)
 
         cls._replace_self(ret)
+        # construct field type nodes to save time in setattr
 
         # wrap with dataclass
         ret = dataclasses.dataclass(ret, kw_only=attrs.get("_KW_ONLY", True))
 
         cls._replace_literal(ret)
+
+        for f, ft in ret._fields.items():
+            ret._field_type_nodes[f] = TypeNode.from_type(ft)
+
+        ret._type_node = TypeNode.from_type(ret)
         for base in bases:
             if not hasattr(base, "_child_classes"):
                 continue
@@ -751,22 +780,21 @@ class Base(ABase, metaclass=BaseMeta):
         """Extra observed events."""
         return extra
 
+    def _no_observed(self, attr, value):
+        pass
+
     def _observed(self, attr, value):
         if not hasattr(self, "_observer"):
             return
         self._observer._observed(attr, value, extra=self._extra_observed_events(attr, value, {}))
 
-    @property
-    def _properties(self):
-        if not hasattr(self, "_p_properties"):
-            self._p_properties = list(
-                dict(inspect.getmembers(self.__class__, lambda o: isinstance(o, property))).keys()
-            )
-        return self._p_properties
 
     def _no_validate_setattr_(self, name: str, value: Any) -> None:
         """Set attribute without any type validation."""
         return super().__setattr__(name, value)
+
+    def _no_update_observers(self, attr, value, path_attr=None):
+        pass
 
     def _update_observers(self, attr, value, path_attr=None):
         if not hasattr(self, "_observer"):
@@ -802,8 +830,9 @@ class Base(ABase, metaclass=BaseMeta):
                 vtype = (
                     value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
                 )
-                tt1 = TypeNode.from_type(vtype)
-                tt2 = TypeNode.from_type(self._fields[name])
+                tt1 = vtype._type_node if hasattr(vtype, "_type_node") else TypeNode.from_type(vtype)
+                #tt1 = TypeNode.from_type(vtype)
+                tt2 = self._field_type_nodes[name]
                 if tt1 != tt2:
                     raise TypeError(
                         f"Cannot set attribute {self.__class__}.{name} to {value}({vtype}), "
@@ -905,6 +934,7 @@ class Base(ABase, metaclass=BaseMeta):
         # it's stays shared with base class
         for attr, type_ in cls._fields.items():
             tn = TypeNode.from_type(type_)
+
             # field params needs to be replaced as field can also reffer to TypeVar
             tn.replace_params(_params_map)
             new_type = tn.to_type(types_cache=cls._generic_cache, params_map=_params_map)
@@ -1147,34 +1177,39 @@ class Base(ABase, metaclass=BaseMeta):
                         0, (d_cls, parent_init_fields, parent_key, init_fields, parent_path)
                     )
                 for o_cls in obj_uargs:
-                    init_fields = {}
-                    for f in _json_dict:
-                        _f = (
-                            [k for k, v in o_cls._SERIALIZE_REPLACE_FIELDS.items() if v == f] or [f]
-                        )[0]
-                        if _f in o_cls._fields:
-                            ftype = o_cls._fields[_f]
-                            if ftype in (str, int, float, type(None), bool):
-                                init_fields[_f] = _json_dict[f]
+                    if hasattr(o_cls, "_child_classes"):
+                        candidates = [o_cls] + o_cls._child_classes
+                    else:
+                        candidates = [o_cls]
+                    for candidate in candidates:
+                        init_fields = {}
+                        for f in _json_dict:
+                            _f = (
+                                [k for k, v in candidate._SERIALIZE_REPLACE_FIELDS.items() if v == f] or [f]
+                            )[0]
+                            if _f in candidate._fields:
+                                ftype = candidate._fields[_f]
+                                if ftype in (str, int, float, type(None), bool):
+                                    init_fields[_f] = _json_dict[f]
+                                else:
+                                    stack.append(
+                                        (
+                                            (ftype,),
+                                            _f,
+                                            _json_dict[f],
+                                            init_fields,
+                                            parent_path + f".{_f}",
+                                        )
+                                     )
                             else:
-                                stack.append(
-                                    (
-                                        (ftype,),
-                                        _f,
-                                        _json_dict[f],
-                                        init_fields,
-                                        parent_path + f".{_f}",
-                                    )
-                                )
-                        else:
-                            # In this situation field which is uknown to the class is added
-                            # to init fields which fails in initialization of class candidate
-                            # and eliminate it from the candidate list
-                            init_fields[_f] = _json_dict[f]
+                                # In this situation field which is uknown to the class is added
+                                # to init fields which fails in initialization of class candidate
+                                # and eliminate it from the candidate list
+                                init_fields[_f] = _json_dict[f]
 
-                    order.insert(
-                        0, (o_cls, parent_init_fields, parent_key, init_fields, parent_path)
-                    )
+                        order.insert(
+                            0, (o_cls, parent_init_fields, parent_key, init_fields, parent_path)
+                        )
             elif other_uargs:
                 for o_cls in other_uargs:
                     init_fields = {}
@@ -1244,7 +1279,11 @@ class Base(ABase, metaclass=BaseMeta):
                         errors.setdefault(parent_path, []).append(
                             {"fields": init_fields, "exception": e}
                         )
-                        parent_init_fields[parent_key] = e
+                        if parent_key not in parent_init_fields:
+                            parent_init_fields[parent_key] = e
+                    else:
+                        break
+
                 else:
                     try:
                         parent_init_fields[parent_key] = cls_candidate(**init_fields)
@@ -1252,7 +1291,10 @@ class Base(ABase, metaclass=BaseMeta):
                         errors.setdefault(parent_path, []).append(
                             {"fields": init_fields, "exception": e}
                         )
-                        parent_init_fields[parent_key] = e
+                        if parent_key not in parent_init_fields:
+                            parent_init_fields[parent_key] = e
+                    else:
+                        break
 
         if "root" not in root_init_fields and errors:
             raise SerializationError(errors)
@@ -1744,13 +1786,19 @@ class TDict(Base, ATDict, Generic[TK, TV]):
         """Return new TDict instance."""
         if not cls._params:
             raise TypeError("Cannot create TDict without subtype, construct with TDict[<type>]")
-        return Base.__new__(cls)
+        ret = Base.__new__(cls)
+        _tk = ret._params[0]
+        _tv = ret._params[1]
+        ret._type_node_key = TypeNode.from_type(_tk)
+        ret._type_node_value = TypeNode.from_type(_tv)
+
+        return ret
 
     def __contains__(self, key: TK) -> bool:
         """Test if dict contains the key."""
         _tk = self._params[0]
         _tv = self._params[1]
-        if TypeNode.from_type(type(key)) != TypeNode.from_type(_tk):
+        if TypeNode.from_type(type(key)) != self._type_node_key:
             raise TypeError(
                 f"Cannot check key {key} of type {type(key)} in dict of type {Dict[_tk, _tv]}"
             )
@@ -1760,7 +1808,7 @@ class TDict(Base, ATDict, Generic[TK, TV]):
         """Remove item from the dict by given key."""
         _tk = self._params[0]
         _tv = self._params[1]
-        if TypeNode.from_type(type(key)) != TypeNode.from_type(_tk):
+        if TypeNode.from_type(type(key)) != self._type_node_key:
             raise TypeError(
                 f"Cannot remove key {key} of type {type(key)} in dict of type {Dict[_tk, _tv]}"
             )
@@ -1771,7 +1819,7 @@ class TDict(Base, ATDict, Generic[TK, TV]):
         """Return item from the dict for given key."""
         _tk = self._params[0]
         _tv = self._params[1]
-        if TypeNode.from_type(type(key)) != TypeNode.from_type(_tk):
+        if TypeNode.from_type(type(key)) != self._type_node_key:
             raise TypeError(
                 f"Cannot get item by key {key} of type {type(key)} in dict of type {Dict[_tk, _tv]}"
             )
@@ -1800,11 +1848,14 @@ class TDict(Base, ATDict, Generic[TK, TV]):
         """Set item to the dict to given key."""
         _tk = self._params[0]
         _tv = self._params[1]
-        if TypeNode.from_type(type(k)) != TypeNode.from_type(_tk):
+        k_tn = type(k)._type_node if hasattr(type(k), "_type_node") else TypeNode.from_type(type(k))
+        v_tn = type(v)._type_node if hasattr(type(v), "_type_node") else TypeNode.from_type(type(v))
+
+        if k_tn != self._type_node_key:
             raise TypeError(
                 f"Cannot set item by key {k} of type {type(k)} in dict of type {Dict[_tk, _tv]}"
             )
-        if TypeNode.from_type(type(v)) != TypeNode.from_type(_tv):
+        if v_tn != TypeNode.from_type(_tv):
             raise TypeError(
                 f"Cannot set item {v} of type {type(v)} in dict of type {Dict[_tk, _tv]}"
             )
@@ -1821,7 +1872,7 @@ class TDict(Base, ATDict, Generic[TK, TV]):
         _tk = self._params[0]
         _tv = self._params[1]
         for key in iterable:
-            if TypeNode.from_type(type(key)) != TypeNode.from_type(_tk):
+            if TypeNode.from_type(type(key)) != self._type_node_key:
                 raise TypeError(
                     f"Cannot set item by key {key} of type {type(key)} in dict of "
                     f"type {Dict[_tk, _tv]}"
@@ -1836,7 +1887,7 @@ class TDict(Base, ATDict, Generic[TK, TV]):
     def get(self, key: TK, default=None):
         """Get item from the dict or return default if not found."""
         _tk = self._params[0]
-        if TypeNode.from_type(type(key)) != TypeNode.from_type(_tk):
+        if TypeNode.from_type(type(key)) != self._type_node_key:
             raise TypeError(
                 f"Cannot get item by key {key} of type {type(key)} in dict of type "
                 f"TDict[{self._params}]"
@@ -1870,7 +1921,7 @@ class TDict(Base, ATDict, Generic[TK, TV]):
         """Set dict default value for given key."""
         _tk = self._params[0]
         _tv = self._params[1]
-        if TypeNode.from_type(type(key)) != TypeNode.from_type(_tk):
+        if TypeNode.from_type(type(key)) != self._type_node_key:
             raise TypeError(
                 f"Cannot setdefault for key {key} of type {type(key)} in dict of "
                 f"type {Dict[_tk, _tv]}"
@@ -2115,7 +2166,6 @@ class STMDSingleIn(Base, Generic[T]):
             ret = object.__getattribute__(self, name)
             return ret
 
-    @property
     def uid(self):
         """Return uid of the object."""
         if not self._name:

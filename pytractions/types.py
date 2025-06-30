@@ -148,6 +148,7 @@ class TypeNode:
         self.subclass_check = subclass_check
         self.children = []
         self.type_aliases = type_aliases or []
+        self.origin = get_origin(type_)
 
     def __lt__(self, other):
         """Return if TypeNode is less than other."""
@@ -160,7 +161,7 @@ class TypeNode:
         current = root
         stack = []
         while True:
-            if get_origin(current.type_) is Literal:
+            if current.origin is Literal:
                 arg_type = set()
                 for arg in current.type_.__args__:
                     if not TypeNode.from_type(type(arg)).json_compatible():
@@ -207,9 +208,11 @@ class TypeNode:
                     if hasattr(params_map[current.type_], "__args__"):
                         replaced_tn = TypeNode.from_type(params_map[current.type_])
                         current.type_ = replaced_tn.type_
+                        current.origin = replaced_tn.origin
                         current.children = replaced_tn.children
                     else:
                         current.type_ = params_map[current.type_]
+                        current.origin = get_origin(current.type_) or current.type_
         return replaced
 
     def to_type(self, types_cache={}, params_map={}):
@@ -335,8 +338,8 @@ class TypeNode:
             else:
                 ch_eq = all([ch.eq for ch in cmp_node.children])
 
-            n1_type = get_origin(cmp_node.n1.type_) or cmp_node.n1.type_
-            n2_type = get_origin(cmp_node.n2.type_) or cmp_node.n2.type_
+            n1_type = cmp_node.n1.origin or cmp_node.n1.type_
+            n2_type = cmp_node.n2.origin or cmp_node.n2.type_
 
             if isinstance(n1_type, ForwardRef):
                 frame = sys._getframe(1)
