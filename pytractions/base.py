@@ -52,7 +52,6 @@ from .base_field import Field
 from .abase import ABase, ATList, ATDict
 from .traversal import Tree, ItemHandler
 from .validators import LiteralValidator
-from .observer import Observer
 
 
 LOGGER = logging.getLogger(__name__)
@@ -130,6 +129,7 @@ def _hash(obj):
 
 
 def extract_from_optional(opt):
+    """Extract argument type from Optional."""
     if get_origin(opt) == Union and len(get_args(opt)) == 2 and get_args(opt)[-1] is type(None):
         return get_args(opt)[0]
     return opt
@@ -190,7 +190,7 @@ class BaseMeta(type):
     @classmethod
     def _determine_config(cls, attrs):
         if "_config" in attrs:
-            #assert TypeNode.from_type(type(attrs["_config"])) == TypeNode(BaseConfig)
+            # assert TypeNode.from_type(type(attrs["_config"])) == TypeNode(BaseConfig)
             config = attrs["_config"]
         else:
             # if not, provide default config
@@ -262,7 +262,6 @@ class BaseMeta(type):
 
     def __new__(cls, name, bases, attrs):
         """Create new class."""
-
         config = cls._determine_config(attrs)
         cls._determine_setattr_(attrs, config, bases)
         cls._determine_observers(attrs, config, bases)
@@ -345,7 +344,8 @@ class BaseMeta(type):
                     # Skip if default is already set
                     if f in defaults:
                         continue
-                    # Skip if parameter is defined again in child class but has no default, in that case we don't want to use default from base
+                    # Skip if parameter is defined again in child class but has no default,
+                    # in that case we don't want to use default from base
                     if f in attrs.get("__annotations__", {}) and f not in defaults:
                         continue
 
@@ -453,6 +453,31 @@ class ListItemHandler(ItemHandler):
                 )
 
 
+class ListItemHandlerSchema(ItemHandler):
+    """Serialization handler for list items."""
+
+    def match(self, item):
+        """Match list items."""
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATList):
+            return True
+
+    def process(self, tree, item):
+        """Process list items."""
+        item.result[item.parent_index] = {
+            "title": str(item.data),
+            "type": "array",
+            "items": {}
+        }
+        if item.extra:
+            item.result[item.parent_index].update(item.extra)
+        tree.add_to_process(
+            data="list item",
+            data_type=item.data_type._params[0],
+            parent_index="items",
+            result=item.result[item.parent_index],
+        )
+
+
 class ListItemHandlerContent(ItemHandler):
     """Content serialization handler for list items."""
 
@@ -510,6 +535,37 @@ class DictItemHandler(ItemHandler):
             )
 
 
+class DictItemHandlerSchema(ItemHandler):
+    """Serialization handler for dict items."""
+
+    def match(self, item):
+        """Match dict items."""
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(ATDict):
+            return True
+
+    def process(self, tree, item):
+        """Process dict items."""
+        item.result[item.parent_index] = {
+            "title": str(item.data),
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "value": {}
+                },
+            },
+        }
+        if item.extra:
+            item.result[item.parent_index].update(item.extra)
+        tree.add_to_process(
+            data=None,
+            data_type=item.data_type._params[1],
+            parent_index="value",
+            result=item.result[item.parent_index]['items']['properties'],
+        )
+
+
 class DictItemHandlerContent(ItemHandler):
     """Content serialization handler for dict items."""
 
@@ -562,6 +618,44 @@ class BasicItemHandler(ItemHandler):
             item.result[item.parent_index] = item.data
 
 
+class BasicItemHandlerSchema(ItemHandler):
+    """Serialization handler for primitive types items."""
+
+    def match(self, item):
+        """Match primitive types items."""
+        data_type = item.data_type
+        if item.data_type.__class__ == _UnionGenericAlias and item.data_type._name == "Optional":
+            data_type = item.data_type.__args__[0]
+        uni = Union[
+            int, str, bool, float, type(None), _defaultNone, _defaultInt, _defaultStr, _defaultFloat
+        ]
+
+        return TypeNode.from_type(uni) == TypeNode.from_type(data_type)
+
+    @staticmethod
+    def _to_jschema_type(type_):
+        """Convert type to JSON schema type."""
+        if type_ == int:
+            return "integer"
+        elif type_ == str:
+            return "string"
+        elif type_ == bool:
+            return "boolean"
+        elif type_ == float:
+            return "number"
+        elif type_ is type(None):
+            return "null"
+
+    def process(self, tree, item):
+        """Process primitive types items."""
+        item.result[item.parent_index] = {
+            "title": str(item.data),
+            "type": self._to_jschema_type(item.data_type)
+        }
+        if item.extra:
+            item.result[item.parent_index].update(item.extra)
+
+
 class EnumItemHandler(ItemHandler):
     """Serialization handler for enum items."""
 
@@ -573,6 +667,19 @@ class EnumItemHandler(ItemHandler):
     def process(self, tree, item):
         """Process enum items."""
         item.result[item.parent_index] = item.data.value
+
+
+class EnumItemHandlerSchema(ItemHandler):
+    """Serialization handler for enum items."""
+
+    def match(self, item):
+        """Match enum items."""
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(enum.Enum):
+            return True
+
+    def process(self, tree, item):
+        """Process enum items."""
+        item.result[item.parent_index] = "string"
 
 
 class PortItemHandler(ItemHandler):
@@ -609,6 +716,27 @@ class PortItemHandler(ItemHandler):
                         parent_index=f,
                         result=item.result[item.parent_index]["$data"],
                     )
+
+
+class PortItemHandlerSchema(ItemHandler):
+    """Serialization handler for Port items."""
+
+    def match(self, item):
+        """Match Port items."""
+        if TypeNode.from_type(item.data_type) == TypeNode.from_type(Port[ANY]):
+            return True
+
+    def process(self, tree, item):
+        """Process Port items."""
+        if isinstance(item.extra.get('default'), Port):
+            item.extra['default'] = item.extra['default'].data if not hasattr(item.extra['default'].data, "content_to_json") else item.extra['default'].data.content_to_json()
+        tree.add_to_process(
+            data=item.data,
+            data_type=item.data_type._params[0],
+            parent_index=item.parent_index,
+            result=item.result,
+            extra=item.extra
+        )
 
 
 class PortItemHandlerContent(ItemHandler):
@@ -678,6 +806,65 @@ class BaseItemHandler(ItemHandler):
             )
 
 
+class BaseItemHandlerSchema(ItemHandler):
+    """Serialization handler for base subclasses."""
+
+    def match(self, item):
+        """Match Base subclasses."""
+        if TypeNode.from_type(Union[int, str, bool, float, type(None)]) != TypeNode.from_type(
+            item.data_type
+        ):
+            return True
+
+    def process(self, tree, item):
+        """Process Base subclasses."""
+        if hasattr(item.data, "_to_json_schema"):
+            item.result[item.parent_index] = item.data._to_json_schema()
+            return
+
+        required = []
+        item.result[item.parent_index] = {
+            "type": "object",
+            "title": str(item.data),
+            "properties": {},
+        }
+        if item.extra:
+            item.result[item.parent_index].update(item.extra)
+
+        for f, ftype in item.data_type._fields.items():
+            if item.data_type.__dataclass_fields__.get(f) and item.data_type.__dataclass_fields__[f].init is False:
+                # Skip if field is not initialized
+                continue
+            default = item.data_type.__dataclass_fields__.get(f, {}).default
+            extra = {}
+            if not isinstance(default, dataclasses._MISSING_TYPE):
+                extra['default'] = default if not hasattr(default, "content_to_json") else default.content_to_json()
+            _f = item.data_type._SERIALIZE_REPLACE_FIELDS.get(f, f)
+            datacls_field = item.data_type.__dataclass_fields__.get(f, {})
+            required.append(_f)
+            if hasattr(datacls_field, "validator") and isinstance(datacls_field.validator, LiteralValidator):
+                # If field is Literal, use its value as type
+                literal = item.data_type.__dataclass_fields__[f].validator.literal
+                item.result[item.parent_index]['properties'][_f] = {
+                    "type": "string",
+                    "title": _f,
+                    "enum": literal,
+                    "default": literal[0]
+                }
+                continue
+            if item.data_type._fields.get("d_" + f):
+                extra['description'] = item.data_type.__dataclass_fields__["d_" + f].default
+
+            tree.add_to_process(
+                data=f,
+                data_type=ftype,
+                parent_index=_f,
+                result=item.result[item.parent_index]["properties"],
+                extra=extra
+            )
+        item.result[item.parent_index]["required"] = required
+
+
 class BaseItemHandlerContent(ItemHandler):
     """Content serialization handler for base subclasses."""
 
@@ -702,6 +889,46 @@ class BaseItemHandlerContent(ItemHandler):
             )
 
 
+class UnionItemHandlerSchema(ItemHandler):
+    """Serialization handler for primitive types items."""
+
+    def match(self, item):
+        """Match primitive types items."""
+        if item.data_type.__class__ == _UnionGenericAlias:
+            return True
+
+    def process(self, tree, item):
+        """Process primitive types items."""
+        if item.data_type._name != "Optional":
+            item.result[item.parent_index] = {
+                "title": str(item.data),
+                "oneOf": [None]*len(item.data_type.__args__),
+                "type": "object"
+            }
+            if item.extra:
+                item.result[item.parent_index].update(item.extra)
+            for n, atype in enumerate(item.data_type.__args__):
+                tree.add_to_process(
+                    data=str(atype),
+                    data_type=atype,
+                    parent_index=n,
+                    result=item.result[item.parent_index]["oneOf"],
+                    extra=item.extra,
+                )
+        else:
+            item.result[item.parent_index] = {
+            }
+            if item.extra:
+                item.result[item.parent_index].update(item.extra)
+            tree.add_to_process(
+                data=str(item.data),
+                data_type=item.data_type.__args__[0],
+                parent_index=item.parent_index,
+                result=item.result,
+                    extra=item.extra,
+            )
+
+
 class ToJsonTree(Tree):
     """Tree for serialization."""
 
@@ -712,6 +939,20 @@ class ToJsonTree(Tree):
         BasicItemHandler(),
         PortItemHandler(),
         BaseItemHandler(),
+    ]
+
+
+class ToJsonSchemaTree(Tree):
+    """Tree for serialization."""
+
+    handlers = [
+        UnionItemHandlerSchema(),
+        ListItemHandlerSchema(),
+        DictItemHandlerSchema(),
+        EnumItemHandlerSchema(),
+        BasicItemHandlerSchema(),
+        PortItemHandlerSchema(),
+        BaseItemHandlerSchema(),
     ]
 
 
@@ -749,6 +990,8 @@ class ContentToJsonTree(Tree):
 
 
 class NoAttr:
+    """Special class indicating class doesn't have this attribute set."""
+
     pass
 
 
@@ -787,7 +1030,6 @@ class Base(ABase, metaclass=BaseMeta):
         if not hasattr(self, "_observer"):
             return
         self._observer._observed(attr, value, extra=self._extra_observed_events(attr, value, {}))
-
 
     def _no_validate_setattr_(self, name: str, value: Any) -> None:
         """Set attribute without any type validation."""
@@ -830,8 +1072,10 @@ class Base(ABase, metaclass=BaseMeta):
                 vtype = (
                     value.__orig_class__ if hasattr(value, "__orig_class__") else value.__class__
                 )
-                tt1 = vtype._type_node if hasattr(vtype, "_type_node") else TypeNode.from_type(vtype)
-                #tt1 = TypeNode.from_type(vtype)
+                tt1 = (
+                    vtype._type_node if hasattr(vtype, "_type_node") else TypeNode.from_type(vtype)
+                )
+                # tt1 = TypeNode.from_type(vtype)
                 tt2 = self._field_type_nodes[name]
                 if tt1 != tt2:
                     raise TypeError(
@@ -1001,6 +1245,21 @@ class Base(ABase, metaclass=BaseMeta):
         result = {}
         tree = ToJsonTree(result)
         tree.add_to_process(data=self, data_type=self.__class__, parent_index="root", result=result)
+        tree.process()
+        return result["root"]
+
+    @classmethod
+    def to_json_schema(cls) -> Dict[str, Any]:
+        """Return json representation of Base object.
+
+        Function is written to dump a base object
+        to json from which can be considered as serialized object, therefore it's possible to
+        use this representation to load the very same object.
+        However compare to python serializer, performance of much slower.
+        """
+        result = {}
+        tree = ToJsonSchemaTree(result)
+        tree.add_to_process(data=cls, data_type=cls, parent_index="root", result=result)
         tree.process()
         return result["root"]
 
@@ -1185,7 +1444,12 @@ class Base(ABase, metaclass=BaseMeta):
                         init_fields = {}
                         for f in _json_dict:
                             _f = (
-                                [k for k, v in candidate._SERIALIZE_REPLACE_FIELDS.items() if v == f] or [f]
+                                [
+                                    k
+                                    for k, v in candidate._SERIALIZE_REPLACE_FIELDS.items()
+                                    if v == f
+                                ]
+                                or [f]
                             )[0]
                             if _f in candidate._fields:
                                 ftype = candidate._fields[_f]
@@ -1200,7 +1464,7 @@ class Base(ABase, metaclass=BaseMeta):
                                             init_fields,
                                             parent_path + f".{_f}",
                                         )
-                                     )
+                                    )
                             else:
                                 # In this situation field which is uknown to the class is added
                                 # to init fields which fails in initialization of class candidate
@@ -1886,7 +2150,6 @@ class TDict(Base, ATDict, Generic[TK, TV]):
 
     def get(self, key: TK, default=None):
         """Get item from the dict or return default if not found."""
-        _tk = self._params[0]
         if TypeNode.from_type(type(key)) != self._type_node_key:
             raise TypeError(
                 f"Cannot get item by key {key} of type {type(key)} in dict of type "

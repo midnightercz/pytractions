@@ -5,12 +5,9 @@ import logging
 import inspect
 
 from typing import (
-    List,
     Dict,
     Union,
     Optional,
-    TypeVar,
-    Generic,
     ForwardRef,
     ClassVar,
     Callable,
@@ -29,11 +26,17 @@ from .base import (
     NullPort,
     is_wrapped,
     extract_from_optional,
-    _defaultStr,
     _defaultBool,
-    _defaultInt,
-    _defaultFloat,
     type_to_default_type,
+    Tree,
+    UnionItemHandlerSchema,
+    ListItemHandlerSchema,
+    DictItemHandlerSchema,
+    EnumItemHandlerSchema,
+    BasicItemHandlerSchema,
+    PortItemHandlerSchema,
+    BaseItemHandlerSchema,
+    ItemHandler,
 )
 from .types import TypeNode
 from .utils import ANY, isodate_now
@@ -177,6 +180,77 @@ class TractionState(str, enum.Enum):
 
 OnUpdateCallable = Callable[[_Traction], None]
 OnErrorCallable = Callable[[_Traction], None]
+
+
+class TractionItemHandlerSchema(ItemHandler):
+    """Serialization handler for base subclasses."""
+
+    def match(self, item):
+        """Match Base subclasses."""
+        try:
+            if issubclass(item.data_type, Traction):
+                return True
+        except Exception:
+            import sys
+            print(f"Error matching item {item.data_type} in {item.path}", file=sys.stderr)
+            raise
+
+    def process(self, tree, item):
+        """Process Base subclasses."""
+        item.result[item.parent_index] = {
+            "type": "object",
+            "title": str(item.data),
+            "properties": {},
+        }
+        required = []
+        if item.data_type._fields.get("d_"):
+            item.result[item.parent_index]["description"] = item.data_type.__dataclass_fields__.get(
+                "d_", {}).default
+
+        for f, ftype in item.data_type._fields.items():
+            if not (f.startswith("i_") or f.startswith("a_") or f.startswith("r_")):
+                continue
+
+            if item.data_type.__dataclass_fields__.get(f) and item.data.__dataclass_fields__[f].init is False:
+                # Skip if field is not initialized
+                continue
+            default = item.data_type.__dataclass_fields__.get(f, {}).default
+            extra = {}
+            if not isinstance(default, dataclasses._MISSING_TYPE):
+                if not isinstance(default, Port):
+                    if hasattr(default, "content_to_json"):
+                        extra['default'] = default.content_to_json()
+                    else:
+                        extra['default'] = default
+                else:
+                    extra['default'] = default
+            if "d_"+f in item.data_type._fields:
+                extra["description"] = item.data_type.__dataclass_fields__.get("d_" + f, {}).default
+            _f = item.data._SERIALIZE_REPLACE_FIELDS.get(f, f)
+            tree.add_to_process(
+                data=f,
+                data_type=ftype,
+                parent_index=_f,
+                result=item.result[item.parent_index]["properties"],
+                extra=extra
+            )
+            required.append(f)
+        item.result[item.parent_index]["required"] = required
+
+
+class ToJsonSchemaTree(Tree):
+    """Tree for serialization."""
+
+    handlers = [
+        UnionItemHandlerSchema(),
+        ListItemHandlerSchema(),
+        DictItemHandlerSchema(),
+        EnumItemHandlerSchema(),
+        BasicItemHandlerSchema(),
+        PortItemHandlerSchema(),
+        TractionItemHandlerSchema(),
+        BaseItemHandlerSchema(),
+    ]
 
 
 class Traction(Base, metaclass=TractionMeta):
@@ -692,3 +766,12 @@ class Traction(Base, metaclass=TractionMeta):
         for o, oval in outs.items():
             setattr(ret, o, oval)
         return ret
+
+    @classmethod
+    def _to_json_schema(cls) -> Dict[str, Any]:
+        """Return json schema representation of the class."""
+        result = {}
+        tree = ToJsonSchemaTree(result)
+        tree.add_to_process(data=cls, data_type=cls, parent_index="root", result=result)
+        tree.process()
+        return result["root"]
