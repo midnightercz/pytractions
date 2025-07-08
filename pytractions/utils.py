@@ -1,6 +1,5 @@
 from __future__ import annotations
 import abc
-import dataclasses
 import datetime
 
 from typing import get_origin, get_args

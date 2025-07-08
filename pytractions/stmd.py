@@ -172,7 +172,7 @@ class STMDMeta(TractionMeta):
         attrs["_args_map"] = args_map
 
 
-_loop_executor = LoopExecutor()
+_loop_executor = LoopExecutor(executor_type="loop_executor")
 
 
 class STMD(Traction, metaclass=STMDMeta):
@@ -234,7 +234,6 @@ class STMD(Traction, metaclass=STMDMeta):
 
     def _prep_tractions(self, first_in, args, inputs, resources, outputs):
         """Prepare tractions for the run."""
-
         self.tractions = TList[Union[Traction, None]]([])
         for x in range(len(first_in)):
             uid = "%s:%d" % (self.uid, x)
@@ -255,7 +254,6 @@ class STMD(Traction, metaclass=STMDMeta):
 
     def run(self) -> "STMD":
         """Run the STMD class."""
-
         if self.state not in (TractionState.READY, TractionState.ERROR):
             return self
 

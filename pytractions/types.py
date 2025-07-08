@@ -166,7 +166,8 @@ class TypeNode:
                 for arg in current.type_.__args__:
                     if not TypeNode.from_type(type(arg)).json_compatible():
                         raise JSONIncompatibleError(
-                            f"Literal arg ({arg} {type(arg)}) type can contain only json compatible types"
+                            f"Literal arg ({arg} {type(arg)}) type can "
+                            + "contain only json compatible types"
                         )
                     arg_type.add(type(arg))
                 if len(arg_type) > 1:
@@ -485,6 +486,7 @@ class TypeNode:
 
         self._json_cache.append((self.copy(subclass_check=False), pre_order["root"]))
         return pre_order["root"]
+
 
     @classmethod
     def from_json(cls, json_data, _locals={}) -> "TypeNode":

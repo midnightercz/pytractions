@@ -7,7 +7,6 @@ from .base import (
     Field,
     TList,
     TDict,
-    MultiArg,
     ANY,
     TypeNode,
     Port,
@@ -344,7 +343,6 @@ class Tractor(Traction, metaclass=TractorMeta):
         return init_fields
 
     def _init_traction(self, traction_name, traction):
-        LOGGER.info("Init traction %s", traction_name)
         init_fields = {}
 
         for ft, field in traction.__dataclass_fields__.items():
@@ -412,6 +410,7 @@ class Tractor(Traction, metaclass=TractorMeta):
                     continue
                 init_fields[ft] = getattr(traction, ft)
 
+        LOGGER.info("Init traction %s: %s", traction_name, init_fields)
         return traction.__class__(**init_fields)
 
     # def __post_init__(self):
@@ -657,7 +656,7 @@ class MultiTractor(Tractor, metaclass=TractorMeta):
                 ft_results = {}
                 for t_name, traction in tractions.items():
                     res = executor.submit(
-                        self._traction_runner, t_name, traction, on_update=on_update
+                        self._traction_runner, t_name, traction
                     )
                     ft_results[res] = t_name
                 for ft in as_completed(ft_results):

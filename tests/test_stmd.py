@@ -200,6 +200,8 @@ class G_TTest1(Traction):
 
 
 class Complex(Base):
+    """Test class."""
+
     real: float = 0.0
     imag: float = 0.0
 

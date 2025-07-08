@@ -6,6 +6,8 @@ from pytractions.exc import NoDefaultError
 
 
 class Nested(Base):
+    """Test class."""
+
     x: int
 
 

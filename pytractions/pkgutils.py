@@ -1,4 +1,4 @@
-from .base import Traction
+from .traction import Traction
 from .stmd import STMD
 from .tractor import Tractor, MultiTractor
 
@@ -15,4 +15,6 @@ def traction_entry_points(module):
             continue
 
         if issubclass(v, Traction):
+            if v.__module__ != module.__name__:
+                continue
             yield f"{k} = {v.__module__}:{k}"

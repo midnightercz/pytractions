@@ -5,6 +5,7 @@ from pytractions.stmd import STMD
 
 
 class TestTraction(Traction):
+    """Tets traction."""
 
     i_in: int
     o_out: int
@@ -14,15 +15,20 @@ class TestTraction(Traction):
 
 
 class NestedData(Base):
+    """Test class."""
+
     j: int = 0
 
 
 class ComplexData(Base):
+    """Test class with complex data."""
+
     i: int = 0
     nested: NestedData = Field(default_factory=NestedData)
 
 
 class TestTractionComplex(Traction):
+    """Tets traction with complex data."""
 
     i_in: ComplexData
     o_out: ComplexData
@@ -35,6 +41,7 @@ class TestTractionComplex(Traction):
 
 
 class TestTractionList(Traction):
+    """Tets traction with list data."""
 
     i_in: TList[int]
     o_out: TList[int]
@@ -45,6 +52,7 @@ class TestTractionList(Traction):
 
 
 class TestTractionDict(Traction):
+    """Tets traction with dict data."""
 
     i_in: TDict[str, str]
     o_out: TDict[str, str]
@@ -55,6 +63,8 @@ class TestTractionDict(Traction):
 
 
 class TestTractor(Tractor):
+    """Tets tractor."""
+
     i_in: Port[ComplexData] = NullPort[ComplexData]()
     t_complex: TestTractionComplex = TestTractionComplex(uid="t_complex", i_in=i_in)
     o_tractor_out: Port[ComplexData] = t_complex.o_out
@@ -64,7 +74,10 @@ TestTractionSTMD = STMD.wrap(TestTraction)
 
 
 class Observer:
+    """Test observer."""
+
     def __init__(self):
+        """Init observer."""
         self.observed_calls = []
 
     def _observed(self, *args, extra=None):

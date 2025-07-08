@@ -3,6 +3,8 @@ from dataclasses import MISSING
 
 
 class Field(dataclass_Field):
+    """Custom dataclass field."""
+
     def __init__(
         self,
         *args,
@@ -16,6 +18,7 @@ class Field(dataclass_Field):
         kw_only=MISSING,
         validator=None,
     ) -> None:
+        """Override init to able to assign validator to the field."""
         super().__init__(
             *args,
             default=default,
