@@ -297,15 +297,21 @@ def test_tdict_complex_from_json2():
 
 
 class GenericClass(Base):
+    """Test class."""
+
     a: int
 
 
 class SubclassClass1(GenericClass):
+    """Test class."""
+
     cls_type: Literal["sub1"]
     b: str
 
 
 class SubclassClass2(GenericClass):
+    """Test class."""
+
     cls_type: Literal["sub2"]
     c: str
 
@@ -324,3 +330,92 @@ def test_subclasses_deserialization():
     new_subcls_i = GenericClass.content_from_json(content)
 
     assert subcls_i == new_subcls_i
+
+
+def test_json_schema():
+    assert TestC.to_json_schema() == {
+        "type": "object",
+        "properties": {"foo": {"type": "integer"}, "bar": {"type": "string"}},
+    }
+
+
+def test_json_schema_complex():
+    assert TestC3.to_json_schema() == {
+        "type": "object",
+        "properties": {
+            "c2": {"type": "object",
+                   "properties": {
+                       "attr1": {"type": "string"},
+                       "attr2": {"type": "integer"},
+                        }},
+            "foo": {"type": "integer"},
+            'complex_list': {
+                'items': {
+                    'properties': {
+                        'attr1': {'type': 'string'},
+                        'attr2': {'type': 'integer'},
+                    },
+                    'type': 'object'
+                },
+                'type': 'array'
+            },
+            "bar": {"type": "string"},
+            'intlist': {
+                'items': {'type': 'integer'},
+                'type': 'array'
+            }
+        }
+    }
+
+
+def test_json_schema_complex2():
+    assert TestC4.to_json_schema() == {
+        "type": "object",
+        "properties": {
+            "c2": {"type": "object",
+                   "properties": {
+                       "attr1": {"type": "string"},
+                       "attr2": {"type": "integer"},
+                        }},
+            "foo": {"type": "integer"},
+            'complex_list': {
+                'items': {
+                    'properties': {
+                        'attr1': {'type': 'string'},
+                        'attr2': {'type': 'integer'},
+                    },
+                    'type': 'object'
+                },
+                'type': 'array'
+            },
+            'complex_dict': {
+                'items': {
+                    'properties': {
+                        'attr1': {'type': 'string'},
+                        'attr2': {'type': 'integer'}
+                    },
+                    'type': 'object'
+                },
+                'type': 'object'
+            },
+            "bar": {"type": "string"},
+            'c': {
+                'anyOf': [
+                    {
+                        'properties': {
+                            'bar': {'type': 'string'},
+                            'foo': {'type': 'integer'}
+                        },
+                        'type': 'object'
+                    },
+                    {
+                        'properties': {
+                            'attr1': {'type': 'string'},
+                            'attr2': {'type': 'integer'}
+                        },
+                        'type': 'object'
+                    }
+                ]
+            }
+        }
+    }
