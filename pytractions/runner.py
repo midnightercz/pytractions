@@ -8,12 +8,10 @@ import yaml
 from .monitor import OBSERVERS
 from .traction import Traction
 from .runner_utils import parse_traction_str, gen_default_inputs
+from .logging.redis import RedisStreamHandler
 
 
 LOGGER = logging.getLogger()
-sh = logging.StreamHandler(stream=sys.stdout)
-sh.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-LOGGER.addHandler(sh)
 
 
 class SimpleRunner:
@@ -31,56 +29,56 @@ class SimpleRunner:
         self.observer.setup(self.tractor)
         self.tractor.run()
 
-    def resubmit(self, traction):
-        """Run tractor from specific traction."""
-        loading_started = False
-        _ttraction = getattr(self.tractor, traction)
-        outputs = []
-
-        for tf, ftype in self.tractor._fields.items():
-            if tf == traction:
-                loading_started = True
-            if tf.startswith("t_") and loading_started:
-                _ttraction = getattr(self.tractor, traction)
-                for f, _ in _ttraction._fields.items():
-                    if f.startswith("i_") and self.tractor._io_map[(traction, f)] not in outputs:
-                        outputs.append(self.tractor._io_map[(traction, f)])
-                traction_path = os.path.join(
-                    self.monitor_file,
-                    self.tractor.uid + "::" + getattr(self.tractor, tf).uid + ".json",
-                )
-                if os.path.exists(traction_path):
-                    self.tractor.tractions[tf] = ftype.from_json(json.load(open(traction_path)))
-        for output in outputs:
-            if output[0] != "#":
-                traction_path = os.path.join(
-                    self.monitor_file,
-                    self.tractor.uid + "::" + getattr(self.tractor, output[0]).uid + ".json",
-                )
-                self.tractor.tractions[output[0]] = getattr(self.tractor, output[0]).from_json(
-                    json.load(open(traction_path))
-                )
-            else:
-                traction_path = os.path.join(
-                    self.monitor_file, self.tractor.uid + "::" + output[1] + ".json"
-                )
-                ftype = self.tractor._fields[output[1]]
-                setattr(self.tractor, output[1], ftype.from_json(json.load(open(traction_path))))
-
-        for f, ftype in self.tractor._fields.items():
-            if f == traction:
-                loading_started = True
-            if f.startswith("t_") and loading_started:
-                inputs = self.tractor._init_traction_input(f, ftype)
-                for _in, t_in in inputs.items():
-                    object.__setattr__(self.tractor.tractions[f], _in, t_in)
-
-        monitor = StructuredMonitor(self.tractor, self.monitor_file)
-        self.tractor.resubmit_from(traction)
-        try:
-            self.tractor.run(on_update=monitor.on_update)
-        finally:
-            monitor.close(self.tractor)
+    # def resubmit(self, traction):
+    #     """Run tractor from specific traction."""
+    #     loading_started = False
+    #     _ttraction = getattr(self.tractor, traction)
+    #     outputs = []
+    #
+    #     for tf, ftype in self.tractor._fields.items():
+    #         if tf == traction:
+    #             loading_started = True
+    #         if tf.startswith("t_") and loading_started:
+    #             _ttraction = getattr(self.tractor, traction)
+    #             for f, _ in _ttraction._fields.items():
+    #                 if f.startswith("i_") and self.tractor._io_map[(traction, f)] not in outputs:
+    #                     outputs.append(self.tractor._io_map[(traction, f)])
+    #             traction_path = os.path.join(
+    #                 self.monitor_file,
+    #                 self.tractor.uid + "::" + getattr(self.tractor, tf).uid + ".json",
+    #             )
+    #             if os.path.exists(traction_path):
+    #                 self.tractor.tractions[tf] = ftype.from_json(json.load(open(traction_path)))
+    #     for output in outputs:
+    #         if output[0] != "#":
+    #             traction_path = os.path.join(
+    #                 self.monitor_file,
+    #                 self.tractor.uid + "::" + getattr(self.tractor, output[0]).uid + ".json",
+    #             )
+    #             self.tractor.tractions[output[0]] = getattr(self.tractor, output[0]).from_json(
+    #                 json.load(open(traction_path))
+    #             )
+    #         else:
+    #             traction_path = os.path.join(
+    #                 self.monitor_file, self.tractor.uid + "::" + output[1] + ".json"
+    #             )
+    #             ftype = self.tractor._fields[output[1]]
+    #             setattr(self.tractor, output[1], ftype.from_json(json.load(open(traction_path))))
+    #
+    #     for f, ftype in self.tractor._fields.items():
+    #         if f == traction:
+    #             loading_started = True
+    #         if f.startswith("t_") and loading_started:
+    #             inputs = self.tractor._init_traction_input(f, ftype)
+    #             for _in, t_in in inputs.items():
+    #                 object.__setattr__(self.tractor.tractions[f], _in, t_in)
+    #
+    #     monitor = StructuredMonitor(self.tractor, self.monitor_file)
+    #     self.tractor.resubmit_from(traction)
+    #     try:
+    #         self.tractor.run(on_update=monitor.on_update)
+    #     finally:
+    #         monitor.close(self.tractor)
 
 
 def load_yaml_input(traction_cls):
@@ -103,37 +101,61 @@ def load_yaml_input(traction_cls):
 
 def load_json_input(traction_cls):
     """Load json input."""
-    json_values = {}
+    # json_values = {}
+    # traction_init_fields = {}
+    # for param in args.params:
+    #     name, value = param.split("=")
+    #     if value.startswith("@"):
+    #         try:
+    #             _value = json.load(open(value[1:]))
+    #         except json.JSONDecodeError:
+    #             _value = open(value[1:]).read()
+    #     elif value:
+    #         try:
+    #             _value = json.loads(value)
+    #         except json.JSONDecodeError:
+    #             _value = value
+    #     else:
+    #         continue
+    #     nested_name = name.split(".")
+    #     current_nest = json_values
+    #     for v in nested_name:
+    #         if v == nested_name[-1]:
+    #             current_nest[v] = _value
+    #         else:
+    #             current_nest.setdefault(v, {})
+    #         current_nest = current_nest[v]
+    #for name, json_val in json_values.items():
+    #    traction_init_fields[name] = traction_cls._fields[name].content_from_json(json_val)
+    json_val = json.loads(sys.stdin.read())
     traction_init_fields = {}
-    for param in args.params:
-        name, value = param.split("=")
-        if value.startswith("@"):
-            try:
-                _value = json.load(open(value[1:]))
-            except json.JSONDecodeError:
-                _value = open(value[1:]).read()
-        elif value:
-            try:
-                _value = json.loads(value)
-            except json.JSONDecodeError:
-                _value = value
-        else:
-            continue
-        nested_name = name.split(".")
-        current_nest = json_values
-        for v in nested_name:
-            if v == nested_name[-1]:
-                current_nest[v] = _value
-            else:
-                current_nest.setdefault(v, {})
-            current_nest = current_nest[v]
-    for name, json_val in json_values.items():
-        traction_init_fields[name] = traction_cls._fields[name].content_from_json(json_val)
+    for k, v in json_val.items():
+        if k not in traction_cls._fields:
+            raise AttributeError(f"{traction_cls.__name__} doesn't have field {k}")
+        LOGGER.info(f"Loading input: {k} {v}")
+        if not isinstance(v, dict) or (isinstance(v, dict) and not v.get("data")):
+            v = {"data": v}
+        traction_init_fields[k] = traction_cls._fields[k].content_from_json(v)
     return traction_init_fields
 
 
 def run_main(args):
     """Run action."""
+
+    if args.logger_handler == "redis":
+        redis_settings = json.loads(args.logger_handler_redis_settings)
+        sh = RedisStreamHandler(
+            redis_url=redis_settings["redis_url"],
+            port=redis_settings["port"],
+            stream_id=args.run_id,
+        )
+        sh.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+        LOGGER.addHandler(sh)
+    else:
+        sh = logging.StreamHandler(stream=sys.stdout)
+        sh.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+        LOGGER.addHandler(sh)
+
     traction_cls = parse_traction_str(args.traction)
     traction_init_fields = {}
     LOGGER.setLevel(getattr(logging, args.level))
@@ -197,6 +219,15 @@ def make_parsers(subparsers):
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         default="INFO",
     )
+    p_runner.add_argument("--logger-handler",
+                          "-L",
+                          help="Logger handler",
+                          type=str, default="stdout",
+                          choices=["stdout", "redis"])
+    p_runner.add_argument("--logger-handler-redis-settings",
+                          help='{"redis_url":<url>,"port":<port>}',
+                          type=str, default="stdout")
+
     p_runner.add_argument(
         "--io-type",
         "-t",
