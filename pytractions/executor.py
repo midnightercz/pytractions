@@ -1,10 +1,11 @@
 import logging
 import multiprocessing
 import traceback
+from typing import Literal
 
 import ray
 
-from pytractions.base import Base, TDict, Port, Any, JSON_COMPATIBLE
+from pytractions.base import Base, TDict, JSON_COMPATIBLE
 from pytractions.stmd_utils import _init_traction
 from pytractions.traction import TractionState, TractionStats
 
@@ -22,6 +23,8 @@ class Executor(Base):
 
 
 class TractionResult(Base):
+    """Results of traction running in executor."""
+
     outputs: TDict[str, JSON_COMPATIBLE]
     state: TractionState
     stats: TractionStats
@@ -44,6 +47,7 @@ class ProcessPoolExecutor(Executor):
     """Execute tractions in parallel using pythons concurrent ProcessPoolExecutor."""
 
     pool_size: int = multiprocessing.cpu_count()
+    executor_type: Literal["process_pool_executor"]
 
     def __post_init__(self):
         """Initialize executor."""
@@ -62,7 +66,6 @@ class ProcessPoolExecutor(Executor):
 
     def execute(self, index, uid, traction_cls, inputs, args, resources, observer=None):
         """Execute the traction with given inputs args and resources."""
-
         res = self._executor.submit(
             _execute_traction,
             index,
@@ -116,6 +119,7 @@ class ThreadPoolExecutor(Executor):
     """Execute tractions in parallel using pythons concurrent ThreadPoolExecutor."""
 
     pool_size: int = 1
+    executor_type: Literal["thread_pool_executor"]
 
     def __post_init__(self):
         """Initialize executor."""
@@ -180,6 +184,7 @@ class ThreadPoolExecutor(Executor):
 
 class LoopExecutor(Executor):
     """Execute tractions in sequentially in for loop."""
+    executor_type: Literal["loop_executor"]
 
     def __post_init__(self):
         """Initialize executor."""
