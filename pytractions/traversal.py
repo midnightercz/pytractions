@@ -8,7 +8,7 @@ class Type:
 class TreeItem:
     """TreeItem."""
 
-    def __init__(self, data, data_type, parent, parent_index, result, path):
+    def __init__(self, data, data_type, parent, parent_index, result, path, extra):
         """__init__."""
         self.data = data
         self.data_type = data_type
@@ -16,6 +16,7 @@ class TreeItem:
         self.parent_index = parent_index
         self.result = result
         self.path = path
+        self.extra = extra if extra is not None else {}
 
 
 class UnknownItemError(Exception):
@@ -59,7 +60,7 @@ class Tree:
             pass
         return self.result
 
-    def add_to_process(self, data=None, data_type=None, parent_index=None, result=None):
+    def add_to_process(self, data=None, data_type=None, parent_index=None, result=None, extra=None):
         """Add new item to stack to process."""
         if self.TYPE == Type.FIFO:
             titem = TreeItem(
@@ -73,6 +74,7 @@ class Tree:
                     if self.current
                     else str(parent_index)
                 ),
+                extra=extra
             )
             self.stack.insert(0, titem)
         else:
