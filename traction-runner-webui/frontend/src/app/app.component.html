@@ -1,0 +1,110 @@
+<mat-sidenav-container class="example-container" autosize>
+  <mat-sidenav mode="side" opened>
+    <!-- Left Panel Content -->
+    <mat-tab-group [selectedIndex]="selectedTabIndex" dynamicSize>
+
+      <!-- New run tab -->
+      <mat-tab label="New run">
+        <mat-card class="element-card">
+          <mat-form-field>
+            <mat-label>Traction group</mat-label>
+            <mat-select (selectionChange)="onSelectedGroup($event.value)" [(value)]="selected_group">
+              @for (group of traction_groups; track group) {
+                <mat-option [value]="group">{{group}}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field *ngIf="tractions.length > 0">
+            <mat-label>Traction</mat-label>
+            <mat-select (selectionChange)="onSelectedTraction($event.value)" [(value)]="selected_traction">
+              @for (traction of tractions; track traction) {
+                <mat-option [value]="traction">{{traction}}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+        </mat-card>
+        <mat-card class="element-card">
+          <div *ngIf="selected_traction.length > 0">
+            <button (click)="downloadModel()">Download Form</button>
+          </div>
+        </mat-card>
+        <mat-card class="element-card">
+          <div *ngIf="selected_traction.length > 0">
+            Uplodad Form:
+            <input type="file" (change)="uploadModel($event)" accept=".json" />
+          </div>
+        </mat-card>
+
+        <div *ngIf="run_id">
+          <p>New run ID: {{run_id}}</p>
+        </div>
+
+      </mat-tab>
+
+
+      <!-- Archive tab -->
+      <mat-tab label="Archive">
+        <div *ngFor="let archive of archives">
+          <mat-card>
+            <mat-card-content>
+              <mat-card-title>{{archive.uid.split(":").slice(0,2).join(":")}}</mat-card-title>
+              <mat-card-subtitle>Id: {{archive.uid.split(":").slice(2,3)}}</mat-card-subtitle>
+              <mat-card-subtitle>Description: {{archive.user_desc}}</mat-card-subtitle>
+            </mat-card-content>
+            <mat-card-actions>
+              <button matButton (click)="deleteArchived(archive.uid)">Delete</button>
+              <button matButton (click)="selectArchived(archive.uid)">Load</button>
+            </mat-card-actions>
+          </mat-card>
+        </div>
+      </mat-tab>
+    </mat-tab-group>
+  </mat-sidenav>
+
+  <mat-sidenav-content>
+    <!-- Right/Main Panel Content -->
+    <mat-tab-group [selectedIndex]="selectedTabIndex">
+      <mat-tab label="Guide">
+        <div class="guide">
+          <h2>Welcome to the Traction runner</h2>
+          <h3>Starting new run of a traction</h3>
+          <p>Select a traction group you want to run. After that, list of available tractions
+          will shown in new select box.</p>
+          <p>Once traction is selected, you can click on <b>'Upload form'</b> to load prefilled inputs</p>
+          <p>Alternatively you can click on <b>'Download'</b> button to download data you entered to the form
+          manually.</p>
+          <p>Once you're ready, click on <b>'Submit'</b> at the bottom of the form to start the run.</p>
+          <h3>Resubmitting already finished run</h3>
+          <p>Go to archive tab where you can click on run which was finished. You can
+          inspect its output in the output tab and you can also retrigger the run on the <b>'Form'</b> tab.
+          On the form tab you can also edit the form to change input data if needed</p>
+          <p>When you click on <b>'Submit'</b>, traction run will be create with new uid</p>
+          <h3>Custom notes for the run</h3>
+          <p>Every traction form has <b>user description</b> field at the bottom of the form.
+          Use can use it for putting custom notes for the run.
+        </div>
+      </mat-tab>
+      <mat-tab label="Form" *ngIf="selected_traction">
+        <!-- Form tab -->
+        <main class="main">
+          <div class="content">
+            <div class="left-side">
+          <form [formGroup]="form" (ngSubmit)="onSubmit(model)">
+          <formly-form [form]="form" [fields]="fields" [model]="model"></formly-form>
+          <button type="submit" matButton>Submit</button>
+          </form>
+            </div>
+          </div>
+        </main>
+      </mat-tab>
+      <mat-tab label="Output" *ngIf="executed">
+        <div *ngFor="let log of logs"><span [class]="'log-level-' + log.level">{{log.log}}</span></div>
+
+      </mat-tab>
+    </mat-tab-group>
+
+
+  </mat-sidenav-content>
+</mat-sidenav-container>
+
+<router-outlet />

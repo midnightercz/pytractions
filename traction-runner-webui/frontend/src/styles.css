@@ -1,0 +1,23 @@
+@import 'bootstrap/scss/bootstrap.scss';
+@import '@angular/cdk/overlay-prebuilt.css';
+
+html, body { height: 100%; width: 100%; }
+body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; }
+
+.example-container {
+  padding: 1em;
+  width: 100%;
+  height: 100%;
+}
+
+.log-level-20 {
+  color: #0220a8; /* Blue */
+}
+
+.log-level-30 { /* Warning */
+  color: #b37400; /* Orange */
+}
+
+.log-level-40 { /* Error */
+  color: #b30000; /* Red */
+}
