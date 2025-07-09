@@ -8,6 +8,10 @@ const app = express();
 app.use(express.json());      // if needed
 app.use(express.urlencoded());
 
+const PORT = process.env.BACKEND_PORT || 3000;
+const HOST = process.env.BACKEND_HOST || '127.0.0.1';
+
+console.log("Running server on " + HOST + ":" + PORT);
 
 async function redis_client(host: string, port: number) {
   return await createClient({
@@ -17,6 +21,8 @@ async function redis_client(host: string, port: number) {
 }
 
 const port = 3000;
+
+
 app.get('/api/schema/:module/:classname', (req, res) => {
   const { module, classname } = req.params;
   const python = spawn('python3', ["-c", "import json; import "+ module + "; print(json.dumps(" + module + "." + classname + ".to_json_schema()))"]);
@@ -208,9 +214,6 @@ app.get('/api/watch/:stream_id', async (req, res) => {
   }
 })
 
-app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
-});
 
 app.delete('/api/delete/:_id', async (req, res) => {
   const redisc = await redis_client('localhost', 6379);
@@ -227,8 +230,7 @@ app.delete('/api/delete/:_id', async (req, res) => {
   });
 })
 
-app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
+app.listen(Number(PORT), HOST, () => {
+  console.log(`Server is running on http://${HOST}:${PORT}`);
 });
-
 
