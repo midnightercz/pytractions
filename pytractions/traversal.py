@@ -74,7 +74,7 @@ class Tree:
                     if self.current
                     else str(parent_index)
                 ),
-                extra=extra
+                extra=extra,
             )
             self.stack.insert(0, titem)
         else:

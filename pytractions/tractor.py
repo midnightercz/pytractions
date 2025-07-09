@@ -655,9 +655,7 @@ class MultiTractor(Tractor, metaclass=TractorMeta):
             for w, tractions in traction_groups.items():
                 ft_results = {}
                 for t_name, traction in tractions.items():
-                    res = executor.submit(
-                        self._traction_runner, t_name, traction
-                    )
+                    res = executor.submit(self._traction_runner, t_name, traction)
                     ft_results[res] = t_name
                 for ft in as_completed(ft_results):
                     t_name = ft_results[ft]

@@ -335,7 +335,12 @@ def test_subclasses_deserialization():
 def test_json_schema():
     assert TestC.to_json_schema() == {
         "type": "object",
-        "properties": {"foo": {"type": "integer"}, "bar": {"type": "string"}},
+        "properties": {
+            "foo": {"type": "integer", "title": "foo"},
+            "bar": {"type": "string", "title": "bar"},
+        },
+        "required": ["foo", "bar"],
+        "title": "TestC",
     }
 
 
@@ -343,79 +348,144 @@ def test_json_schema_complex():
     assert TestC3.to_json_schema() == {
         "type": "object",
         "properties": {
-            "c2": {"type": "object",
-                   "properties": {
-                       "attr1": {"type": "string"},
-                       "attr2": {"type": "integer"},
-                        }},
-            "foo": {"type": "integer"},
-            'complex_list': {
-                'items': {
-                    'properties': {
-                        'attr1': {'type': 'string'},
-                        'attr2': {'type': 'integer'},
-                    },
-                    'type': 'object'
+            "c2": {
+                "type": "object",
+                "properties": {
+                    "attr1": {"type": "string", "title": "attr1"},
+                    "attr2": {"type": "integer", "title": "attr2"},
                 },
-                'type': 'array'
+                "required": ["attr1", "attr2"],
+                "title": "c2",
             },
-            "bar": {"type": "string"},
-            'intlist': {
-                'items': {'type': 'integer'},
-                'type': 'array'
-            }
-        }
+            "foo": {"type": "integer", "title": "foo"},
+            "complex_list": {
+                "items": {
+                    "properties": {
+                        "attr1": {"type": "string", "title": "attr1"},
+                        "attr2": {"type": "integer", "title": "attr2"},
+                    },
+                    "required": ["attr1", "attr2"],
+                    "type": "object",
+                    "title": "list item",
+                },
+                "type": "array",
+                "title": "complex_list",
+            },
+            "bar": {"type": "string", "title": "bar"},
+            "intlist": {
+                "items": {"type": "integer", "title": "list item"},
+                "type": "array",
+                "title": "intlist",
+            },
+        },
+        "required": ["c2", "foo", "bar", "intlist", "complex_list"],
+        "title": "TestC3",
     }
 
 
 def test_json_schema_complex2():
     assert TestC4.to_json_schema() == {
         "type": "object",
+        "title": "TestC4",
         "properties": {
-            "c2": {"type": "object",
-                   "properties": {
-                       "attr1": {"type": "string"},
-                       "attr2": {"type": "integer"},
-                        }},
-            "foo": {"type": "integer"},
-            'complex_list': {
-                'items': {
-                    'properties': {
-                        'attr1': {'type': 'string'},
-                        'attr2': {'type': 'integer'},
-                    },
-                    'type': 'object'
+            "c2": {
+                "type": "object",
+                "properties": {
+                    "attr1": {"type": "string", "title": "attr1"},
+                    "attr2": {"type": "integer", "title": "attr2"},
                 },
-                'type': 'array'
+                "required": ["attr1", "attr2"],
+                "title": "c2",
             },
-            'complex_dict': {
-                'items': {
-                    'properties': {
-                        'attr1': {'type': 'string'},
-                        'attr2': {'type': 'integer'}
+            "foo": {"type": "integer", "title": "foo"},
+            "complex_list": {
+                "items": {
+                    "properties": {
+                        "attr1": {"type": "string", "title": "attr1"},
+                        "attr2": {"type": "integer", "title": "attr2"},
                     },
-                    'type': 'object'
+                    "required": ["attr1", "attr2"],
+                    "title": "list item",
+                    "type": "object",
                 },
-                'type': 'object'
+                "type": "array",
+                "title": "complex_list",
             },
-            "bar": {"type": "string"},
-            'c': {
-                'anyOf': [
-                    {
-                        'properties': {
-                            'bar': {'type': 'string'},
-                            'foo': {'type': 'integer'}
+            "complex_dict": {
+                "items": {
+                    "properties": {
+                        "name": {"type": "string"},
+                        "value": {
+                            "properties": {
+                                "attr1": {"type": "string", "title": "attr1"},
+                                "attr2": {"type": "integer", "title": "attr2"},
+                            },
+                            "required": ["attr1", "attr2"],
+                            "title": "None",
+                            "type": "object",
                         },
-                        'type': 'object'
+                    },
+                    "type": "object",
+                },
+                "type": "array",
+                "title": "complex_dict",
+            },
+            "bar": {"type": "string", "title": "bar"},
+            "c": {
+                "oneOf": [
+                    {
+                        "properties": {
+                            "bar": {"type": "string", "title": "bar"},
+                            "foo": {"type": "integer", "title": "foo"},
+                        },
+                        "type": "object",
+                        "required": ["foo", "bar"],
+                        "title": "TestC",
                     },
                     {
-                        'properties': {
-                            'attr1': {'type': 'string'},
-                            'attr2': {'type': 'integer'}
+                        "properties": {
+                            "attr1": {"type": "string", "title": "attr1"},
+                            "attr2": {"type": "integer", "title": "attr2"},
                         },
-                        'type': 'object'
-                    }
-                ]
-            }
-        }
+                        "type": "object",
+                        "title": "TestC2",
+                        "required": ["attr1", "attr2"],
+                    },
+                ],
+                "title": "c",
+                "type": "object",
+            },
+            "e": "string",
+            "intlist": {
+                "items": {"title": "list item", "type": "integer"},
+                "title": "intlist",
+                "type": "array",
+            },
+            "optional_str": {
+                "title": "optional_str",
+                "type": "string",
+            },
+            "union_arg": {
+                "oneOf": [
+                    {"type": "integer", "title": "<class 'int'>"},
+                    {"type": "string", "title": "<class 'str'>"},
+                ],
+                "title": "union_arg",
+                "type": "object",
+            },
+            "x": {"title": "x", "type": "string"},
+        },
+        "required": [
+            "c2",
+            "foo",
+            "bar",
+            "intlist",
+            "complex_list",
+            "complex_dict",
+            "optional_str",
+            "union_arg",
+            "c",
+            "e",
+            "x",
+        ],
     }

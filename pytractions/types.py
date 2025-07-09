@@ -487,7 +487,6 @@ class TypeNode:
         self._json_cache.append((self.copy(subclass_check=False), pre_order["root"]))
         return pre_order["root"]
 
-
     @classmethod
     def from_json(cls, json_data, _locals={}) -> "TypeNode":
         """Load TypeNode from json."""

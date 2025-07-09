@@ -102,7 +102,7 @@ class Calculator(Tractor):
     i_coeficient: STMDSingleIn[float] = STMDSingleIn[float]()
     a_executor: Port[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]] = Port[
         Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]
-    ](data=ThreadPoolExecutor(pool_size=30))
+    ](data=ThreadPoolExecutor(pool_size=30, executor_type="thread_pool_executor"))
 
     t_double: STMDDouble = STMDDouble(
         uid="double",
@@ -241,7 +241,7 @@ def test_stmd_tractor(fixture_isodate_now) -> None:
         o_out1: Port[TList[float]] = Port[TList[float]](data=TList[float]([]))
 
     stmd_in1 = Port[TList[float]](data=TList[float]([1.0, 2.0, 3.0, 4.0, 5.0]))
-    thread_pool_executor = ThreadPoolExecutor(pool_size=1)
+    thread_pool_executor = ThreadPoolExecutor(pool_size=1, executor_type="thread_pool_executor")
 
     stmd1 = TestSTMD(
         uid="tt1",
@@ -300,7 +300,7 @@ def test_stmd_threads(fixture_isodate_now) -> None:
             ]
         )
     )
-    thread_pool_executor = ThreadPoolExecutor(pool_size=1)
+    thread_pool_executor = ThreadPoolExecutor(pool_size=1, executor_type="thread_pool_executor")
     stmd1 = TestSTMD(
         uid="tt1",
         a_executor=Port[Union[ProcessPoolExecutor, ThreadPoolExecutor, LoopExecutor]](
@@ -330,7 +330,7 @@ class GTestSTMD(STMD):
 
 def test_stmd_processes(fixture_isodate_now) -> None:
 
-    process_pool_executor = ProcessPoolExecutor(pool_size=1)
+    process_pool_executor = ProcessPoolExecutor(pool_size=1, executor_type="process_pool_executor")
     stmd_in1 = Port[TList[float]](
         data=TList[float](
             [
@@ -371,7 +371,7 @@ def test_wrap_stmd_threadpool(fixture_isodate_now) -> None:
             ]
         )
     )
-    thread_pool_executor = ThreadPoolExecutor(pool_size=1)
+    thread_pool_executor = ThreadPoolExecutor(pool_size=1, executor_type="thread_pool_executor")
 
     stmd1 = STMD.wrap(G_TTest1)(
         uid="tt1",
@@ -402,7 +402,7 @@ def test_wrap_stmd_processpool(fixture_isodate_now) -> None:
             ]
         )
     )
-    process_pool_executor = ProcessPoolExecutor(pool_size=1)
+    process_pool_executor = ProcessPoolExecutor(pool_size=1, executor_type="process_pool_executor")
 
     stmd1 = STMD.wrap(G_TTest1)(
         uid="tt1",

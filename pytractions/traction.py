@@ -192,6 +192,7 @@ class TractionItemHandlerSchema(ItemHandler):
                 return True
         except Exception:
             import sys
+
             print(f"Error matching item {item.data_type} in {item.path}", file=sys.stderr)
             raise
 
@@ -205,13 +206,17 @@ class TractionItemHandlerSchema(ItemHandler):
         required = []
         if item.data_type._fields.get("d_"):
             item.result[item.parent_index]["description"] = item.data_type.__dataclass_fields__.get(
-                "d_", {}).default
+                "d_", {}
+            ).default
 
         for f, ftype in item.data_type._fields.items():
             if not (f.startswith("i_") or f.startswith("a_") or f.startswith("r_")):
                 continue
 
-            if item.data_type.__dataclass_fields__.get(f) and item.data.__dataclass_fields__[f].init is False:
+            if (
+                item.data_type.__dataclass_fields__.get(f)
+                and item.data.__dataclass_fields__[f].init is False
+            ):
                 # Skip if field is not initialized
                 continue
             default = item.data_type.__dataclass_fields__.get(f, {}).default
@@ -219,12 +224,12 @@ class TractionItemHandlerSchema(ItemHandler):
             if not isinstance(default, dataclasses._MISSING_TYPE):
                 if not isinstance(default, Port):
                     if hasattr(default, "content_to_json"):
-                        extra['default'] = default.content_to_json()
+                        extra["default"] = default.content_to_json()
                     else:
-                        extra['default'] = default
+                        extra["default"] = default
                 else:
-                    extra['default'] = default
-            if "d_"+f in item.data_type._fields:
+                    extra["default"] = default
+            if "d_" + f in item.data_type._fields:
                 extra["description"] = item.data_type.__dataclass_fields__.get("d_" + f, {}).default
             _f = item.data._SERIALIZE_REPLACE_FIELDS.get(f, f)
             tree.add_to_process(
@@ -232,7 +237,7 @@ class TractionItemHandlerSchema(ItemHandler):
                 data_type=ftype,
                 parent_index=_f,
                 result=item.result[item.parent_index]["properties"],
-                extra=extra
+                extra=extra,
             )
             required.append(f)
         item.result[item.parent_index]["required"] = required

@@ -463,11 +463,7 @@ class ListItemHandlerSchema(ItemHandler):
 
     def process(self, tree, item):
         """Process list items."""
-        item.result[item.parent_index] = {
-            "title": str(item.data),
-            "type": "array",
-            "items": {}
-        }
+        item.result[item.parent_index] = {"title": str(item.data), "type": "array", "items": {}}
         if item.extra:
             item.result[item.parent_index].update(item.extra)
         tree.add_to_process(
@@ -550,10 +546,7 @@ class DictItemHandlerSchema(ItemHandler):
             "type": "array",
             "items": {
                 "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "value": {}
-                },
+                "properties": {"name": {"type": "string"}, "value": {}},
             },
         }
         if item.extra:
@@ -562,7 +555,7 @@ class DictItemHandlerSchema(ItemHandler):
             data=None,
             data_type=item.data_type._params[1],
             parent_index="value",
-            result=item.result[item.parent_index]['items']['properties'],
+            result=item.result[item.parent_index]["items"]["properties"],
         )
 
 
@@ -650,7 +643,7 @@ class BasicItemHandlerSchema(ItemHandler):
         """Process primitive types items."""
         item.result[item.parent_index] = {
             "title": str(item.data),
-            "type": self._to_jschema_type(item.data_type)
+            "type": self._to_jschema_type(item.data_type),
         }
         if item.extra:
             item.result[item.parent_index].update(item.extra)
@@ -728,14 +721,18 @@ class PortItemHandlerSchema(ItemHandler):
 
     def process(self, tree, item):
         """Process Port items."""
-        if isinstance(item.extra.get('default'), Port):
-            item.extra['default'] = item.extra['default'].data if not hasattr(item.extra['default'].data, "content_to_json") else item.extra['default'].data.content_to_json()
+        if isinstance(item.extra.get("default"), Port):
+            item.extra["default"] = (
+                item.extra["default"].data
+                if not hasattr(item.extra["default"].data, "content_to_json")
+                else item.extra["default"].data.content_to_json()
+            )
         tree.add_to_process(
             data=item.data,
             data_type=item.data_type._params[0],
             parent_index=item.parent_index,
             result=item.result,
-            extra=item.extra
+            extra=item.extra,
         )
 
 
@@ -832,35 +829,44 @@ class BaseItemHandlerSchema(ItemHandler):
             item.result[item.parent_index].update(item.extra)
 
         for f, ftype in item.data_type._fields.items():
-            if item.data_type.__dataclass_fields__.get(f) and item.data_type.__dataclass_fields__[f].init is False:
+            if (
+                item.data_type.__dataclass_fields__.get(f)
+                and item.data_type.__dataclass_fields__[f].init is False
+            ):
                 # Skip if field is not initialized
                 continue
             default = item.data_type.__dataclass_fields__.get(f, {}).default
             extra = {}
             if not isinstance(default, dataclasses._MISSING_TYPE):
-                extra['default'] = default if not hasattr(default, "content_to_json") else default.content_to_json()
+                extra["default"] = (
+                    default
+                    if not hasattr(default, "content_to_json")
+                    else default.content_to_json()
+                )
             _f = item.data_type._SERIALIZE_REPLACE_FIELDS.get(f, f)
             datacls_field = item.data_type.__dataclass_fields__.get(f, {})
             required.append(_f)
-            if hasattr(datacls_field, "validator") and isinstance(datacls_field.validator, LiteralValidator):
+            if hasattr(datacls_field, "validator") and isinstance(
+                datacls_field.validator, LiteralValidator
+            ):
                 # If field is Literal, use its value as type
                 literal = item.data_type.__dataclass_fields__[f].validator.literal
-                item.result[item.parent_index]['properties'][_f] = {
+                item.result[item.parent_index]["properties"][_f] = {
                     "type": "string",
                     "title": _f,
                     "enum": literal,
-                    "default": literal[0]
+                    "default": literal[0],
                 }
                 continue
             if item.data_type._fields.get("d_" + f):
-                extra['description'] = item.data_type.__dataclass_fields__["d_" + f].default
+                extra["description"] = item.data_type.__dataclass_fields__["d_" + f].default
 
             tree.add_to_process(
                 data=f,
                 data_type=ftype,
                 parent_index=_f,
                 result=item.result[item.parent_index]["properties"],
-                extra=extra
+                extra=extra,
             )
         item.result[item.parent_index]["required"] = required
 
@@ -902,8 +908,8 @@ class UnionItemHandlerSchema(ItemHandler):
         if item.data_type._name != "Optional":
             item.result[item.parent_index] = {
                 "title": str(item.data),
-                "oneOf": [None]*len(item.data_type.__args__),
-                "type": "object"
+                "oneOf": [None] * len(item.data_type.__args__),
+                "type": "object",
             }
             if item.extra:
                 item.result[item.parent_index].update(item.extra)
@@ -916,8 +922,7 @@ class UnionItemHandlerSchema(ItemHandler):
                     extra=item.extra,
                 )
         else:
-            item.result[item.parent_index] = {
-            }
+            item.result[item.parent_index] = {}
             if item.extra:
                 item.result[item.parent_index].update(item.extra)
             tree.add_to_process(
@@ -925,7 +930,7 @@ class UnionItemHandlerSchema(ItemHandler):
                 data_type=item.data_type.__args__[0],
                 parent_index=item.parent_index,
                 result=item.result,
-                    extra=item.extra,
+                extra=item.extra,
             )
 
 

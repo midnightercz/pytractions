@@ -125,7 +125,7 @@ def load_json_input(traction_cls):
     #         else:
     #             current_nest.setdefault(v, {})
     #         current_nest = current_nest[v]
-    #for name, json_val in json_values.items():
+    # for name, json_val in json_values.items():
     #    traction_init_fields[name] = traction_cls._fields[name].content_from_json(json_val)
     json_val = json.loads(sys.stdin.read())
     traction_init_fields = {}
@@ -141,7 +141,6 @@ def load_json_input(traction_cls):
 
 def run_main(args):
     """Run action."""
-
     if args.logger_handler == "redis":
         redis_settings = json.loads(args.logger_handler_redis_settings)
         sh = RedisStreamHandler(
@@ -219,14 +218,20 @@ def make_parsers(subparsers):
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         default="INFO",
     )
-    p_runner.add_argument("--logger-handler",
-                          "-L",
-                          help="Logger handler",
-                          type=str, default="stdout",
-                          choices=["stdout", "redis"])
-    p_runner.add_argument("--logger-handler-redis-settings",
-                          help='{"redis_url":<url>,"port":<port>}',
-                          type=str, default="stdout")
+    p_runner.add_argument(
+        "--logger-handler",
+        "-L",
+        help="Logger handler",
+        type=str,
+        default="stdout",
+        choices=["stdout", "redis"],
+    )
+    p_runner.add_argument(
+        "--logger-handler-redis-settings",
+        help='{"redis_url":<url>,"port":<port>}',
+        type=str,
+        default="stdout",
+    )
 
     p_runner.add_argument(
         "--io-type",

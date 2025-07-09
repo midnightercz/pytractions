@@ -184,6 +184,7 @@ class ThreadPoolExecutor(Executor):
 
 class LoopExecutor(Executor):
     """Execute tractions in sequentially in for loop."""
+
     executor_type: Literal["loop_executor"]
 
     def __post_init__(self):
