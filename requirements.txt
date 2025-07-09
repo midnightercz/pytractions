@@ -3,3 +3,4 @@ lark
 jsonschema
 typing_extensions
 ray
+redis
