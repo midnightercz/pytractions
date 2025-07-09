@@ -8,13 +8,7 @@
         "dev:frontend": "cd frontend && npm dev",
         "dev:backend": "cd backend && npm dev"
     },
-    "devDependencies": {
-        "concurrently": "^9.2.0"
-    },
     "dependencies": {
-        "highlight.js": "^11.11.1",
-        "marked": "^16.0.0",
-        "marked-highlight": "^2.2.2",
-        "ngx-markdown": "^20.0.0"
+        "concurrently": "^9.2.0"
     }
 }
