@@ -1,12 +1,12 @@
 [build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling >= 1.26"]
+build-backend = "hatchling.build"
 
 [project]
 name = "pytractions"
 version =  "0.0.8"
 description = "Pytractions is python framework for modular programming."
-readme = "README.rst"
+readme = "README.md"
 authors = [
     { name = "Jindrich Luza", email = "jluza@redhat.com" }
 ]
