@@ -134,6 +134,7 @@ app.post('/api/run/:id/:module/:group/:classname', async (req, res) => {
     await redisc.xAdd('traction-logs-' + id, '*', {log: "=======================================\n", "level": "20"});
     res.write(`=======================================\n`);
     res.end();
+    console.log(`Python script exited with code ${code}`);
     return // res.status(500).send('Python script failed');
   });
 });

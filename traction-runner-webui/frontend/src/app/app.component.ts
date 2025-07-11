@@ -161,9 +161,10 @@ export class AppComponent {
     ];
     this.fields.forEach((field: FormlyFieldConfig) => {
       if (field.validation == undefined) {
-        field.validation = {show: true, messages: {}}
+        field.validation = {show: true}
       }
       field.validation.show = true;
+      field.expressionProperties = {'validation.show': 'model.showErrorState'}
     });
   }
 
