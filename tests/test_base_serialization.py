@@ -482,7 +482,6 @@ def test_json_schema_complex2():
             "intlist",
             "complex_list",
             "complex_dict",
-            "optional_str",
             "union_arg",
             "c",
             "e",

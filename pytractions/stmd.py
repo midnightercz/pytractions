@@ -257,7 +257,6 @@ class STMD(Traction, metaclass=STMDMeta):
         if self.state not in (TractionState.READY, TractionState.ERROR):
             return self
 
-        LOGGER.info(f"Running STMD {self.fullname} on {self.a_executor}")
         self._reset_stats()
         self.stats.started = isodate_now()
 
@@ -278,6 +277,11 @@ class STMD(Traction, metaclass=STMDMeta):
 
         if not first_in_field:
             raise RuntimeError(f"[{self.uid}] Cannot have STMD with only STMDSingleIn inputs")
+
+        LOGGER.info(
+            f"Running STMD {self.fullname} on {self.a_executor} "
+            f"on {len(getattr(self, first_in_field))} items"
+        )
 
         outputs = {}
         for f in self._fields:

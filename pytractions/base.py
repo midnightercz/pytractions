@@ -728,11 +728,12 @@ class PortItemHandlerSchema(ItemHandler):
                 else item.extra["default"].data.content_to_json()
             )
 
-        if (item.data_type._params[0].__class__ == _UnionGenericAlias and \
-                item.data_type._params[0]._name == "Optional"):
-            #print("OPTINONAL PORT", item.parent.result[item.parent.parent_index])
-            item.parent.result[item.parent.parent_index]['required'].remove(item.parent_index)
-
+        if (
+            item.data_type._params[0].__class__ == _UnionGenericAlias
+            and item.data_type._params[0]._name == "Optional"
+        ):
+            # print("OPTINONAL PORT", item.parent.result[item.parent.parent_index])
+            item.parent.result[item.parent.parent_index]["required"].remove(item.parent_index)
 
         tree.add_to_process(
             data=item.data,

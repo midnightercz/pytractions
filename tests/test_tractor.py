@@ -195,3 +195,21 @@ def test_tractor_default_input_overwrite():
     t = TestTractorArgToInput(uid="1", i_in1=Port[float](data=123.0))
     t.run()
     assert t.o_out1 == 123.0
+
+
+def test_tractor_none_input():
+
+    class TestTractionInt(Traction):
+        i_int: float = 213.0
+        o_output: float
+
+        def _run(self) -> None:
+            self.o_output = self.i_int
+
+    class TestTractorArgToInput(Tractor):
+        i_in1: Port[float] = NullPort[float]()
+        t_t1: TestTractionInt = TestTractionInt(uid="1", i_int=i_in1)
+        o_out1: Port[float] = t_t1.o_output
+
+    with pytest.raises(TypeError):
+        TestTractorArgToInput(uid="1", i_in1=None)

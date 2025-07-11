@@ -410,7 +410,7 @@ class Tractor(Traction, metaclass=TractorMeta):
                     continue
                 init_fields[ft] = getattr(traction, ft)
 
-        LOGGER.info("Init traction %s: %s", traction_name, init_fields)
+        LOGGER.info("Init traction %s", traction_name)
         return traction.__class__(**init_fields)
 
     # def __post_init__(self):

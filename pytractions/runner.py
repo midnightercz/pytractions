@@ -131,7 +131,9 @@ def load_json_input(traction_cls):
     traction_init_fields = {}
     for k, v in json_val.items():
         if k not in traction_cls._fields:
-            raise AttributeError(f"{traction_cls.__name__} doesn't have field {k}")
+            raise AttributeError(
+                f"{traction_cls.__module__}.{traction_cls.__name__} doesn't have field {k}"
+            )
         LOGGER.info(f"Loading input: {k} {v}")
         if not isinstance(v, dict) or (isinstance(v, dict) and not v.get("data")):
             v = {"data": v}
