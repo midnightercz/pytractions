@@ -145,6 +145,10 @@ app.get('/api/archive/', async (req, res) => {
 
   const archives: {uid: string, user_desc: string}[] = [];
   const keys: string[] = await redisc.keys('traction-model-*');
+  if (keys.length === 0) {
+    res.json(archives);
+    return
+  }
   const values: string[] = (await redisc.mGet(keys) as string[]);
   values.forEach((value, index) => {
       const parsed = JSON.parse((value as string));
