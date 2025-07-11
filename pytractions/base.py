@@ -727,6 +727,13 @@ class PortItemHandlerSchema(ItemHandler):
                 if not hasattr(item.extra["default"].data, "content_to_json")
                 else item.extra["default"].data.content_to_json()
             )
+
+        if (item.data_type._params[0].__class__ == _UnionGenericAlias and \
+                item.data_type._params[0]._name == "Optional"):
+            #print("OPTINONAL PORT", item.parent.result[item.parent.parent_index])
+            item.parent.result[item.parent.parent_index]['required'].remove(item.parent_index)
+
+
         tree.add_to_process(
             data=item.data,
             data_type=item.data_type._params[0],
@@ -845,7 +852,6 @@ class BaseItemHandlerSchema(ItemHandler):
                 )
             _f = item.data_type._SERIALIZE_REPLACE_FIELDS.get(f, f)
             datacls_field = item.data_type.__dataclass_fields__.get(f, {})
-            required.append(_f)
             if hasattr(datacls_field, "validator") and isinstance(
                 datacls_field.validator, LiteralValidator
             ):
@@ -860,6 +866,8 @@ class BaseItemHandlerSchema(ItemHandler):
                 continue
             if item.data_type._fields.get("d_" + f):
                 extra["description"] = item.data_type.__dataclass_fields__["d_" + f].default
+            if not (ftype.__class__ == _UnionGenericAlias and ftype._name == "Optional"):
+                required.append(_f)
 
             tree.add_to_process(
                 data=f,
