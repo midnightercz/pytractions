@@ -4,7 +4,7 @@ import importlib
 import json
 
 try:
-    from typing import Self
+    from typing import Self, Literal
 except ImportError:
     from typing_extensions import Self
 from typing import get_origin, TypeVar, Union, ForwardRef, Dict, Any, Tuple, List, Literal
@@ -408,11 +408,15 @@ class TypeNode:
             op = "any"
 
         root_node = CMPNode(self, TypeNode(JSON_COMPATIBLE), op, op)
-        stack = [root_node]
         post_order = []
-        post_order.insert(0, root_node)
+        stack = []
+        if self.type_ is not Literal:
+            stack.append(root_node)
+            post_order.insert(0, root_node)
         while stack:
             current_node = stack.pop()
+            if current_node.n1.type_ is Literal:
+                continue
             if current_node.n1.children:
                 for ch1 in current_node.n1.children:
                     node = CMPNode(ch1, TypeNode(JSON_COMPATIBLE), "all", "all")
