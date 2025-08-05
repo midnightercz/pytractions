@@ -196,8 +196,8 @@ class LoopExecutor(Executor):
         try:
             res = _execute_traction(index, uid, traction, inputs, args, resources, observer)
         except Exception as e:
-            LOGGER.error("Error in traction execution: %s", traceback.format_exc(e))
-            res = TractionResult(outputs={}, state=TractionState.ERROR)
+            LOGGER.error("Error in traction execution: %s", traceback.format_exc())
+            res = TractionResult(outputs=TDict[str, JSON_COMPATIBLE]({}), state=TractionState.ERROR, stats= TractionStats())
         self._outputs[uid] = res
 
     def get_states(self, uids):
