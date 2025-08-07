@@ -4,7 +4,7 @@ import importlib
 import json
 
 try:
-    from typing import Self, Literal
+    from typing import Self
 except ImportError:
     from typing_extensions import Self
 from typing import get_origin, TypeVar, Union, ForwardRef, Dict, Any, Tuple, List, Literal
