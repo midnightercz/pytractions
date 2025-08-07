@@ -26,7 +26,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Get version
         id: getversion
-        run: echo "::set-output name=version::$(python setup.py --version)"
+        run: |
+          pip install toml
+          version=$(cat 'pyproject.toml' | python -c "import toml; import sys; print(toml.loads(sys.stdin.read())['project']['version'])")
+          echo "version=$version" >> ${GITHUB_OUTPUT}
       - name: Get commit revision
         id: getrev
         run: echo "::set-output name=rev::$(git rev-parse --short HEAD)"
@@ -38,6 +41,7 @@ jobs:
           FINAL_VERSION=$([ "$RELEASE" = "true" ] && echo "${VERSION}" || echo "${VERSION}-${REV}")
           EXPIRE_LABEL=$([ "$RELEASE" = "true" ] && echo "" || echo "--label quay.expires-after=2d")
           FULL_VERSION="${VERSION}${REV}"
-          python setup.py sdist
+          pip install build
+          python -m build
           docker build --build-arg=SDIST="dist/pytractions-${{steps.getversion.outputs.version}}.tar.gz"  -t quay.io/jluza/pytractions:$FINAL_VERSION $EXPIRE_LABEL -f docker/Dockerfile .
           docker push quay.io/jluza/pytractions:$FINAL_VERSION
