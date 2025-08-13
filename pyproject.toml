@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pytractions"
-version =  "0.0.10"
+version =  "0.0.11"
 description = "Pytractions is python framework for modular programming."
 readme = "README.md"
 authors = [
