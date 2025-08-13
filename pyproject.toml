@@ -18,7 +18,8 @@ dependencies = [
     "jsonschema",
     "typing_extensions",
     "protobuf<6.0.0",
-    "ray"
+    "ray",
+    "redis"
 ]
 dynamic=["entry-points"]
 
