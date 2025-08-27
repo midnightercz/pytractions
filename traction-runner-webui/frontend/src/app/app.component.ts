@@ -80,6 +80,7 @@ export class AppComponent {
   archives: {uid: string, user_desc: string}[] = [];
   logsLastId: number = 0;
   watching_interval_id: number = 0;
+  info_bar_content: string = "";
 
   showLoading() {
     const dialogRef = this.loading_dialog.open(LoadingDialog, {
@@ -287,7 +288,16 @@ export class AppComponent {
     const full_id = `traction-logs-${this.run_id}`;
     console.log(this);
     console.log("watch output", full_id);
-    const res = await fetch(`/api/watch/${full_id}?last_id=${this.logsLastId}&count=50`);
+    var res = null;
+    try {
+      res = await fetch(`/api/watch/${full_id}?last_id=${this.logsLastId}&count=50`);
+    } catch (error) {
+      this.info_bar_content = "Error connecting to server. Is the backend running?";
+      return;
+    } finally {
+      this.info_bar_content = "";
+    }
+
     const data = await res.json();
     console.log("Received", data);
     for (const msg of data.messages) {
